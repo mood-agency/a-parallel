@@ -1,14 +1,13 @@
 import { Hono } from 'hono';
-import { eq } from 'drizzle-orm';
-import { db, schema } from '../db/index.js';
+import * as tm from '../services/thread-manager.js';
 import * as pm from '../services/project-manager.js';
-import * as diff from '../services/diff-service.js';
+import { getDiff, stageFiles, unstageFiles, revertFiles, commit, push, createPR } from '../utils/git-v2.js';
 
 export const gitRoutes = new Hono();
 
 // Helper: resolve working directory for a thread
 function resolveThreadCwd(threadId: string): string | null {
-  const thread = db.select().from(schema.threads).where(eq(schema.threads.id, threadId)).get();
+  const thread = tm.getThread(threadId);
   if (!thread) return null;
 
   if (thread.worktreePath) return thread.worktreePath;
@@ -23,7 +22,7 @@ gitRoutes.get('/:threadId/diff', async (c) => {
   if (!cwd) return c.json({ error: 'Thread not found' }, 404);
 
   try {
-    const diffs = await diff.getDiff(cwd);
+    const diffs = await getDiff(cwd);
     return c.json(diffs);
   } catch (e: any) {
     return c.json({ error: e.message }, 500);
@@ -37,7 +36,7 @@ gitRoutes.post('/:threadId/stage', async (c) => {
 
   const { paths } = await c.req.json<{ paths: string[] }>();
   try {
-    await diff.stageFiles(cwd, paths);
+    await stageFiles(cwd, paths);
     return c.json({ ok: true });
   } catch (e: any) {
     return c.json({ error: e.message }, 500);
@@ -51,7 +50,7 @@ gitRoutes.post('/:threadId/unstage', async (c) => {
 
   const { paths } = await c.req.json<{ paths: string[] }>();
   try {
-    await diff.unstageFiles(cwd, paths);
+    await unstageFiles(cwd, paths);
     return c.json({ ok: true });
   } catch (e: any) {
     return c.json({ error: e.message }, 500);
@@ -65,7 +64,7 @@ gitRoutes.post('/:threadId/revert', async (c) => {
 
   const { paths } = await c.req.json<{ paths: string[] }>();
   try {
-    await diff.revertFiles(cwd, paths);
+    await revertFiles(cwd, paths);
     return c.json({ ok: true });
   } catch (e: any) {
     return c.json({ error: e.message }, 500);
@@ -79,7 +78,7 @@ gitRoutes.post('/:threadId/commit', async (c) => {
 
   const { message } = await c.req.json<{ message: string }>();
   try {
-    const result = await diff.commit(cwd, message);
+    const result = await commit(cwd, message);
     return c.json({ ok: true, output: result });
   } catch (e: any) {
     return c.json({ error: e.message }, 500);
@@ -92,7 +91,7 @@ gitRoutes.post('/:threadId/push', async (c) => {
   if (!cwd) return c.json({ error: 'Thread not found' }, 404);
 
   try {
-    const result = await diff.push(cwd);
+    const result = await push(cwd);
     return c.json({ ok: true, output: result });
   } catch (e: any) {
     return c.json({ error: e.message }, 500);
@@ -106,7 +105,7 @@ gitRoutes.post('/:threadId/pr', async (c) => {
 
   const { title, body } = await c.req.json<{ title: string; body: string }>();
   try {
-    const url = await diff.createPR(cwd, title, body);
+    const url = await createPR(cwd, title, body);
     return c.json({ ok: true, url });
   } catch (e: any) {
     return c.json({ error: e.message }, 500);

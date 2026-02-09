@@ -1,12 +1,20 @@
 import { Hono } from 'hono';
-import { eq, asc } from 'drizzle-orm';
-import { nanoid } from 'nanoid';
 import * as pm from '../services/project-manager.js';
+import * as sc from '../services/startup-commands-service.js';
 import { listBranches } from '../utils/git-v2.js';
-import { db, schema } from '../db/index.js';
 import { startCommand, stopCommand, isCommandRunning } from '../services/command-runner.js';
+import { createProjectSchema, createCommandSchema, validate } from '../validation/schemas.js';
 
 export const projectRoutes = new Hono();
+
+function buildCommandWithPort(command: string, port: number): string {
+  const trimmed = command.trimStart();
+  const usesPackageManager = /^(npm|npx|pnpm|yarn|bun)\s/.test(trimmed);
+  if (usesPackageManager) {
+    return `${command} -- --port ${port}`;
+  }
+  return `${command} --port ${port}`;
+}
 
 // GET /api/projects
 projectRoutes.get('/', (c) => {
@@ -16,11 +24,10 @@ projectRoutes.get('/', (c) => {
 
 // POST /api/projects
 projectRoutes.post('/', async (c) => {
-  const { name, path } = await c.req.json<{ name: string; path: string }>();
-
-  if (!name || !path) {
-    return c.json({ error: 'name and path are required' }, 400);
-  }
+  const raw = await c.req.json();
+  const parsed = validate(createProjectSchema, raw);
+  if (!parsed.success) return c.json({ error: parsed.error }, 400);
+  const { name, path } = parsed.data;
 
   try {
     const project = pm.createProject(name, path);
@@ -59,73 +66,45 @@ projectRoutes.get('/:id/branches', async (c) => {
 // GET /api/projects/:id/commands
 projectRoutes.get('/:id/commands', (c) => {
   const id = c.req.param('id');
-  const commands = db
-    .select()
-    .from(schema.startupCommands)
-    .where(eq(schema.startupCommands.projectId, id))
-    .orderBy(asc(schema.startupCommands.sortOrder))
-    .all();
+  const commands = sc.listCommands(id);
   return c.json(commands);
 });
 
 // POST /api/projects/:id/commands
 projectRoutes.post('/:id/commands', async (c) => {
   const projectId = c.req.param('id');
-  const { label, command } = await c.req.json<{ label: string; command: string }>();
+  const raw = await c.req.json();
+  const parsed = validate(createCommandSchema, raw);
+  if (!parsed.success) return c.json({ error: parsed.error }, 400);
+  const { label, command, port, portEnvVar } = parsed.data;
 
-  if (!label || !command) {
-    return c.json({ error: 'label and command are required' }, 400);
-  }
-
-  const existing = db
-    .select()
-    .from(schema.startupCommands)
-    .where(eq(schema.startupCommands.projectId, projectId))
-    .all();
-
-  const entry = {
-    id: nanoid(),
-    projectId,
-    label,
-    command,
-    sortOrder: existing.length,
-    createdAt: new Date().toISOString(),
-  };
-
-  db.insert(schema.startupCommands).values(entry).run();
+  const entry = sc.createCommand({ projectId, label, command, port, portEnvVar });
   return c.json(entry, 201);
 });
 
 // PUT /api/projects/:id/commands/:cmdId
 projectRoutes.put('/:id/commands/:cmdId', async (c) => {
   const cmdId = c.req.param('cmdId');
-  const { label, command } = await c.req.json<{ label: string; command: string }>();
+  const raw = await c.req.json();
+  const parsed = validate(createCommandSchema, raw);
+  if (!parsed.success) return c.json({ error: parsed.error }, 400);
+  const { label, command, port, portEnvVar } = parsed.data;
 
-  if (!label || !command) {
-    return c.json({ error: 'label and command are required' }, 400);
-  }
-
-  db.update(schema.startupCommands)
-    .set({ label, command })
-    .where(eq(schema.startupCommands.id, cmdId))
-    .run();
-
+  sc.updateCommand(cmdId, { label, command, port, portEnvVar });
   return c.json({ ok: true });
 });
 
 // DELETE /api/projects/:id/commands/:cmdId
 projectRoutes.delete('/:id/commands/:cmdId', (c) => {
   const cmdId = c.req.param('cmdId');
-  db.delete(schema.startupCommands)
-    .where(eq(schema.startupCommands.id, cmdId))
-    .run();
+  sc.deleteCommand(cmdId);
   return c.json({ ok: true });
 });
 
 // ─── Command Execution ─────────────────────────────────
 
 // POST /api/projects/:id/commands/:cmdId/start
-projectRoutes.post('/:id/commands/:cmdId/start', (c) => {
+projectRoutes.post('/:id/commands/:cmdId/start', async (c) => {
   const projectId = c.req.param('id');
   const cmdId = c.req.param('cmdId');
 
@@ -134,17 +113,17 @@ projectRoutes.post('/:id/commands/:cmdId/start', (c) => {
     return c.json({ error: 'Project not found' }, 404);
   }
 
-  const cmd = db
-    .select()
-    .from(schema.startupCommands)
-    .where(eq(schema.startupCommands.id, cmdId))
-    .get();
-
+  const cmd = sc.getCommand(cmdId);
   if (!cmd) {
     return c.json({ error: 'Command not found' }, 404);
   }
 
-  startCommand(cmdId, cmd.command, project.path, projectId, cmd.label);
+  const finalCommand = cmd.port ? buildCommandWithPort(cmd.command, cmd.port) : cmd.command;
+  const extraEnv: Record<string, string> = {};
+  if (cmd.port && cmd.portEnvVar) {
+    extraEnv[cmd.portEnvVar] = String(cmd.port);
+  }
+  await startCommand(cmdId, finalCommand, project.path, projectId, cmd.label, extraEnv, cmd.port);
   return c.json({ ok: true });
 });
 

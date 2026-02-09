@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { useTranslation } from 'react-i18next';
 import { Folder, ChevronRight, Home, HardDrive, ArrowUp } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import {
@@ -21,6 +22,7 @@ interface DirEntry {
 }
 
 export function FolderPicker({ onSelect, onClose }: FolderPickerProps) {
+  const { t } = useTranslation();
   const [currentPath, setCurrentPath] = useState('');
   const [parentPath, setParentPath] = useState<string | null>(null);
   const [dirs, setDirs] = useState<DirEntry[]>([]);
@@ -67,13 +69,13 @@ export function FolderPicker({ onSelect, onClose }: FolderPickerProps) {
     <Dialog open onOpenChange={(open) => !open && onClose()}>
       <DialogContent className="max-w-md p-0 gap-0 flex flex-col" style={{ height: '480px' }}>
         <DialogHeader className="p-4 pb-0">
-          <DialogTitle className="text-sm">Select Folder</DialogTitle>
+          <DialogTitle className="text-sm">{t('folderPicker.title')}</DialogTitle>
         </DialogHeader>
 
         {/* Current path */}
         <div className="px-4 py-2 border-b border-border bg-muted/30">
           <p className="text-xs text-muted-foreground truncate font-mono" title={currentPath}>
-            {currentPath || 'Loading...'}
+            {currentPath || t('folderPicker.loading')}
           </p>
         </div>
 
@@ -87,7 +89,7 @@ export function FolderPicker({ onSelect, onClose }: FolderPickerProps) {
               className="h-7 text-xs text-muted-foreground"
             >
               <ArrowUp className="h-3 w-3 mr-1" />
-              Up
+              {t('folderPicker.up')}
             </Button>
           )}
           <Button
@@ -97,7 +99,7 @@ export function FolderPicker({ onSelect, onClose }: FolderPickerProps) {
             className="h-7 text-xs text-muted-foreground"
           >
             <Home className="h-3 w-3 mr-1" />
-            Home
+            {t('folderPicker.home')}
           </Button>
           {roots.map((root) => (
             <Button
@@ -120,10 +122,10 @@ export function FolderPicker({ onSelect, onClose }: FolderPickerProps) {
             <p className="text-xs text-red-400 px-2 py-1">{error}</p>
           )}
           {loading && !error && (
-            <p className="text-xs text-muted-foreground px-2 py-4 text-center">Loading...</p>
+            <p className="text-xs text-muted-foreground px-2 py-4 text-center">{t('folderPicker.loading')}</p>
           )}
           {!loading && dirs.length === 0 && !error && (
-            <p className="text-xs text-muted-foreground px-2 py-4 text-center">No subdirectories</p>
+            <p className="text-xs text-muted-foreground px-2 py-4 text-center">{t('folderPicker.noSubdirs')}</p>
           )}
           {dirs.map((dir) => (
             <button
@@ -141,14 +143,14 @@ export function FolderPicker({ onSelect, onClose }: FolderPickerProps) {
         {/* Actions */}
         <DialogFooter className="p-4 border-t border-border">
           <Button variant="outline" size="sm" onClick={onClose}>
-            Cancel
+            {t('folderPicker.cancel')}
           </Button>
           <Button
             size="sm"
             onClick={() => onSelect(currentPath)}
             disabled={!currentPath}
           >
-            Select this folder
+            {t('folderPicker.selectFolder')}
           </Button>
         </DialogFooter>
       </DialogContent>

@@ -1,12 +1,13 @@
-import { resolve, dirname } from 'path';
-import { mkdirSync, existsSync } from 'fs';
-import { gitSync, gitSafeSync } from '../utils/git-v2.js';
+import { resolve, dirname, normalize } from 'path';
+import { mkdir } from 'fs/promises';
+import { existsSync } from 'fs';
+import { git, gitSafe } from '../utils/git-v2.js';
 
 const WORKTREE_DIR_NAME = '.a-parallel-worktrees';
 
-function getWorktreeBase(projectPath: string): string {
+async function getWorktreeBase(projectPath: string): Promise<string> {
   const base = resolve(dirname(projectPath), WORKTREE_DIR_NAME);
-  mkdirSync(base, { recursive: true });
+  await mkdir(base, { recursive: true });
   return base;
 }
 
@@ -14,30 +15,32 @@ export interface WorktreeInfo {
   path: string;
   branch: string;
   commit: string;
+  isMain: boolean;
 }
 
-export function createWorktree(
+export async function createWorktree(
   projectPath: string,
   branchName: string,
   baseBranch = 'main'
-): string {
-  const base = getWorktreeBase(projectPath);
+): Promise<string> {
+  const base = await getWorktreeBase(projectPath);
   const worktreePath = resolve(base, branchName.replace(/\//g, '-'));
 
   if (existsSync(worktreePath)) {
     throw new Error(`Worktree already exists: ${worktreePath}`);
   }
 
-  gitSync(['worktree', 'add', '-b', branchName, worktreePath, baseBranch], projectPath);
+  await git(['worktree', 'add', '-b', branchName, worktreePath, baseBranch], projectPath);
   return worktreePath;
 }
 
-export function listWorktrees(projectPath: string): WorktreeInfo[] {
-  const output = gitSync(['worktree', 'list', '--porcelain'], projectPath);
+export async function listWorktrees(projectPath: string): Promise<WorktreeInfo[]> {
+  const output = await git(['worktree', 'list', '--porcelain'], projectPath);
   const entries: WorktreeInfo[] = [];
   let current: Partial<WorktreeInfo> = {};
 
-  for (const line of output.split('\n')) {
+  for (const raw of output.split('\n')) {
+    const line = raw.replace(/\r$/, '');
     if (line.startsWith('worktree ')) {
       if (current.path) entries.push(current as WorktreeInfo);
       current = { path: line.slice('worktree '.length) };
@@ -50,11 +53,14 @@ export function listWorktrees(projectPath: string): WorktreeInfo[] {
 
   if (current.path) entries.push(current as WorktreeInfo);
 
-  // Filter to only our managed worktrees
-  const base = getWorktreeBase(projectPath);
-  return entries.filter((w) => w.path.startsWith(base));
+  // Mark the main worktree (the project root itself)
+  const normalizedProject = normalize(projectPath);
+  return entries.map((w) => ({
+    ...w,
+    isMain: normalize(w.path) === normalizedProject,
+  }));
 }
 
-export function removeWorktree(projectPath: string, worktreePath: string): void {
-  gitSafeSync(['worktree', 'remove', '-f', worktreePath], projectPath);
+export async function removeWorktree(projectPath: string, worktreePath: string): Promise<void> {
+  await gitSafe(['worktree', 'remove', '-f', worktreePath], projectPath);
 }

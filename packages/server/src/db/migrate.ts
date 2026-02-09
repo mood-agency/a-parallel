@@ -82,5 +82,19 @@ export function autoMigrate() {
     )
   `);
 
+  // Add port column to startup_commands
+  try {
+    db.run(sql`ALTER TABLE startup_commands ADD COLUMN port INTEGER`);
+  } catch {
+    // Column already exists
+  }
+
+  // Add port_env_var column to startup_commands
+  try {
+    db.run(sql`ALTER TABLE startup_commands ADD COLUMN port_env_var TEXT`);
+  } catch {
+    // Column already exists
+  }
+
   console.log('[db] Tables ready');
 }

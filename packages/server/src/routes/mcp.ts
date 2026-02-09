@@ -5,7 +5,7 @@ import {
   removeMcpServer,
   RECOMMENDED_SERVERS,
 } from '../services/mcp-service.js';
-import type { McpAddRequest, McpRemoveRequest } from '@a-parallel/shared';
+import { addMcpServerSchema, validate } from '../validation/schemas.js';
 
 const app = new Hono();
 
@@ -16,28 +16,18 @@ app.get('/servers', async (c) => {
     return c.json({ error: 'projectPath query parameter required' }, 400);
   }
 
-  try {
-    const servers = await listMcpServers(projectPath);
-    return c.json({ servers });
-  } catch (error: any) {
-    return c.json({ error: error.message }, 500);
-  }
+  const servers = await listMcpServers(projectPath);
+  return c.json({ servers });
 });
 
 // Add an MCP server
 app.post('/servers', async (c) => {
-  const body = await c.req.json<McpAddRequest>();
+  const raw = await c.req.json();
+  const parsed = validate(addMcpServerSchema, raw);
+  if (!parsed.success) return c.json({ error: parsed.error }, 400);
 
-  if (!body.name || !body.type || !body.projectPath) {
-    return c.json({ error: 'name, type, and projectPath are required' }, 400);
-  }
-
-  try {
-    await addMcpServer(body);
-    return c.json({ ok: true });
-  } catch (error: any) {
-    return c.json({ error: error.message }, 500);
-  }
+  await addMcpServer(parsed.data);
+  return c.json({ ok: true });
 });
 
 // Remove an MCP server
@@ -50,12 +40,8 @@ app.delete('/servers/:name', async (c) => {
     return c.json({ error: 'projectPath query parameter required' }, 400);
   }
 
-  try {
-    await removeMcpServer({ name, projectPath, scope });
-    return c.json({ ok: true });
-  } catch (error: any) {
-    return c.json({ error: error.message }, 500);
-  }
+  await removeMcpServer({ name, projectPath, scope });
+  return c.json({ ok: true });
 });
 
 // Get recommended MCP servers

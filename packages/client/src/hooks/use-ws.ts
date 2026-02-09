@@ -1,97 +1,187 @@
-import { useEffect, useRef } from 'react';
+import { useEffect } from 'react';
 import { useAppStore } from '@/stores/app-store';
 import { useTerminalStore } from '@/stores/terminal-store';
+import { closePreviewForCommand } from '@/hooks/use-preview-window';
+
+// Module-level singleton to prevent duplicate WebSocket connections
+// (React StrictMode double-mounts effects in development)
+let activeWS: WebSocket | null = null;
+let refCount = 0;
+let wasConnected = false;
+let stopped = false;
+let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
+
+// ── WS message batching ─────────────────────────────────────────
+// Rapid WS updates (e.g. streaming tokens) can overwhelm React with
+// constant re-renders. We batch high-frequency events (agent:message,
+// agent:tool_output) and flush them once per animation frame.
+// Low-frequency events (status, result, init, tool_call) are dispatched
+// immediately so the UI stays responsive.
+
+interface BufferedMessage {
+  threadId: string;
+  data: any;
+}
+
+let pendingMessages = new Map<string, BufferedMessage>(); // threadId → latest message
+let pendingToolOutputs: Array<{ threadId: string; data: any }> = [];
+let rafId: number | null = null;
+
+function flushBatch() {
+  rafId = null;
+
+  const store = useAppStore.getState();
+
+  // Flush messages (only the latest per thread — they're cumulative)
+  for (const [, entry] of pendingMessages) {
+    store.handleWSMessage(entry.threadId, entry.data);
+  }
+  pendingMessages.clear();
+
+  // Flush tool outputs
+  for (const entry of pendingToolOutputs) {
+    store.handleWSToolOutput(entry.threadId, entry.data);
+  }
+  pendingToolOutputs = [];
+}
+
+function scheduleFlush() {
+  if (rafId === null) {
+    rafId = requestAnimationFrame(flushBatch);
+  }
+}
+
+// ── Message handler ──────────────────────────────────────────────
+
+function handleMessage(e: MessageEvent) {
+  const event = JSON.parse(e.data);
+  const { type, threadId, data } = event;
+
+  switch (type) {
+    // High-frequency events → batched
+    case 'agent:message':
+      // Keep only the latest message per thread (they're cumulative)
+      pendingMessages.set(threadId, { threadId, data });
+      scheduleFlush();
+      break;
+    case 'agent:tool_output':
+      pendingToolOutputs.push({ threadId, data });
+      scheduleFlush();
+      break;
+
+    // Low-frequency events → immediate dispatch
+    case 'agent:init':
+      useAppStore.getState().handleWSInit(threadId, data);
+      break;
+    case 'agent:status':
+      useAppStore.getState().handleWSStatus(threadId, data);
+      break;
+    case 'agent:result':
+      // Flush any pending messages before result so ordering is preserved
+      if (pendingMessages.size > 0 || pendingToolOutputs.length > 0) {
+        if (rafId !== null) {
+          cancelAnimationFrame(rafId);
+          rafId = null;
+        }
+        flushBatch();
+      }
+      useAppStore.getState().handleWSResult(threadId, data);
+      break;
+    case 'agent:tool_call':
+      // Flush pending messages first so the parent message exists
+      if (pendingMessages.size > 0) {
+        if (rafId !== null) {
+          cancelAnimationFrame(rafId);
+          rafId = null;
+        }
+        flushBatch();
+      }
+      useAppStore.getState().handleWSToolCall(threadId, data);
+      break;
+    case 'agent:error':
+      useAppStore.getState().handleWSStatus(threadId, { status: 'failed' });
+      break;
+    case 'command:output': {
+      const termStore = useTerminalStore.getState();
+      termStore.appendCommandOutput(data.commandId, data.data);
+      break;
+    }
+    case 'command:status': {
+      const termStore = useTerminalStore.getState();
+      if (data.status === 'exited' || data.status === 'stopped') {
+        termStore.markCommandExited(data.commandId);
+        closePreviewForCommand(data.commandId);
+      }
+      break;
+    }
+  }
+}
+
+function connect() {
+  if (stopped) return;
+
+  const isTauri = !!(window as any).__TAURI_INTERNALS__;
+  const serverPort = import.meta.env.VITE_SERVER_PORT || '3001';
+  const url = isTauri
+    ? `ws://localhost:${serverPort}/ws`
+    : `${window.location.protocol === 'https:' ? 'wss:' : 'ws:'}//${window.location.host}/ws`;
+  console.log(`[ws] Connecting to ${url}...`);
+
+  const ws = new WebSocket(url);
+  activeWS = ws;
+
+  ws.onopen = () => {
+    console.log('[ws] Connected');
+    if (wasConnected) {
+      console.log('[ws] Reconnected — re-syncing all loaded threads');
+      useAppStore.getState().refreshAllLoadedThreads();
+    }
+    wasConnected = true;
+  };
+
+  ws.onmessage = handleMessage;
+
+  ws.onclose = () => {
+    if (stopped) return;
+    console.log('[ws] Disconnected, reconnecting in 2s...');
+    reconnectTimer = setTimeout(connect, 2000);
+  };
+
+  ws.onerror = () => {
+    ws.close();
+  };
+}
+
+function teardown() {
+  stopped = true;
+  if (reconnectTimer) {
+    clearTimeout(reconnectTimer);
+    reconnectTimer = null;
+  }
+  if (rafId !== null) {
+    cancelAnimationFrame(rafId);
+    rafId = null;
+  }
+  pendingMessages.clear();
+  pendingToolOutputs = [];
+  activeWS?.close();
+  activeWS = null;
+  wasConnected = false;
+}
 
 export function useWS() {
-  const wsRef = useRef<WebSocket | null>(null);
-  const cleanedUp = useRef(false);
-
   useEffect(() => {
-    cleanedUp.current = false;
-    let wasConnected = false;
-
-    function connect() {
-      if (cleanedUp.current) return;
-
-      const isTauri = !!(window as any).__TAURI_INTERNALS__;
-      const url = isTauri
-        ? 'ws://localhost:3001/ws'
-        : `${window.location.protocol === 'https:' ? 'wss:' : 'ws:'}//${window.location.host}/ws`;
-      console.log(`[ws] Connecting to ${url}...`);
-
-      const ws = new WebSocket(url);
-      wsRef.current = ws;
-
-      ws.onopen = () => {
-        console.log('[ws] Connected');
-        // Re-sync active thread status after reconnection to catch
-        // any status changes that were missed while disconnected
-        if (wasConnected) {
-          console.log('[ws] Reconnected — re-syncing active thread');
-          useAppStore.getState().refreshActiveThread();
-        }
-        wasConnected = true;
-      };
-
-      ws.onmessage = (e) => {
-        const event = JSON.parse(e.data);
-        const { type, threadId, data } = event;
-        const store = useAppStore.getState();
-
-        switch (type) {
-          case 'agent:init':
-            store.handleWSInit(threadId, data);
-            break;
-          case 'agent:message':
-            store.handleWSMessage(threadId, data);
-            break;
-          case 'agent:status':
-            store.handleWSStatus(threadId, data);
-            break;
-          case 'agent:result':
-            store.handleWSResult(threadId, data);
-            break;
-          case 'agent:tool_call':
-            store.handleWSToolCall(threadId, data);
-            break;
-          case 'agent:tool_output':
-            store.handleWSToolOutput(threadId, data);
-            break;
-          case 'agent:error':
-            store.handleWSStatus(threadId, { status: 'failed' });
-            break;
-          case 'command:output': {
-            const termStore = useTerminalStore.getState();
-            termStore.appendCommandOutput(data.commandId, data.data);
-            break;
-          }
-          case 'command:status': {
-            const termStore = useTerminalStore.getState();
-            if (data.status === 'exited' || data.status === 'stopped') {
-              termStore.markCommandExited(data.commandId);
-            }
-            break;
-          }
-        }
-      };
-
-      ws.onclose = () => {
-        if (cleanedUp.current) return;
-        console.log('[ws] Disconnected, reconnecting in 2s...');
-        setTimeout(connect, 2000);
-      };
-
-      ws.onerror = () => {
-        ws.close();
-      };
+    refCount++;
+    if (refCount === 1) {
+      stopped = false;
+      connect();
     }
 
-    connect();
-
     return () => {
-      cleanedUp.current = true;
-      wsRef.current?.close();
-      wsRef.current = null;
+      refCount--;
+      if (refCount === 0) {
+        teardown();
+      }
     };
   }, []);
 }

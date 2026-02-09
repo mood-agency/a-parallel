@@ -1,11 +1,10 @@
 import { Hono } from 'hono';
-import { eq, and, desc } from 'drizzle-orm';
-import { nanoid } from 'nanoid';
-import { db, schema } from '../db/index.js';
+import * as tm from '../services/thread-manager.js';
 import * as pm from '../services/project-manager.js';
 import * as wm from '../services/worktree-manager.js';
 import { startAgent, stopAgent, isAgentRunning } from '../services/agent-runner.js';
-import type { CreateThreadRequest } from '@a-parallel/shared';
+import { nanoid } from 'nanoid';
+import { createThreadSchema, sendMessageSchema, updateThreadSchema, validate } from '../validation/schemas.js';
 
 export const threadRoutes = new Hono();
 
@@ -13,62 +12,38 @@ export const threadRoutes = new Hono();
 threadRoutes.get('/', (c) => {
   const projectId = c.req.query('projectId');
   const includeArchived = c.req.query('includeArchived') === 'true';
-
-  if (projectId) {
-    const conditions = includeArchived
-      ? eq(schema.threads.projectId, projectId)
-      : and(eq(schema.threads.projectId, projectId), eq(schema.threads.archived, 0));
-    const threads = db
-      .select()
-      .from(schema.threads)
-      .where(conditions)
-      .orderBy(desc(schema.threads.createdAt))
-      .all();
-    return c.json(threads);
-  }
-
-  if (includeArchived) {
-    const threads = db.select().from(schema.threads).orderBy(desc(schema.threads.createdAt)).all();
-    return c.json(threads);
-  }
-
-  const threads = db.select().from(schema.threads).where(eq(schema.threads.archived, 0)).orderBy(desc(schema.threads.createdAt)).all();
+  const threads = tm.listThreads({ projectId: projectId || undefined, includeArchived });
   return c.json(threads);
+});
+
+// GET /api/threads/archived?page=1&limit=100&search=xxx
+threadRoutes.get('/archived', (c) => {
+  const page = Math.max(1, parseInt(c.req.query('page') || '1', 10));
+  const limit = Math.min(1000, Math.max(1, parseInt(c.req.query('limit') || '100', 10)));
+  const search = c.req.query('search')?.trim() || '';
+
+  const { threads, total } = tm.listArchivedThreads({ page, limit, search });
+  return c.json({ threads, total, page, limit });
 });
 
 // GET /api/threads/:id
 threadRoutes.get('/:id', (c) => {
   const id = c.req.param('id');
-  const thread = db.select().from(schema.threads).where(eq(schema.threads.id, id)).get();
+  const result = tm.getThreadWithMessages(id);
 
-  if (!thread) {
+  if (!result) {
     return c.json({ error: 'Thread not found' }, 404);
   }
 
-  const messages = db
-    .select()
-    .from(schema.messages)
-    .where(eq(schema.messages.threadId, id))
-    .all();
-
-  const toolCalls = db.select().from(schema.toolCalls).all();
-
-  // Attach tool calls to messages and parse images
-  const messagesWithTools = messages.map((msg) => ({
-    ...msg,
-    images: msg.images ? JSON.parse(msg.images) : undefined,
-    toolCalls: toolCalls.filter((tc) => tc.messageId === msg.id),
-  }));
-
-  return c.json({ ...thread, messages: messagesWithTools });
+  return c.json(result);
 });
 
 // POST /api/threads
 threadRoutes.post('/', async (c) => {
-  console.log('[threads:POST] ====== NEW THREAD REQUEST ======');
-  const body = await c.req.json<CreateThreadRequest & { projectId: string; images?: any[] }>();
-  const { projectId, title, mode, model, permissionMode, branch, prompt, images } = body;
-  console.log(`[threads:POST] projectId=${projectId}, mode=${mode}, model=${model}, permissionMode=${permissionMode}, prompt="${prompt.substring(0, 80)}", images=${images?.length ?? 0}`);
+  const raw = await c.req.json();
+  const parsed = validate(createThreadSchema, raw);
+  if (!parsed.success) return c.json({ error: parsed.error }, 400);
+  const { projectId, title, mode, model, permissionMode, branch, prompt, images } = parsed.data;
 
   const project = pm.getProject(projectId);
   if (!project) {
@@ -83,7 +58,7 @@ threadRoutes.post('/', async (c) => {
   if (mode === 'worktree') {
     const branchName = branch ?? `a-parallel/${threadId}`;
     try {
-      worktreePath = wm.createWorktree(project.path, branchName);
+      worktreePath = await wm.createWorktree(project.path, branchName);
       threadBranch = branchName;
     } catch (e: any) {
       return c.json({ error: `Failed to create worktree: ${e.message}` }, 500);
@@ -103,20 +78,16 @@ threadRoutes.post('/', async (c) => {
     createdAt: new Date().toISOString(),
   };
 
-  db.insert(schema.threads).values(thread).run();
+  tm.createThread(thread);
 
   // Determine working directory for agent
   const cwd = worktreePath ?? project.path;
 
   // Start agent asynchronously
   const pMode = permissionMode || 'autoEdit';
-  console.log(`[threads:POST] Calling startAgent(${threadId}, cwd=${cwd}, model=${model || 'sonnet'}, permissionMode=${pMode})`);
   startAgent(threadId, prompt, cwd, model || 'sonnet', pMode, images).catch((err) => {
     console.error(`[agent] Error in thread ${threadId}:`, err);
-    db.update(schema.threads)
-      .set({ status: 'failed', completedAt: new Date().toISOString() })
-      .where(eq(schema.threads.id, threadId))
-      .run();
+    tm.updateThread(threadId, { status: 'failed', completedAt: new Date().toISOString() });
   });
 
   return c.json(thread, 201);
@@ -125,8 +96,11 @@ threadRoutes.post('/', async (c) => {
 // POST /api/threads/:id/message
 threadRoutes.post('/:id/message', async (c) => {
   const id = c.req.param('id');
-  const { content, model, permissionMode, images } = await c.req.json<{ content: string; model?: string; permissionMode?: string; images?: any[] }>();
-  const thread = db.select().from(schema.threads).where(eq(schema.threads.id, id)).get();
+  const raw = await c.req.json();
+  const parsed = validate(sendMessageSchema, raw);
+  if (!parsed.success) return c.json({ error: parsed.error }, 400);
+  const { content, model, permissionMode, images } = parsed.data;
+  const thread = tm.getThread(id);
 
   if (!thread) {
     return c.json({ error: 'Thread not found' }, 404);
@@ -159,30 +133,32 @@ threadRoutes.post('/:id/stop', async (c) => {
 // PATCH /api/threads/:id — update thread fields (e.g. archived)
 threadRoutes.patch('/:id', async (c) => {
   const id = c.req.param('id');
-  const body = await c.req.json<{ archived?: boolean }>();
+  const raw = await c.req.json();
+  const parsed = validate(updateThreadSchema, raw);
+  if (!parsed.success) return c.json({ error: parsed.error }, 400);
 
-  const thread = db.select().from(schema.threads).where(eq(schema.threads.id, id)).get();
+  const thread = tm.getThread(id);
   if (!thread) {
     return c.json({ error: 'Thread not found' }, 404);
   }
 
   const updates: Record<string, any> = {};
-  if (body.archived !== undefined) {
-    updates.archived = body.archived ? 1 : 0;
+  if (parsed.data.archived !== undefined) {
+    updates.archived = parsed.data.archived ? 1 : 0;
   }
 
   if (Object.keys(updates).length > 0) {
-    db.update(schema.threads).set(updates).where(eq(schema.threads.id, id)).run();
+    tm.updateThread(id, updates);
   }
 
-  const updated = db.select().from(schema.threads).where(eq(schema.threads.id, id)).get();
+  const updated = tm.getThread(id);
   return c.json(updated);
 });
 
 // DELETE /api/threads/:id
-threadRoutes.delete('/:id', (c) => {
+threadRoutes.delete('/:id', async (c) => {
   const id = c.req.param('id');
-  const thread = db.select().from(schema.threads).where(eq(schema.threads.id, id)).get();
+  const thread = tm.getThread(id);
 
   if (thread) {
     // Stop agent if running
@@ -194,16 +170,14 @@ threadRoutes.delete('/:id', (c) => {
     if (thread.worktreePath) {
       const project = pm.getProject(thread.projectId);
       if (project) {
-        try {
-          wm.removeWorktree(project.path, thread.worktreePath);
-        } catch (e) {
+        await wm.removeWorktree(project.path, thread.worktreePath).catch((e) => {
           console.warn(`[cleanup] Failed to remove worktree: ${e}`);
-        }
+        });
       }
     }
 
     // Cascade delete handles messages + tool_calls
-    db.delete(schema.threads).where(eq(schema.threads.id, id)).run();
+    tm.deleteThread(id);
   }
 
   return c.json({ ok: true });

@@ -4,7 +4,7 @@
  * and SKILL.md frontmatter. Installs via `npx skills add`.
  */
 
-import { readFileSync, existsSync, rmSync, unlinkSync } from 'fs';
+import { readFileSync, readdirSync, existsSync, rmSync, unlinkSync } from 'fs';
 import { join } from 'path';
 import { homedir } from 'os';
 import { execute } from '../utils/process.js';
@@ -31,22 +31,25 @@ interface LockFile {
 }
 
 /**
- * Parse YAML frontmatter from SKILL.md to extract description.
+ * Parse YAML frontmatter from a SKILL.md file to extract name and description.
  */
-function parseSkillDescription(skillName: string): string {
-  const skillMdPath = join(SKILLS_DIR, skillName, 'SKILL.md');
-  if (!existsSync(skillMdPath)) return '';
+function parseSkillFrontmatter(skillMdPath: string): { name?: string; description?: string } {
+  if (!existsSync(skillMdPath)) return {};
 
   try {
     const content = readFileSync(skillMdPath, 'utf-8');
     const fmMatch = content.match(/^---\n([\s\S]*?)\n---/);
-    if (!fmMatch) return '';
+    if (!fmMatch) return {};
 
     const fm = fmMatch[1];
+    const nameMatch = fm.match(/^name:\s*(.+)$/m);
     const descMatch = fm.match(/^description:\s*(.+)$/m);
-    return descMatch ? descMatch[1].trim() : '';
+    return {
+      name: nameMatch ? nameMatch[1].trim() : undefined,
+      description: descMatch ? descMatch[1].trim() : undefined,
+    };
   } catch {
-    return '';
+    return {};
   }
 }
 
@@ -62,19 +65,54 @@ export function listSkills(): Skill[] {
     const skills: Skill[] = [];
 
     for (const [name, entry] of Object.entries(lockFile.skills)) {
+      const fm = parseSkillFrontmatter(join(SKILLS_DIR, name, 'SKILL.md'));
       skills.push({
         name,
-        description: parseSkillDescription(name),
+        description: fm.description || '',
         source: entry.source,
         sourceUrl: entry.sourceUrl,
         installedAt: entry.installedAt,
         updatedAt: entry.updatedAt,
+        scope: 'global',
       });
     }
 
     return skills;
   } catch (err) {
     console.error('[skills-service] Failed to read lock file:', err);
+    return [];
+  }
+}
+
+/**
+ * List project-level skills by scanning {projectPath}/.agents/skills/
+ */
+export function listProjectSkills(projectPath: string): Skill[] {
+  const projectSkillsDir = join(projectPath, '.claude', 'skills');
+  if (!existsSync(projectSkillsDir)) return [];
+
+  try {
+    const entries = readdirSync(projectSkillsDir, { withFileTypes: true });
+    const skills: Skill[] = [];
+
+    for (const entry of entries) {
+      if (!entry.isDirectory()) continue;
+
+      const skillMdPath = join(projectSkillsDir, entry.name, 'SKILL.md');
+      if (!existsSync(skillMdPath)) continue;
+
+      const fm = parseSkillFrontmatter(skillMdPath);
+      skills.push({
+        name: fm.name || entry.name,
+        description: fm.description || '',
+        source: 'project',
+        scope: 'project',
+      });
+    }
+
+    return skills;
+  } catch (err) {
+    console.error('[skills-service] Failed to read project skills:', err);
     return [];
   }
 }

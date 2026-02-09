@@ -1,4 +1,6 @@
 import { useEffect, useState, useCallback } from 'react';
+import { useTranslation } from 'react-i18next';
+import { useAppStore } from '@/stores/app-store';
 import { api } from '@/lib/api';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
@@ -12,6 +14,7 @@ import {
   ExternalLink,
   ChevronDown,
   ChevronUp,
+  FolderOpen,
 } from 'lucide-react';
 import type { Skill } from '@a-parallel/shared';
 
@@ -65,19 +68,21 @@ function InstalledSkillCard({
           </div>
         </div>
       </div>
-      <Button
-        variant="ghost"
-        size="icon-xs"
-        onClick={onRemove}
-        disabled={removing}
-        className="text-muted-foreground hover:text-destructive flex-shrink-0"
-      >
-        {removing ? (
-          <Loader2 className="h-3.5 w-3.5 animate-spin" />
-        ) : (
-          <Trash2 className="h-3.5 w-3.5" />
-        )}
-      </Button>
+      {skill.scope !== 'project' && (
+        <Button
+          variant="ghost"
+          size="icon-xs"
+          onClick={onRemove}
+          disabled={removing}
+          className="text-muted-foreground hover:text-destructive flex-shrink-0"
+        >
+          {removing ? (
+            <Loader2 className="h-3.5 w-3.5 animate-spin" />
+          ) : (
+            <Trash2 className="h-3.5 w-3.5" />
+          )}
+        </Button>
+      )}
     </div>
   );
 }
@@ -93,6 +98,8 @@ function RecommendedSkillCard({
   onInstall: () => void;
   installing: boolean;
 }) {
+  const { t } = useTranslation();
+
   return (
     <div className="flex items-center justify-between gap-3 px-3 py-2.5 rounded-md border border-border/50 bg-card">
       <div className="min-w-0">
@@ -116,13 +123,16 @@ function RecommendedSkillCard({
         ) : installed ? null : (
           <Download className="h-3 w-3 mr-1" />
         )}
-        {installed ? 'Installed' : installing ? 'Installing...' : 'Install'}
+        {installed ? t('skills.installed') : installing ? t('skills.installing') : t('skills.install')}
       </Button>
     </div>
   );
 }
 
 export function SkillsSettings() {
+  const { t } = useTranslation();
+  const projects = useAppStore(s => s.projects);
+  const selectedProjectId = useAppStore(s => s.selectedProjectId);
   const [skills, setSkills] = useState<Skill[]>([]);
   const [recommended, setRecommended] = useState<RecommendedSkill[]>([]);
   const [loading, setLoading] = useState(false);
@@ -133,23 +143,28 @@ export function SkillsSettings() {
   const [customId, setCustomId] = useState('');
   const [addingCustom, setAddingCustom] = useState(false);
 
+  // Derive project path synchronously to avoid race conditions
+  const projectPath = selectedProjectId
+    ? projects.find((p) => p.id === selectedProjectId)?.path ?? null
+    : projects[0]?.path ?? null;
+
   const loadSkills = useCallback(async () => {
     setLoading(true);
     setError(null);
     try {
-      const res = await api.listSkills();
+      const res = await api.listSkills(projectPath || undefined);
       setSkills(res.skills);
     } catch (err: any) {
       setError(err.message);
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [projectPath]);
 
   const loadRecommended = useCallback(async () => {
     try {
       const res = await api.getRecommendedSkills();
-      setRecommended(res.skills);
+      setRecommended(res.skills as unknown as RecommendedSkill[]);
     } catch {
       // Silently fail
     }
@@ -203,26 +218,60 @@ export function SkillsSettings() {
     }
   };
 
+  const projectSkills = skills.filter((s) => s.scope === 'project');
+  const globalSkills = skills.filter((s) => s.scope !== 'project');
   const installedNames = new Set(skills.map((s) => s.name));
 
   return (
     <div className="space-y-6">
+      {/* Project indicator */}
+      {projectPath && (
+        <div className="flex items-center gap-2 text-xs text-muted-foreground">
+          <Sparkles className="h-3.5 w-3.5" />
+          <span>
+            {t('skills.showingFor')}{' '}
+            <span className="font-medium text-foreground">
+              {projects.find((p) => p.path === projectPath)?.name || projectPath}
+            </span>
+          </span>
+        </div>
+      )}
+
       {/* Error banner */}
       {error && (
         <div className="flex items-center gap-2 px-3 py-2 rounded-md bg-destructive/10 text-destructive text-xs">
           <AlertCircle className="h-3.5 w-3.5 flex-shrink-0" />
           <span>{error}</span>
           <button onClick={() => setError(null)} className="ml-auto text-xs underline">
-            Dismiss
+            {t('skills.dismiss')}
           </button>
         </div>
       )}
 
-      {/* Installed skills */}
+      {/* Project skills */}
+      {projectSkills.length > 0 && (
+        <div>
+          <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2">
+            {t('skills.projectSkills')}
+          </h3>
+          <div className="space-y-1.5">
+            {projectSkills.map((skill) => (
+              <InstalledSkillCard
+                key={`project-${skill.name}`}
+                skill={skill}
+                onRemove={() => {}}
+                removing={false}
+              />
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Global skills */}
       <div>
         <div className="flex items-center justify-between mb-2">
           <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">
-            Installed Skills
+            {t('skills.globalSkills')}
           </h3>
           <Button
             variant="ghost"
@@ -235,7 +284,7 @@ export function SkillsSettings() {
             ) : (
               <Plus className="h-3 w-3 mr-1" />
             )}
-            {showCustom ? 'Cancel' : 'Add Custom'}
+            {showCustom ? t('skills.cancel') : t('skills.addCustom')}
           </Button>
         </div>
 
@@ -243,7 +292,7 @@ export function SkillsSettings() {
         {showCustom && (
           <div className="rounded-lg border border-border/50 p-3 mb-3 space-y-2 bg-muted/30">
             <label className="text-xs text-muted-foreground block">
-              Skill identifier (e.g. <code className="text-[10px] bg-muted px-1 py-0.5 rounded">owner/repo@skill-name</code>)
+              {t('skills.skillIdentifier')} (e.g. <code className="text-[10px] bg-muted px-1 py-0.5 rounded">owner/repo@skill-name</code>)
             </label>
             <div className="flex gap-2">
               <input
@@ -265,7 +314,7 @@ export function SkillsSettings() {
                 ) : (
                   <Plus className="h-3 w-3 mr-1" />
                 )}
-                Install
+                {t('skills.install')}
               </Button>
             </div>
           </div>
@@ -274,15 +323,15 @@ export function SkillsSettings() {
         {loading ? (
           <div className="flex items-center gap-2 py-6 justify-center text-sm text-muted-foreground">
             <Loader2 className="h-4 w-4 animate-spin" />
-            Loading skills...
+            {t('skills.loadingSkills')}
           </div>
-        ) : skills.length === 0 ? (
+        ) : globalSkills.length === 0 ? (
           <div className="py-6 text-center text-sm text-muted-foreground">
-            No skills installed. Install one from the recommended list below.
+            {t('skills.noGlobalSkills')}
           </div>
         ) : (
           <div className="space-y-1.5">
-            {skills.map((skill) => (
+            {globalSkills.map((skill) => (
               <InstalledSkillCard
                 key={skill.name}
                 skill={skill}
@@ -298,7 +347,7 @@ export function SkillsSettings() {
       {recommended.length > 0 && (
         <div>
           <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2">
-            Recommended Skills
+            {t('skills.recommendedSkills')}
           </h3>
           <div className="space-y-1.5">
             {recommended.map((skill) => (

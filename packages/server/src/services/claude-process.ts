@@ -22,6 +22,7 @@ export interface CLISystemMessage {
 export interface CLIAssistantMessage {
   type: 'assistant';
   message: {
+    id: string;
     content: Array<
       | { type: 'text'; text: string }
       | { type: 'tool_use'; id: string; name: string; input: unknown }
@@ -88,6 +89,7 @@ export class ClaudeProcess extends EventEmitter {
   private watchdogTimer: ReturnType<typeof setTimeout> | null = null;
   private stderrBuf = '';
   private _exited = false;
+  private _killed = false;
 
   constructor(private options: ClaudeProcessOptions) {
     super();
@@ -97,10 +99,6 @@ export class ClaudeProcess extends EventEmitter {
     const binaryPath = getClaudeBinaryPath();
     const args = this.buildArgs();
 
-    console.log(`[claude-process] Binary: ${binaryPath}`);
-    console.log(`[claude-process] Args: ${JSON.stringify(args)}`);
-    console.log(`[claude-process] CWD: ${this.options.cwd}`);
-
     this.proc = Bun.spawn([binaryPath, ...args], {
       cwd: this.options.cwd,
       stdout: 'pipe',
@@ -108,7 +106,7 @@ export class ClaudeProcess extends EventEmitter {
       stdin: this.options.images && this.options.images.length > 0 ? 'pipe' : null,
     });
 
-    console.log(`[claude-process] Spawned PID: ${this.proc.pid}`);
+    console.log(`[claude-process] pid=${this.proc.pid} cwd=${this.options.cwd}`);
 
     // If we have images, send the structured message via stdin
     if (this.options.images && this.options.images.length > 0 && this.proc.stdin) {
@@ -137,7 +135,7 @@ export class ClaudeProcess extends EventEmitter {
           }
         }
 
-        if (exitCode !== 0 && exitCode !== null) {
+        if (exitCode !== 0 && exitCode !== null && !this._killed) {
           this.emit(
             'error',
             new Error(
@@ -169,17 +167,19 @@ export class ClaudeProcess extends EventEmitter {
 
         this.resetWatchdog();
         const chunk = decoder.decode(value, { stream: true });
-        console.log(`[claude-process:stdout] Raw chunk (${chunk.length} chars): ${chunk}`);
         const lines = this.lineBuffer.push(chunk);
-        console.log(`[claude-process:stdout] Parsed ${lines.length} complete line(s)`);
         for (const line of lines) {
           try {
             const msg = decodeNDJSON(line) as CLIMessage;
-            console.log(`[claude-process:msg] type=${msg.type}${('subtype' in msg && msg.subtype) ? ` subtype=${msg.subtype}` : ''}`);
             this.emit('message', msg);
           } catch {
-            console.warn('[claude-process] Failed to parse NDJSON line:', line);
+            console.warn('[claude-process] Failed to parse NDJSON line');
           }
+        }
+
+        // Yield the event loop periodically so HTTP handlers can run
+        if (lines.length > 0) {
+          await new Promise<void>((r) => setTimeout(r, 0));
         }
       }
     } catch (err) {
@@ -255,12 +255,11 @@ export class ClaudeProcess extends EventEmitter {
   /**
    * Send the initial message with images via stdin using stream-json format
    */
-  private async sendInitialMessage(): Promise<void> {
+  private sendInitialMessage(): void {
     if (!this.proc?.stdin || !this.options.images) return;
 
     try {
-      const writer = (this.proc.stdin as unknown as WritableStream<Uint8Array>).getWriter();
-      const encoder = new TextEncoder();
+      const stdin = this.proc.stdin as import('bun').FileSink;
 
       // Build message content with text and images
       const content: any[] = [];
@@ -272,21 +271,19 @@ export class ClaudeProcess extends EventEmitter {
       // Add images
       content.push(...this.options.images);
 
-      // Send as NDJSON message
+      // Send as NDJSON message (stream-json expects type + message with role)
       const message = {
         type: 'user',
         message: {
+          role: 'user',
           content,
         },
       };
 
       const line = JSON.stringify(message) + '\n';
-      console.log(`[claude-process] Sending initial message with ${this.options.images.length} images`);
-      console.log(`[claude-process] Prompt text: "${promptText}"`);
-      console.log(`[claude-process] First image preview:`, this.options.images[0]?.source?.media_type, `(${this.options.images[0]?.source?.data?.length || 0} chars)`);
-      await writer.write(encoder.encode(line));
-      await writer.close();
-      console.log(`[claude-process] Message sent and stdin closed`);
+      // Bun.spawn stdin is a FileSink — use .write() and .end() directly
+      stdin.write(line);
+      stdin.end();
     } catch (err) {
       console.error('[claude-process] Failed to send initial message:', err);
       this.emit('error', err);
@@ -299,6 +296,7 @@ export class ClaudeProcess extends EventEmitter {
   async kill(): Promise<void> {
     if (!this.proc || this._exited) return;
 
+    this._killed = true;
     this.proc.kill(); // SIGTERM by default
 
     await Promise.race([

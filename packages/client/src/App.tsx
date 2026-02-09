@@ -1,18 +1,31 @@
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { useWS } from '@/hooks/use-ws';
 import { useRouteSync } from '@/hooks/use-route-sync';
-import { useAppStore } from '@/stores/app-store';
+import { useAppStore, setAppNavigate } from '@/stores/app-store';
 import { useTerminalStore } from '@/stores/terminal-store';
 import { Sidebar } from '@/components/Sidebar';
 import { ThreadView } from '@/components/ThreadView';
+import { AllThreadsView } from '@/components/AllThreadsView';
 import { ReviewPane } from '@/components/ReviewPane';
 import { TerminalPanel } from '@/components/TerminalPanel';
 import { SettingsDetailView } from '@/components/SettingsDetailView';
+import { StartupCommandsView } from '@/components/StartupCommandsView';
 import { TooltipProvider } from '@/components/ui/tooltip';
 import { Toaster } from 'sonner';
+import { CommandPalette } from '@/components/CommandPalette';
 
 export function App() {
-  const { loadProjects, reviewPaneOpen, settingsOpen } = useAppStore();
+  const loadProjects = useAppStore(s => s.loadProjects);
+  const reviewPaneOpen = useAppStore(s => s.reviewPaneOpen);
+  const settingsOpen = useAppStore(s => s.settingsOpen);
+  const allThreadsProjectId = useAppStore(s => s.allThreadsProjectId);
+  const startupCommandsProjectId = useAppStore(s => s.startupCommandsProjectId);
+  const navigate = useNavigate();
+  const [commandPaletteOpen, setCommandPaletteOpen] = useState(false);
+
+  // Register navigate so the store can trigger navigation (e.g. from toasts)
+  useEffect(() => { setAppNavigate(navigate); }, [navigate]);
 
   // Connect WebSocket on mount
   useWS();
@@ -25,9 +38,17 @@ export function App() {
     loadProjects();
   }, [loadProjects]);
 
-  // Ctrl+` to toggle terminal
+  // Global keyboard shortcuts
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
+      // Ctrl+K for command palette
+      if (e.ctrlKey && e.key === 'k') {
+        e.preventDefault();
+        setCommandPaletteOpen((prev) => !prev);
+        return;
+      }
+
+      // Ctrl+` to toggle terminal
       if (e.ctrlKey && e.key === '`') {
         e.preventDefault();
         const store = useTerminalStore.getState();
@@ -58,7 +79,7 @@ export function App() {
   }, []);
 
   return (
-    <TooltipProvider delayDuration={300}>
+    <TooltipProvider delayDuration={300} disableHoverableContent>
       <div className="flex h-screen overflow-hidden">
         {/* Sidebar */}
         <aside className="w-80 flex-shrink-0 border-r border-border flex flex-col">
@@ -68,7 +89,7 @@ export function App() {
         {/* Main content + terminal */}
         <main className="flex-1 flex flex-col overflow-hidden">
           <div className="flex-1 flex overflow-hidden min-h-0">
-            {settingsOpen ? <SettingsDetailView /> : <ThreadView />}
+            {settingsOpen ? <SettingsDetailView /> : startupCommandsProjectId ? <StartupCommandsView /> : allThreadsProjectId ? <AllThreadsView /> : <ThreadView />}
           </div>
           <TerminalPanel />
         </main>
@@ -81,7 +102,8 @@ export function App() {
         )}
       </div>
 
-      <Toaster position="bottom-right" theme="dark" richColors />
+      <Toaster position="bottom-right" theme="dark" />
+      <CommandPalette open={commandPaletteOpen} onOpenChange={setCommandPaletteOpen} />
     </TooltipProvider>
   );
 }

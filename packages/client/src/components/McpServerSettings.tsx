@@ -1,4 +1,5 @@
 import { useEffect, useState, useCallback } from 'react';
+import { useTranslation } from 'react-i18next';
 import { useAppStore } from '@/stores/app-store';
 import { api } from '@/lib/api';
 import { Button } from '@/components/ui/button';
@@ -106,6 +107,8 @@ function RecommendedServerCard({
   onInstall: () => void;
   installing: boolean;
 }) {
+  const { t } = useTranslation();
+
   return (
     <div className="flex items-center justify-between gap-3 px-3 py-2.5 rounded-md border border-border/50 bg-card">
       <div className="min-w-0">
@@ -127,14 +130,16 @@ function RecommendedServerCard({
         ) : installed ? null : (
           <Download className="h-3 w-3 mr-1" />
         )}
-        {installed ? 'Installed' : installing ? 'Installing...' : 'Install'}
+        {installed ? t('mcp.installed') : installing ? t('mcp.installing') : t('mcp.install')}
       </Button>
     </div>
   );
 }
 
 export function McpServerSettings() {
-  const { projects, selectedProjectId } = useAppStore();
+  const { t } = useTranslation();
+  const projects = useAppStore(s => s.projects);
+  const selectedProjectId = useAppStore(s => s.selectedProjectId);
   const [projectPath, setProjectPath] = useState<string | null>(null);
   const [servers, setServers] = useState<McpServer[]>([]);
   const [recommended, setRecommended] = useState<RecommendedServer[]>([]);
@@ -181,7 +186,7 @@ export function McpServerSettings() {
   const loadRecommended = useCallback(async () => {
     try {
       const res = await api.getRecommendedMcpServers();
-      setRecommended(res.servers);
+      setRecommended(res.servers as unknown as RecommendedServer[]);
     } catch {
       // Silently fail for recommended
     }
@@ -265,7 +270,7 @@ export function McpServerSettings() {
     return (
       <div className="flex items-center gap-2 text-sm text-muted-foreground">
         <AlertCircle className="h-4 w-4" />
-        Select a project to manage MCP servers.
+        {t('mcp.selectProject')}
       </div>
     );
   }
@@ -276,7 +281,7 @@ export function McpServerSettings() {
       <div className="flex items-center gap-2 text-xs text-muted-foreground">
         <Server className="h-3.5 w-3.5" />
         <span>
-          Showing servers for:{' '}
+          {t('mcp.showingFor')}{' '}
           <span className="font-medium text-foreground">
             {projects.find((p) => p.path === projectPath)?.name || projectPath}
           </span>
@@ -289,7 +294,7 @@ export function McpServerSettings() {
           <AlertCircle className="h-3.5 w-3.5 flex-shrink-0" />
           <span>{error}</span>
           <button onClick={() => setError(null)} className="ml-auto text-xs underline">
-            Dismiss
+            {t('mcp.dismiss')}
           </button>
         </div>
       )}
@@ -298,7 +303,7 @@ export function McpServerSettings() {
       <div>
         <div className="flex items-center justify-between mb-2">
           <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">
-            Installed Servers
+            {t('mcp.installedServers')}
           </h3>
           <Button
             variant="ghost"
@@ -311,7 +316,7 @@ export function McpServerSettings() {
             ) : (
               <Plus className="h-3 w-3 mr-1" />
             )}
-            {showAddForm ? 'Cancel' : 'Add Custom'}
+            {showAddForm ? t('mcp.cancel') : t('mcp.addCustom')}
           </Button>
         </div>
 
@@ -320,7 +325,7 @@ export function McpServerSettings() {
           <div className="rounded-lg border border-border/50 p-3 mb-3 space-y-3 bg-muted/30">
             <div className="grid grid-cols-2 gap-3">
               <div>
-                <label className="text-xs text-muted-foreground mb-1 block">Name</label>
+                <label className="text-xs text-muted-foreground mb-1 block">{t('mcp.name')}</label>
                 <input
                   type="text"
                   value={addName}
@@ -330,7 +335,7 @@ export function McpServerSettings() {
                 />
               </div>
               <div>
-                <label className="text-xs text-muted-foreground mb-1 block">Type</label>
+                <label className="text-xs text-muted-foreground mb-1 block">{t('mcp.type')}</label>
                 <Select value={addType} onValueChange={(v) => setAddType(v as McpServerType)}>
                   <SelectTrigger className="h-8">
                     <SelectValue />
@@ -346,7 +351,7 @@ export function McpServerSettings() {
 
             {addType === 'http' || addType === 'sse' ? (
               <div>
-                <label className="text-xs text-muted-foreground mb-1 block">URL</label>
+                <label className="text-xs text-muted-foreground mb-1 block">{t('mcp.url')}</label>
                 <input
                   type="text"
                   value={addUrl}
@@ -358,7 +363,7 @@ export function McpServerSettings() {
             ) : (
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="text-xs text-muted-foreground mb-1 block">Command</label>
+                  <label className="text-xs text-muted-foreground mb-1 block">{t('mcp.command')}</label>
                   <input
                     type="text"
                     value={addCommand}
@@ -368,7 +373,7 @@ export function McpServerSettings() {
                   />
                 </div>
                 <div>
-                  <label className="text-xs text-muted-foreground mb-1 block">Arguments</label>
+                  <label className="text-xs text-muted-foreground mb-1 block">{t('mcp.arguments')}</label>
                   <input
                     type="text"
                     value={addArgs}
@@ -392,7 +397,7 @@ export function McpServerSettings() {
                 ) : (
                   <Plus className="h-3 w-3 mr-1" />
                 )}
-                Add Server
+                {t('mcp.addServer')}
               </Button>
             </div>
           </div>
@@ -401,11 +406,11 @@ export function McpServerSettings() {
         {loading ? (
           <div className="flex items-center gap-2 py-6 justify-center text-sm text-muted-foreground">
             <Loader2 className="h-4 w-4 animate-spin" />
-            Loading servers...
+            {t('mcp.loadingServers')}
           </div>
         ) : servers.length === 0 ? (
           <div className="py-6 text-center text-sm text-muted-foreground">
-            No MCP servers configured for this project.
+            {t('mcp.noServers')}
           </div>
         ) : (
           <div className="space-y-1.5">
@@ -425,7 +430,7 @@ export function McpServerSettings() {
       {recommended.length > 0 && (
         <div>
           <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2">
-            Recommended Servers
+            {t('mcp.recommendedServers')}
           </h3>
           <div className="space-y-1.5">
             {recommended.map((server) => (

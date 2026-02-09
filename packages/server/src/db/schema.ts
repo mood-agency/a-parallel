@@ -15,7 +15,7 @@ export const threads = sqliteTable('threads', {
   title: text('title').notNull(),
   mode: text('mode').notNull(), // 'local' | 'worktree'
   permissionMode: text('permission_mode').notNull().default('autoEdit'), // 'plan' | 'autoEdit' | 'confirmEdit'
-  status: text('status').notNull().default('pending'), // 'pending' | 'running' | 'completed' | 'failed' | 'stopped'
+  status: text('status').notNull().default('pending'), // 'pending' | 'running' | 'waiting' | 'completed' | 'failed' | 'stopped' | 'interrupted'
   branch: text('branch'),
   worktreePath: text('worktree_path'),
   sessionId: text('session_id'),
@@ -43,6 +43,8 @@ export const startupCommands = sqliteTable('startup_commands', {
     .references(() => projects.id, { onDelete: 'cascade' }),
   label: text('label').notNull(),
   command: text('command').notNull(),
+  port: integer('port'),
+  portEnvVar: text('port_env_var'),
   sortOrder: integer('sort_order').notNull().default(0),
   createdAt: text('created_at').notNull(),
 });

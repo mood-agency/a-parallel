@@ -1,3 +1,5 @@
+import { useNavigate } from 'react-router-dom';
+import { useTranslation } from 'react-i18next';
 import { useAppStore } from '@/stores/app-store';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
@@ -29,8 +31,23 @@ export const settingsItems = [
 
 export type SettingsItemId = (typeof settingsItems)[number]['id'];
 
+export const settingsLabelKeys: Record<string, string> = {
+  general: 'settings.general',
+  configuration: 'settings.configuration',
+  personalization: 'settings.personalization',
+  'mcp-server': 'settings.mcpServer',
+  skills: 'settings.skills',
+  git: 'settings.gitSettings',
+  environments: 'settings.environments',
+  worktrees: 'settings.worktrees',
+  'archived-threads': 'settings.archivedThreads',
+};
+
 export function SettingsPanel() {
-  const { setSettingsOpen, activeSettingsPage, setActiveSettingsPage } = useAppStore();
+  const navigate = useNavigate();
+  const { t } = useTranslation();
+  const setSettingsOpen = useAppStore(s => s.setSettingsOpen);
+  const activeSettingsPage = useAppStore(s => s.activeSettingsPage);
 
   return (
     <div className="flex flex-col h-full">
@@ -39,12 +56,12 @@ export function SettingsPanel() {
         <Button
           variant="ghost"
           size="icon-xs"
-          onClick={() => setSettingsOpen(false)}
+          onClick={() => { setSettingsOpen(false); navigate('/'); }}
           className="text-muted-foreground hover:text-foreground"
         >
           <ArrowLeft className="h-3.5 w-3.5" />
         </Button>
-        <h1 className="text-sm font-semibold tracking-tight">Settings</h1>
+        <h1 className="text-sm font-semibold tracking-tight">{t('settings.title')}</h1>
       </div>
 
       {/* Menu list */}
@@ -55,7 +72,7 @@ export function SettingsPanel() {
             return (
               <button
                 key={item.id}
-                onClick={() => setActiveSettingsPage(item.id)}
+                onClick={() => navigate(`/settings/${item.id}`)}
                 className={cn(
                   'w-full flex items-center gap-3 px-4 py-2.5 text-sm text-left transition-colors',
                   activeSettingsPage === item.id
@@ -64,7 +81,7 @@ export function SettingsPanel() {
                 )}
               >
                 <Icon className="h-4 w-4 flex-shrink-0" />
-                <span>{item.label}</span>
+                <span>{t(settingsLabelKeys[item.id] ?? item.label)}</span>
               </button>
             );
           })}

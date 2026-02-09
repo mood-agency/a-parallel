@@ -17,6 +17,11 @@ export function createProject(name: string, path: string): Project {
     throw new Error(`Not a git repository: ${path}`);
   }
 
+  const existing = db.select().from(schema.projects).where(eq(schema.projects.path, path)).get();
+  if (existing) {
+    throw new Error(`A project with this path already exists: ${path}`);
+  }
+
   const project: Project = {
     id: nanoid(),
     name,

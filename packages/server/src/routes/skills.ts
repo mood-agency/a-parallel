@@ -1,49 +1,38 @@
 import { Hono } from 'hono';
 import {
   listSkills,
+  listProjectSkills,
   addSkill,
   removeSkill,
   RECOMMENDED_SKILLS,
 } from '../services/skills-service.js';
+import { addSkillSchema, validate } from '../validation/schemas.js';
 
 const app = new Hono();
 
-// List installed skills
+// List installed skills (optionally include project-level skills)
 app.get('/', (c) => {
-  try {
-    const skills = listSkills();
-    return c.json({ skills });
-  } catch (error: any) {
-    return c.json({ error: error.message }, 500);
-  }
+  const globalSkills = listSkills();
+  const projectPath = c.req.query('projectPath');
+  const projectSkills = projectPath ? listProjectSkills(projectPath) : [];
+  return c.json({ skills: [...projectSkills, ...globalSkills] });
 });
 
 // Install a skill
 app.post('/', async (c) => {
-  const { identifier } = await c.req.json<{ identifier: string }>();
+  const raw = await c.req.json();
+  const parsed = validate(addSkillSchema, raw);
+  if (!parsed.success) return c.json({ error: parsed.error }, 400);
 
-  if (!identifier) {
-    return c.json({ error: 'identifier is required (e.g. owner/repo@skill-name)' }, 400);
-  }
-
-  try {
-    await addSkill(identifier);
-    return c.json({ ok: true });
-  } catch (error: any) {
-    return c.json({ error: error.message }, 500);
-  }
+  await addSkill(parsed.data.identifier);
+  return c.json({ ok: true });
 });
 
 // Remove a skill
 app.delete('/:name', (c) => {
   const name = c.req.param('name');
-
-  try {
-    removeSkill(name);
-    return c.json({ ok: true });
-  } catch (error: any) {
-    return c.json({ error: error.message }, 500);
-  }
+  removeSkill(name);
+  return c.json({ ok: true });
 });
 
 // Get recommended skills

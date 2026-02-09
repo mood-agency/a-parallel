@@ -9,6 +9,8 @@ export interface TerminalTab {
   projectId: string;
   /** If set, this tab is a server-managed command (not a Tauri PTY) */
   commandId?: string;
+  /** Port number for preview window feature */
+  port?: number;
 }
 
 interface TerminalState {

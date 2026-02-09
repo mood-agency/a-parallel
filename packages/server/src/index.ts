@@ -1,25 +1,32 @@
 import { Hono } from 'hono';
 import { cors } from 'hono/cors';
 import { logger } from 'hono/logger';
+import { errorHandler } from './middleware/error-handler.js';
 import { autoMigrate } from './db/migrate.js';
+import { markStaleThreadsInterrupted } from './services/thread-manager.js';
 import { projectRoutes } from './routes/projects.js';
 import { threadRoutes } from './routes/threads.js';
 import { gitRoutes } from './routes/git.js';
 import browseRoutes from './routes/browse.js';
 import mcpRoutes from './routes/mcp.js';
 import skillsRoutes from './routes/skills.js';
+import { worktreeRoutes } from './routes/worktrees.js';
 import { wsBroker } from './services/ws-broker.js';
+
+const port = Number(process.env.PORT) || 3001;
+const clientPort = Number(process.env.CLIENT_PORT) || 5173;
 
 const app = new Hono();
 
 // Middleware
+app.use('*', errorHandler);
 app.use('*', logger());
 app.use(
   '*',
   cors({
     origin: [
-      'http://localhost:5173',
-      'http://127.0.0.1:5173',
+      `http://localhost:${clientPort}`,
+      `http://127.0.0.1:${clientPort}`,
       'tauri://localhost',
       'https://tauri.localhost',
     ],
@@ -38,15 +45,16 @@ app.route('/api/git', gitRoutes);
 app.route('/api/browse', browseRoutes);
 app.route('/api/mcp', mcpRoutes);
 app.route('/api/skills', skillsRoutes);
-
-const port = Number(process.env.PORT) || 3001;
+app.route('/api/worktrees', worktreeRoutes);
 
 // Auto-create tables on startup, then start server
 autoMigrate();
-console.log(`[server] Starting on http://localhost:${port}`);
+markStaleThreadsInterrupted();
+// Server started below via Bun.serve()
 
-export default {
+const server = Bun.serve({
   port,
+  reusePort: true,
   fetch(req: Request, server: any) {
     // Handle WebSocket upgrade
     const url = new URL(req.url);
@@ -68,4 +76,15 @@ export default {
       // No client→server messages needed for now
     },
   },
-};
+});
+
+// Graceful shutdown — close the server so the port is released immediately
+function shutdown() {
+  console.log('[server] Shutting down...');
+  server.stop(true);
+  process.exit(0);
+}
+process.on('SIGINT', shutdown);
+process.on('SIGTERM', shutdown);
+
+console.log(`[server] Listening on http://localhost:${server.port}`);

@@ -65,7 +65,7 @@ describe('AppStore', () => {
       const mockThreads = [
         { id: 't1', projectId: 'p1', title: 'Thread 1', status: 'completed' },
       ];
-      mockApi.listThreads.mockResolvedValueOnce(mockThreads);
+      mockApi.listThreads.mockResolvedValueOnce(mockThreads as any);
 
       await useAppStore.getState().loadThreadsForProject('p1');
       expect(useAppStore.getState().threadsByProject['p1']).toEqual(mockThreads);
@@ -120,7 +120,7 @@ describe('AppStore', () => {
         messages: [],
         status: 'completed',
       };
-      mockApi.getThread.mockResolvedValueOnce(mockThread);
+      mockApi.getThread.mockResolvedValueOnce(mockThread as any);
       mockApi.listThreads.mockResolvedValueOnce([]);
 
       await useAppStore.getState().selectThread('t1');
@@ -174,7 +174,7 @@ describe('AppStore', () => {
 
   describe('archiveThread', () => {
     test('removes thread from list and clears selection', async () => {
-      mockApi.archiveThread.mockResolvedValueOnce({});
+      mockApi.archiveThread.mockResolvedValueOnce({} as any);
 
       useAppStore.setState({
         selectedThreadId: 't1',
@@ -490,7 +490,7 @@ describe('AppStore', () => {
     });
 
     test('archiveThread does not clear selection for different thread', async () => {
-      mockApi.archiveThread.mockResolvedValueOnce({});
+      mockApi.archiveThread.mockResolvedValueOnce({} as any);
 
       useAppStore.setState({
         selectedThreadId: 't2',

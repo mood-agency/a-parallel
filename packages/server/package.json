@@ -14,7 +14,8 @@
     "@a-parallel/shared": "*",
     "drizzle-orm": "^0.38.0",
     "hono": "^4.7.0",
-    "nanoid": "^5.0.9"
+    "nanoid": "^5.0.9",
+    "zod": "^4.3.6"
   },
   "devDependencies": {
     "@types/bun": "^1.3.8",

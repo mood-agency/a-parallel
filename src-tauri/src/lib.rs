@@ -1,10 +1,49 @@
 mod pty;
 
 use tauri::Manager;
+use tauri::WebviewUrl;
+use tauri::WebviewWindowBuilder;
 use tauri_plugin_shell::ShellExt;
 use tauri_plugin_shell::process::CommandChild;
 
 struct ServerProcess(std::sync::Mutex<Option<CommandChild>>);
+
+/// Opens the single preview browser window. If it already exists, focuses it.
+/// The window loads index.html with a flag so the frontend renders the preview UI.
+#[tauri::command]
+async fn open_preview(app: tauri::AppHandle) -> Result<(), String> {
+    let label = "preview-browser";
+
+    // If window already exists, focus it
+    if let Some(window) = app.get_webview_window(label) {
+        window.set_focus().map_err(|e| format!("{e}"))?;
+        return Ok(());
+    }
+
+    WebviewWindowBuilder::new(
+        &app,
+        label,
+        WebviewUrl::App(std::path::PathBuf::from("index.html")),
+    )
+    .initialization_script("window.__PREVIEW_MODE__ = true;")
+    .title("Preview Browser")
+    .inner_size(1280.0, 800.0)
+    .min_inner_size(600.0, 400.0)
+    .center()
+    .build()
+    .map_err(|e| format!("{e}"))?;
+
+    Ok(())
+}
+
+/// Closes the preview browser window.
+#[tauri::command]
+async fn close_preview(app: tauri::AppHandle) -> Result<(), String> {
+    if let Some(window) = app.get_webview_window("preview-browser") {
+        window.close().map_err(|e| format!("{e}"))?;
+    }
+    Ok(())
+}
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
@@ -16,6 +55,8 @@ pub fn run() {
             pty::pty_write,
             pty::pty_resize,
             pty::pty_kill,
+            open_preview,
+            close_preview,
         ])
         .setup(|app| {
             // Spawn the server sidecar on startup

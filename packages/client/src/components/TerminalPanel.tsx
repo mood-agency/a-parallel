@@ -1,4 +1,5 @@
 import { useRef, useState, useCallback, useEffect, useMemo } from 'react';
+import { useTranslation } from 'react-i18next';
 import { useTerminalStore } from '@/stores/terminal-store';
 import { useAppStore } from '@/stores/app-store';
 import { api } from '@/lib/api';
@@ -132,6 +133,7 @@ function CommandTabContent({
   active: boolean;
   alive: boolean;
 }) {
+  const { t } = useTranslation();
   const output = useTerminalStore((s) => s.commandOutput[commandId] ?? '');
   const scrollRef = useRef<HTMLDivElement>(null);
 
@@ -170,7 +172,7 @@ function CommandTabContent({
                 <Square className="h-3 w-3" />
               </Button>
             </TooltipTrigger>
-            <TooltipContent>Stop</TooltipContent>
+            <TooltipContent>{t('terminal.stop')}</TooltipContent>
           </Tooltip>
         </div>
       )}
@@ -188,6 +190,7 @@ function CommandTabContent({
 }
 
 export function TerminalPanel() {
+  const { t } = useTranslation();
   const {
     tabs,
     activeTabId,
@@ -199,7 +202,8 @@ export function TerminalPanel() {
     setPanelHeight,
     togglePanel,
   } = useTerminalStore();
-  const { projects, selectedProjectId } = useAppStore();
+  const projects = useAppStore(s => s.projects);
+  const selectedProjectId = useAppStore(s => s.selectedProjectId);
 
   const [dragging, setDragging] = useState(false);
   const panelRef = useRef<HTMLDivElement>(null);
@@ -294,13 +298,13 @@ export function TerminalPanel() {
             </Button>
           </TooltipTrigger>
           <TooltipContent>
-            {panelVisible ? 'Hide terminal' : 'Show terminal'}
+            {panelVisible ? t('terminal.hideTerminal') : t('terminal.showTerminal')}
           </TooltipContent>
         </Tooltip>
 
         <TerminalIcon className="h-3.5 w-3.5 text-muted-foreground ml-1" />
         <span className="text-xs text-muted-foreground font-medium ml-1">
-          Terminal
+          {t('terminal.title')}
         </span>
 
         <div className="flex-1 flex items-center gap-0.5 ml-2 overflow-x-auto">
@@ -320,7 +324,7 @@ export function TerminalPanel() {
             >
               <span>{tab.label}</span>
               {!tab.alive && (
-                <span className="text-[10px] text-yellow-400">(exited)</span>
+                <span className="text-[10px] text-yellow-400">{t('terminal.exited')}</span>
               )}
               <X
                 className="h-3 w-3 ml-1 opacity-60 hover:opacity-100"
@@ -344,7 +348,7 @@ export function TerminalPanel() {
                 <Plus className="h-3.5 w-3.5" />
               </Button>
             </TooltipTrigger>
-            <TooltipContent>New terminal</TooltipContent>
+            <TooltipContent>{t('terminal.newTerminal')}</TooltipContent>
           </Tooltip>
         )}
       </div>
@@ -354,7 +358,7 @@ export function TerminalPanel() {
         <div className="flex-1 bg-[#09090b] overflow-hidden min-h-0">
           {visibleTabs.length === 0 ? (
             <div className="flex items-center justify-center h-full text-muted-foreground text-xs">
-              No processes running
+              {t('terminal.noProcesses')}
             </div>
           ) : (
             /* Render ALL tabs to keep PTY sessions alive across project switches,

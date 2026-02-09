@@ -10,7 +10,8 @@ export interface Project {
 // ─── Threads ─────────────────────────────────────────────
 
 export type ThreadMode = 'local' | 'worktree';
-export type ThreadStatus = 'pending' | 'running' | 'completed' | 'failed' | 'stopped';
+export type ThreadStatus = 'pending' | 'running' | 'waiting' | 'completed' | 'failed' | 'stopped' | 'interrupted';
+export type WaitingReason = 'question' | 'plan';
 
 export type ClaudeModel = 'sonnet' | 'opus' | 'haiku';
 export type PermissionMode = 'plan' | 'autoEdit' | 'confirmEdit';
@@ -53,6 +54,12 @@ export interface Message {
   timestamp: string;
 }
 
+// ─── Thread with Messages ────────────────────────────────
+
+export interface ThreadWithMessages extends Thread {
+  messages: (Message & { toolCalls?: ToolCall[] })[];
+}
+
 // ─── Tool Calls ──────────────────────────────────────────
 
 export interface ToolCall {
@@ -65,22 +72,71 @@ export interface ToolCall {
 
 // ─── WebSocket Events ────────────────────────────────────
 
-export type WSEventType =
-  | 'agent:init'
-  | 'agent:message'
-  | 'agent:tool_call'
-  | 'agent:tool_output'
-  | 'agent:status'
-  | 'agent:result'
-  | 'agent:error'
-  | 'command:output'
-  | 'command:status';
-
-export interface WSEvent {
-  type: WSEventType;
-  threadId: string;
-  data: unknown;
+export interface WSInitData {
+  tools: string[];
+  cwd: string;
+  model: string;
 }
+
+export interface WSMessageData {
+  messageId?: string;
+  role: string;
+  content: string;
+}
+
+export interface WSToolCallData {
+  toolCallId?: string;
+  messageId?: string;
+  name: string;
+  input: unknown;
+}
+
+export interface WSToolOutputData {
+  toolCallId: string;
+  output: string;
+}
+
+export interface WSStatusData {
+  status: ThreadStatus;
+}
+
+export interface WSResultData {
+  status?: ThreadStatus;
+  waitingReason?: WaitingReason;
+  cost?: number;
+  duration?: number;
+  result?: string;
+}
+
+export interface WSErrorData {
+  error: string;
+}
+
+export interface WSCommandOutputData {
+  commandId: string;
+  data: string;
+}
+
+export interface WSCommandStatusData {
+  commandId: string;
+  projectId: string;
+  label: string;
+  status: 'running' | 'exited' | 'stopped';
+  exitCode?: number;
+}
+
+export type WSEvent =
+  | { type: 'agent:init'; threadId: string; data: WSInitData }
+  | { type: 'agent:message'; threadId: string; data: WSMessageData }
+  | { type: 'agent:tool_call'; threadId: string; data: WSToolCallData }
+  | { type: 'agent:tool_output'; threadId: string; data: WSToolOutputData }
+  | { type: 'agent:status'; threadId: string; data: WSStatusData }
+  | { type: 'agent:result'; threadId: string; data: WSResultData }
+  | { type: 'agent:error'; threadId: string; data: WSErrorData }
+  | { type: 'command:output'; threadId: string; data: WSCommandOutputData }
+  | { type: 'command:status'; threadId: string; data: WSCommandStatusData };
+
+export type WSEventType = WSEvent['type'];
 
 // ─── Startup Commands ────────────────────────────────────
 
@@ -89,6 +145,8 @@ export interface StartupCommand {
   projectId: string;
   label: string;
   command: string;
+  port?: number | null;
+  portEnvVar?: string | null;
   sortOrder: number;
   createdAt: string;
 }
@@ -185,6 +243,7 @@ export interface Skill {
   sourceUrl?: string;
   installedAt?: string;
   updatedAt?: string;
+  scope?: 'global' | 'project';
 }
 
 export interface SkillListResponse {

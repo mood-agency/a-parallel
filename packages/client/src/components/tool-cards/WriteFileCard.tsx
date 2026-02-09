@@ -1,0 +1,59 @@
+import { useState } from 'react';
+import { useTranslation } from 'react-i18next';
+import { ChevronRight, FileText } from 'lucide-react';
+import { cn } from '@/lib/utils';
+import { toVscodeUri, getFileExtension, getFileName } from './utils';
+
+export function WriteFileCard({ parsed }: { parsed: Record<string, unknown> }) {
+  const { t } = useTranslation();
+  const [expanded, setExpanded] = useState(false);
+  const filePath = parsed.file_path as string | undefined;
+  const content = parsed.content as string | undefined;
+  const ext = filePath ? getFileExtension(filePath) : '';
+  const fileName = filePath ? getFileName(filePath) : 'unknown';
+
+  return (
+    <div className="rounded-md border border-border/60 bg-muted/30 text-sm max-w-full overflow-hidden">
+      <button
+        onClick={() => setExpanded(!expanded)}
+        className="flex items-center gap-2 w-full px-3 py-1.5 text-left text-xs hover:bg-accent/30 transition-colors rounded-md overflow-hidden"
+      >
+        <ChevronRight
+          className={cn(
+            'h-3 w-3 flex-shrink-0 text-muted-foreground transition-transform duration-150',
+            expanded && 'rotate-90'
+          )}
+        />
+        <FileText className="h-3 w-3 flex-shrink-0 text-muted-foreground" />
+        <span className="font-medium text-foreground flex-shrink-0">{t('tools.writeFile')}</span>
+        {filePath && (
+          <a
+            href={toVscodeUri(filePath)}
+            onClick={(e) => e.stopPropagation()}
+            className="text-muted-foreground truncate font-mono text-[11px] min-w-0 hover:text-primary hover:underline"
+            title={t('tools.openInVSCode', { path: filePath })}
+          >
+            {filePath}
+          </a>
+        )}
+      </button>
+      {expanded && content != null && (
+        <div className="border-t border-border/40 overflow-hidden">
+          <div className="flex items-center justify-between px-3 py-1 bg-background/50 border-b border-border/30">
+            <span className="text-[10px] font-medium text-muted-foreground">{fileName}</span>
+            {ext && (
+              <span className="text-[10px] px-1.5 py-0.5 rounded bg-muted text-muted-foreground font-mono">
+                {ext}
+              </span>
+            )}
+          </div>
+          <div className="overflow-x-auto max-h-80 overflow-y-auto">
+            <pre className="px-3 py-2 font-mono text-[11px] text-foreground/80 leading-relaxed whitespace-pre-wrap break-all">
+              {content}
+            </pre>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}

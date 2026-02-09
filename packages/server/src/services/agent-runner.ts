@@ -1,8 +1,6 @@
-import { nanoid } from 'nanoid';
-import { eq } from 'drizzle-orm';
-import { db, schema } from '../db/index.js';
 import { wsBroker } from './ws-broker.js';
-import type { WSEvent, ClaudeModel, PermissionMode } from '@a-parallel/shared';
+import * as tm from './thread-manager.js';
+import type { WSEvent, ClaudeModel, PermissionMode, WaitingReason } from '@a-parallel/shared';
 import {
   ClaudeProcess,
   type CLIMessage,
@@ -12,7 +10,6 @@ import {
 const activeAgents = new Map<string, ClaudeProcess>();
 
 function emitWS(threadId: string, type: WSEvent['type'], data: unknown) {
-  console.log(`[agent:ws] Emitting ${type} for thread ${threadId} (${wsBroker.clientCount} clients)`);
   wsBroker.emit({ type, threadId, data });
 }
 
@@ -67,16 +64,30 @@ const processedToolUseIds = new Map<string, Map<string, string>>();
  */
 const cliToDbMsgId = new Map<string, Map<string, string>>();
 
-function handleCLIMessage(threadId: string, msg: CLIMessage): void {
-  console.log(`[agent:handler] Received msg type=${msg.type} for thread ${threadId}`);
+/**
+ * Track threads where the last tool call was AskUserQuestion or ExitPlanMode.
+ * When the result arrives for these threads, we use 'waiting' status instead
+ * of 'completed' because Claude is waiting for user input.
+ * The value stores the reason so the client can differentiate UI.
+ */
+const pendingUserInput = new Map<string, WaitingReason>();
 
+/**
+ * Decode literal Unicode escape sequences (\uXXXX) that may appear
+ * in CLI output when the text was double-encoded or the CLI emits
+ * escaped Unicode instead of raw UTF-8 characters.
+ */
+function decodeUnicodeEscapes(str: string): string {
+  return str.replace(/\\u([0-9a-fA-F]{4})/g, (_, hex) =>
+    String.fromCharCode(parseInt(hex, 16))
+  );
+}
+
+function handleCLIMessage(threadId: string, msg: CLIMessage): void {
   // System init — capture session ID and broadcast init info
   if (msg.type === 'system' && 'subtype' in msg && msg.subtype === 'init') {
-    console.log(`[agent:handler] System init — session_id=${msg.session_id}`);
-    db.update(schema.threads)
-      .set({ sessionId: msg.session_id })
-      .where(eq(schema.threads.id, threadId))
-      .run();
+    console.log(`[agent] init session=${msg.session_id} thread=${threadId}`);
+    tm.updateThread(threadId, { sessionId: msg.session_id });
 
     emitWS(threadId, 'agent:init', {
       tools: msg.tools ?? [],
@@ -89,41 +100,28 @@ function handleCLIMessage(threadId: string, msg: CLIMessage): void {
   // Assistant messages — text and tool calls
   if (msg.type === 'assistant') {
     const cliMsgId = msg.message.id; // stable across cumulative streaming updates
-    console.log(`[agent:handler] Assistant msg ${cliMsgId} with ${msg.message.content.length} block(s)`);
 
     // Get or init the CLI→DB message ID map for this thread
     const cliMap = cliToDbMsgId.get(threadId) ?? new Map<string, string>();
     cliToDbMsgId.set(threadId, cliMap);
 
     // Combine all text blocks into a single string
-    const textContent = msg.message.content
-      .filter((b): b is { type: 'text'; text: string } => 'text' in b && !!b.text)
-      .map((b) => b.text)
-      .join('\n\n');
+    const textContent = decodeUnicodeEscapes(
+      msg.message.content
+        .filter((b): b is { type: 'text'; text: string } => 'text' in b && !!b.text)
+        .map((b) => b.text)
+        .join('\n\n')
+    );
 
     if (textContent) {
       // Reuse existing DB message: first check currentAssistantMsgId, then CLI map
       let msgId = currentAssistantMsgId.get(threadId) || cliMap.get(cliMsgId);
       if (msgId) {
         // Update existing row (streaming update — same turn, fuller content)
-        console.log(`[agent:handler] Updating msg ${msgId} (${textContent.length} chars)`);
-        db.update(schema.messages)
-          .set({ content: textContent, timestamp: new Date().toISOString() })
-          .where(eq(schema.messages.id, msgId))
-          .run();
+        tm.updateMessage(msgId, textContent);
       } else {
         // First text for this turn — insert new row
-        msgId = nanoid();
-        console.log(`[agent:handler] New assistant msg ${msgId} (${textContent.length} chars)`);
-        db.insert(schema.messages)
-          .values({
-            id: msgId,
-            threadId,
-            role: 'assistant',
-            content: textContent,
-            timestamp: new Date().toISOString(),
-          })
-          .run();
+        msgId = tm.insertMessage({ threadId, role: 'assistant', content: textContent });
       }
       currentAssistantMsgId.set(threadId, msgId);
       cliMap.set(cliMsgId, msgId);
@@ -139,25 +137,19 @@ function handleCLIMessage(threadId: string, msg: CLIMessage): void {
     const seen = processedToolUseIds.get(threadId) ?? new Map<string, string>();
     for (const block of msg.message.content) {
       if ('type' in block && block.type === 'tool_use') {
-        if (seen.has(block.id)) continue; // already processed
+        if (seen.has(block.id)) {
+          // Already processed — still reset currentAssistantMsgId so the
+          // next CLI message creates a new DB row instead of appending here
+          currentAssistantMsgId.delete(threadId);
+          continue;
+        }
 
-        console.log(`[agent:handler] Tool use: ${block.name}`);
-        const toolCallId = nanoid();
-        seen.set(block.id, toolCallId);
+        console.log(`[agent] tool_use: ${block.name} thread=${threadId}`);
 
         // Ensure there's always a parent assistant message for tool calls
         let parentMsgId = currentAssistantMsgId.get(threadId) || cliMap.get(cliMsgId);
         if (!parentMsgId) {
-          parentMsgId = nanoid();
-          db.insert(schema.messages)
-            .values({
-              id: parentMsgId,
-              threadId,
-              role: 'assistant',
-              content: '',
-              timestamp: new Date().toISOString(),
-            })
-            .run();
+          parentMsgId = tm.insertMessage({ threadId, role: 'assistant', content: '' });
           // Notify client so it creates the message before tool calls arrive
           emitWS(threadId, 'agent:message', {
             messageId: parentMsgId,
@@ -168,21 +160,36 @@ function handleCLIMessage(threadId: string, msg: CLIMessage): void {
         currentAssistantMsgId.set(threadId, parentMsgId);
         cliMap.set(cliMsgId, parentMsgId);
 
-        db.insert(schema.toolCalls)
-          .values({
-            id: toolCallId,
+        // Check DB for existing duplicate (guards against session resume re-sending old tool_use blocks)
+        const inputJson = JSON.stringify(block.input);
+        const existingTC = tm.findToolCall(parentMsgId, block.name, inputJson);
+
+        if (existingTC) {
+          seen.set(block.id, existingTC.id);
+        } else {
+          const toolCallId = tm.insertToolCall({
             messageId: parentMsgId,
             name: block.name,
-            input: JSON.stringify(block.input),
-          })
-          .run();
+            input: inputJson,
+          });
+          seen.set(block.id, toolCallId);
 
-        emitWS(threadId, 'agent:tool_call', {
-          toolCallId,
-          messageId: parentMsgId,
-          name: block.name,
-          input: block.input,
-        });
+          emitWS(threadId, 'agent:tool_call', {
+            toolCallId,
+            messageId: parentMsgId,
+            name: block.name,
+            input: block.input,
+          });
+        }
+
+        // Track if this tool call means Claude is waiting for user input
+        if (block.name === 'AskUserQuestion') {
+          pendingUserInput.set(threadId, 'question');
+        } else if (block.name === 'ExitPlanMode') {
+          pendingUserInput.set(threadId, 'plan');
+        } else {
+          pendingUserInput.delete(threadId);
+        }
 
         // Reset currentAssistantMsgId — next CLI message's text should be a new DB message
         // But cliMap keeps the mapping so cumulative updates of THIS message still work
@@ -201,16 +208,13 @@ function handleCLIMessage(threadId: string, msg: CLIMessage): void {
         if (block.type === 'tool_result' && block.tool_use_id) {
           const toolCallId = seen.get(block.tool_use_id);
           if (toolCallId && block.content) {
-            console.log(`[agent:handler] Tool result for ${block.tool_use_id} → ${toolCallId} (${block.content.length} chars)`);
             // Update DB
-            db.update(schema.toolCalls)
-              .set({ output: block.content })
-              .where(eq(schema.toolCalls.id, toolCallId))
-              .run();
+            const decodedOutput = decodeUnicodeEscapes(block.content);
+            tm.updateToolCallOutput(toolCallId, decodedOutput);
             // Notify clients
             emitWS(threadId, 'agent:tool_output', {
               toolCallId,
-              output: block.content,
+              output: decodedOutput,
             });
           }
         }
@@ -219,37 +223,43 @@ function handleCLIMessage(threadId: string, msg: CLIMessage): void {
     return;
   }
 
-  // Result — agent finished
+  // Result — agent finished (deduplicate: CLI may send result more than once)
   if (msg.type === 'result') {
-    const raw = msg as any;
-    console.log(`[agent:handler] Result — subtype=${msg.subtype}, cost=$${msg.total_cost_usd}, duration=${msg.duration_ms}ms`);
-    console.log(`[agent:handler] Result details — stop_reason=${raw.stop_reason ?? 'N/A'}, num_turns=${msg.num_turns}, is_error=${msg.is_error}`);
-    console.log(`[agent:handler] Result text (first 200 chars): ${msg.result?.substring(0, 200) ?? '(none)'}`);
+    if (resultReceived.has(threadId)) return;
+
+    console.log(`[agent] result thread=${threadId} status=${msg.subtype} cost=$${msg.total_cost_usd} duration=${msg.duration_ms}ms`);
     resultReceived.add(threadId);
     currentAssistantMsgId.delete(threadId);
-    processedToolUseIds.delete(threadId);
+    // NOTE: processedToolUseIds preserved to deduplicate on next session resume
 
-    const finalStatus = msg.subtype === 'success' ? 'completed' : 'failed';
+    // If the last tool call was AskUserQuestion or ExitPlanMode, Claude is
+    // waiting for user input — use 'waiting' instead of 'completed'.
+    const waitingReason = pendingUserInput.get(threadId);
+    const isWaitingForUser = !!waitingReason;
+    const finalStatus = isWaitingForUser
+      ? 'waiting'
+      : msg.subtype === 'success' ? 'completed' : 'failed';
+    pendingUserInput.delete(threadId);
 
-    db.update(schema.threads)
-      .set({
-        status: finalStatus,
-        cost: msg.total_cost_usd,
-        completedAt: new Date().toISOString(),
-      })
-      .where(eq(schema.threads.id, threadId))
-      .run();
+    tm.updateThread(threadId, {
+      status: finalStatus,
+      cost: msg.total_cost_usd,
+      // Only set completedAt for truly terminal states
+      ...(finalStatus !== 'waiting' ? { completedAt: new Date().toISOString() } : {}),
+    });
 
     // Don't save msg.result to DB — already captured in the last assistant message
 
+    // Emit agent:result which already contains the final status.
+    // No separate agent:status emit needed — handleWSResult updates both
+    // threadsByProject and activeThread atomically, avoiding race conditions.
     emitWS(threadId, 'agent:result', {
-      result: msg.result,
+      result: msg.result ? decodeUnicodeEscapes(msg.result) : msg.result,
       cost: msg.total_cost_usd,
       duration: msg.duration_ms,
       status: finalStatus,
+      ...(waitingReason ? { waitingReason } : {}),
     });
-
-    emitWS(threadId, 'agent:status', { status: finalStatus });
   }
 }
 
@@ -263,55 +273,47 @@ export async function startAgent(
   permissionMode: PermissionMode = 'autoEdit',
   images?: any[]
 ): Promise<void> {
-  console.log('========================================');
-  console.log('[agent] >>> startAgent() CALLED <<<');
-  console.log(`[agent] threadId=${threadId}`);
-  console.log(`[agent] model=${model}`);
-  console.log(`[agent] cwd=${cwd}`);
-  console.log(`[agent] prompt=${prompt}`);
-  console.log(`[agent] images=${images?.length ?? 0}`);
-  console.log('========================================');
+  console.log(`[agent] start thread=${threadId} model=${model} cwd=${cwd}`);
 
-  // Clear stale state from previous runs
+  // Stop existing agent for this thread (if any) before starting a new one.
+  // Without this, the old process stays running and its exit handler would
+  // remove the new process from activeAgents, causing tracking issues.
+  const existing = activeAgents.get(threadId);
+  if (existing && !existing.exited) {
+    console.log(`[agent] stopping existing agent for thread=${threadId} before restart`);
+    manuallyStopped.add(threadId);
+    try { await existing.kill(); } catch { /* best-effort */ }
+    activeAgents.delete(threadId);
+  }
+
+  // Clear stale state from previous runs.
+  // NOTE: processedToolUseIds and cliToDbMsgId are intentionally preserved
+  // across sessions to deduplicate re-sent content on session resume (--resume).
   currentAssistantMsgId.delete(threadId);
-  processedToolUseIds.delete(threadId);
-  cliToDbMsgId.delete(threadId);
   resultReceived.delete(threadId);
   manuallyStopped.delete(threadId);
+  pendingUserInput.delete(threadId);
 
   // Update thread status
-  db.update(schema.threads)
-    .set({ status: 'running' })
-    .where(eq(schema.threads.id, threadId))
-    .run();
+  tm.updateThread(threadId, { status: 'running' });
 
   emitWS(threadId, 'agent:status', { status: 'running' });
 
   // Save user message
-  db.insert(schema.messages)
-    .values({
-      id: nanoid(),
-      threadId,
-      role: 'user',
-      content: prompt,
-      images: images ? JSON.stringify(images) : null,
-      timestamp: new Date().toISOString(),
-    })
-    .run();
+  tm.insertMessage({
+    threadId,
+    role: 'user',
+    content: prompt,
+    images: images ? JSON.stringify(images) : null,
+  });
 
   // User message is NOT broadcast via WS — the client adds it optimistically
   // and polling will sync from DB. Broadcasting caused triple-display.
 
   // Check if we're resuming a previous session
-  const thread = db
-    .select()
-    .from(schema.threads)
-    .where(eq(schema.threads.id, threadId))
-    .get();
+  const thread = tm.getThread(threadId);
 
   // Spawn claude CLI process
-  console.log(`[agent] Starting agent for thread ${threadId}, model=${model}, cwd=${cwd}`);
-  console.log(`[agent] Prompt: ${prompt}`);
   const claudeProcess = new ClaudeProcess({
     prompt,
     cwd,
@@ -325,7 +327,6 @@ export async function startAgent(
 
   activeAgents.set(threadId, claudeProcess);
   resultReceived.delete(threadId);
-  processedToolUseIds.delete(threadId);
 
   // Handle messages from the CLI
   claudeProcess.on('message', (msg: CLIMessage) => {
@@ -338,10 +339,7 @@ export async function startAgent(
 
     // Don't overwrite status if manually stopped or result already received
     if (!resultReceived.has(threadId) && !manuallyStopped.has(threadId)) {
-      db.update(schema.threads)
-        .set({ status: 'failed', completedAt: new Date().toISOString() })
-        .where(eq(schema.threads.id, threadId))
-        .run();
+      tm.updateThread(threadId, { status: 'failed', completedAt: new Date().toISOString() });
 
       emitWS(threadId, 'agent:error', { error: err.message });
       emitWS(threadId, 'agent:status', { status: 'failed' });
@@ -350,7 +348,6 @@ export async function startAgent(
 
   // Handle process exit
   claudeProcess.on('exit', (code: number | null) => {
-    console.log(`[agent] Process exit for thread ${threadId}, code=${code}, resultReceived=${resultReceived.has(threadId)}, manuallyStopped=${manuallyStopped.has(threadId)}`);
     activeAgents.delete(threadId);
 
     // If manually stopped, don't overwrite the 'stopped' status
@@ -362,10 +359,7 @@ export async function startAgent(
 
     // If the process exited without sending a result, mark as failed
     if (!resultReceived.has(threadId)) {
-      db.update(schema.threads)
-        .set({ status: 'failed', completedAt: new Date().toISOString() })
-        .where(eq(schema.threads.id, threadId))
-        .run();
+      tm.updateThread(threadId, { status: 'failed', completedAt: new Date().toISOString() });
 
       emitWS(threadId, 'agent:error', {
         error: 'Agent process exited unexpectedly without a result',
@@ -377,9 +371,7 @@ export async function startAgent(
   });
 
   // Start the process
-  console.log(`[agent] Calling claudeProcess.start()...`);
   claudeProcess.start();
-  console.log(`[agent] Process started for thread ${threadId}`);
 }
 
 export async function stopAgent(threadId: string): Promise<void> {
@@ -394,10 +386,7 @@ export async function stopAgent(threadId: string): Promise<void> {
     activeAgents.delete(threadId);
   }
 
-  db.update(schema.threads)
-    .set({ status: 'stopped', completedAt: new Date().toISOString() })
-    .where(eq(schema.threads.id, threadId))
-    .run();
+  tm.updateThread(threadId, { status: 'stopped', completedAt: new Date().toISOString() });
 
   emitWS(threadId, 'agent:status', { status: 'stopped' });
 }
@@ -405,3 +394,4 @@ export async function stopAgent(threadId: string): Promise<void> {
 export function isAgentRunning(threadId: string): boolean {
   return activeAgents.has(threadId);
 }
+

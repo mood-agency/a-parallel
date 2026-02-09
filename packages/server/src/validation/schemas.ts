@@ -1,0 +1,110 @@
+import { z } from 'zod';
+
+// ── Enums ────────────────────────────────────────────────────────
+
+export const threadModeSchema = z.enum(['local', 'worktree']);
+export const claudeModelSchema = z.enum(['sonnet', 'opus', 'haiku']);
+export const permissionModeSchema = z.enum(['plan', 'autoEdit', 'confirmEdit']);
+
+// ── Image attachment ─────────────────────────────────────────────
+
+const imageAttachmentSchema = z.object({
+  type: z.literal('image'),
+  source: z.object({
+    type: z.literal('base64'),
+    media_type: z.enum(['image/jpeg', 'image/png', 'image/gif', 'image/webp']),
+    data: z.string(),
+  }),
+});
+
+// ── Request body schemas ─────────────────────────────────────────
+
+export const createProjectSchema = z.object({
+  name: z.string().min(1, 'name is required'),
+  path: z.string().min(1, 'path is required'),
+});
+
+export const createThreadSchema = z.object({
+  projectId: z.string().min(1),
+  title: z.string().optional().default(''),
+  mode: threadModeSchema,
+  model: claudeModelSchema.optional().default('sonnet'),
+  permissionMode: permissionModeSchema.optional().default('autoEdit'),
+  branch: z.string().optional(),
+  prompt: z.string().min(1, 'prompt is required'),
+  images: z.array(imageAttachmentSchema).optional(),
+});
+
+export const sendMessageSchema = z.object({
+  content: z.string().min(1, 'content is required'),
+  model: claudeModelSchema.optional(),
+  permissionMode: permissionModeSchema.optional(),
+  images: z.array(imageAttachmentSchema).optional(),
+});
+
+export const updateThreadSchema = z.object({
+  archived: z.boolean().optional(),
+});
+
+export const stageFilesSchema = z.object({
+  paths: z.array(z.string()).min(1, 'paths must not be empty'),
+});
+
+export const commitSchema = z.object({
+  message: z.string().min(1, 'message is required'),
+});
+
+export const createPRSchema = z.object({
+  title: z.string().min(1, 'title is required'),
+  body: z.string(),
+});
+
+export const createCommandSchema = z.object({
+  label: z.string().min(1, 'label is required'),
+  command: z.string().min(1, 'command is required'),
+  port: z.number().nullable().optional(),
+  portEnvVar: z.string().nullable().optional(),
+});
+
+export const createWorktreeSchema = z.object({
+  projectId: z.string().min(1),
+  branchName: z.string().min(1),
+  baseBranch: z.string().min(1, 'baseBranch is required'),
+});
+
+export const deleteWorktreeSchema = z.object({
+  projectId: z.string().min(1),
+  worktreePath: z.string().min(1),
+});
+
+export const addSkillSchema = z.object({
+  identifier: z.string().min(1, 'identifier is required'),
+});
+
+export const addMcpServerSchema = z.object({
+  name: z.string().min(1),
+  type: z.enum(['stdio', 'http', 'sse']),
+  command: z.string().optional(),
+  args: z.array(z.string()).optional(),
+  url: z.string().optional(),
+  headers: z.record(z.string()).optional(),
+  env: z.record(z.string()).optional(),
+  scope: z.enum(['project', 'user']).optional(),
+  projectPath: z.string().min(1),
+});
+
+export const gitInitSchema = z.object({
+  path: z.string().min(1, 'path is required'),
+});
+
+// ── Helper ───────────────────────────────────────────────────────
+
+/** Validate request body; returns parsed data or a 400 Response */
+export function validate<T>(schema: z.ZodType<T>, data: unknown): { success: true; data: T } | { success: false; error: string } {
+  const result = schema.safeParse(data);
+  if (!result.success) {
+    const firstIssue = result.error.issues[0];
+    return { success: false, error: firstIssue?.message ?? 'Invalid request body' };
+  }
+  return { success: true, data: result.data };
+}

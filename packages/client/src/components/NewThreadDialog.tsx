@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { useTranslation } from 'react-i18next';
 import { useAppStore } from '@/stores/app-store';
 import { api } from '@/lib/api';
 import { GitBranch, Monitor, Sparkles, Zap, Cpu } from 'lucide-react';
@@ -20,12 +21,11 @@ import {
 } from '@/components/ui/select';
 
 export function NewThreadDialog() {
-  const {
-    newThreadProjectId,
-    cancelNewThread,
-    loadThreadsForProject,
-    selectThread,
-  } = useAppStore();
+  const { t } = useTranslation();
+  const newThreadProjectId = useAppStore(s => s.newThreadProjectId);
+  const cancelNewThread = useAppStore(s => s.cancelNewThread);
+  const loadThreadsForProject = useAppStore(s => s.loadThreadsForProject);
+  const selectThread = useAppStore(s => s.selectThread);
 
   const [mode, setMode] = useState<'local' | 'worktree'>('worktree');
   const [model, setModel] = useState<'sonnet' | 'opus' | 'haiku'>('opus');
@@ -70,7 +70,7 @@ export function NewThreadDialog() {
     <Dialog open onOpenChange={(open) => !open && cancelNewThread()}>
       <DialogContent className="max-w-lg">
         <DialogHeader>
-          <DialogTitle>New Thread</DialogTitle>
+          <DialogTitle>{t('newThread.title')}</DialogTitle>
         </DialogHeader>
 
         {/* Mode selector */}
@@ -85,7 +85,7 @@ export function NewThreadDialog() {
             )}
           >
             <Monitor className="h-4 w-4" />
-            Local
+            {t('thread.mode.local')}
           </button>
           <button
             onClick={() => setMode('worktree')}
@@ -97,20 +97,20 @@ export function NewThreadDialog() {
             )}
           >
             <GitBranch className="h-4 w-4" />
-            Worktree
+            {t('thread.mode.worktree')}
           </button>
         </div>
 
         {/* Model selector */}
         <div>
           <label className="text-xs font-medium text-muted-foreground block mb-1">
-            Model
+            {t('newThread.model')}
           </label>
           <div className="flex gap-2">
             {([
-              { key: 'haiku' as const, icon: Zap, label: 'Haiku 4.5' },
-              { key: 'sonnet' as const, icon: Sparkles, label: 'Sonnet 4.5' },
-              { key: 'opus' as const, icon: Cpu, label: 'Opus 4.6' },
+              { key: 'haiku' as const, icon: Zap, label: t('thread.model.haiku') },
+              { key: 'sonnet' as const, icon: Sparkles, label: t('thread.model.sonnet') },
+              { key: 'opus' as const, icon: Cpu, label: t('thread.model.opus') },
             ]).map(({ key, icon: Icon, label }) => (
               <button
                 key={key}
@@ -133,14 +133,14 @@ export function NewThreadDialog() {
         {mode === 'worktree' && (
           <div>
             <label className="text-xs font-medium text-muted-foreground block mb-1">
-              Base branch (auto-generates new branch if blank)
+              {t('newThread.baseBranch')}
             </label>
             <Select value={selectedBranch} onValueChange={setSelectedBranch}>
               <SelectTrigger className="w-full h-9 text-sm">
-                <SelectValue placeholder="Auto-generate branch" />
+                <SelectValue placeholder={t('newThread.autoGenerate')} />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value=" ">Auto-generate branch</SelectItem>
+                <SelectItem value=" ">{t('newThread.autoGenerate')}</SelectItem>
                 {branches.map((b) => (
                   <SelectItem key={b} value={b}>
                     {b}
@@ -154,11 +154,11 @@ export function NewThreadDialog() {
         {/* Title */}
         <div>
           <label className="text-xs font-medium text-muted-foreground block mb-1">
-            Title (optional)
+            {t('newThread.titleOptional')}
           </label>
           <input
             className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm placeholder:text-muted-foreground transition-[border-color,box-shadow] duration-150 focus:outline-none focus:ring-1 focus:ring-ring"
-            placeholder="Auto-generated from prompt"
+            placeholder={t('newThread.autoFromPrompt')}
             value={title}
             onChange={(e) => setTitle(e.target.value)}
           />
@@ -167,11 +167,11 @@ export function NewThreadDialog() {
         {/* Prompt */}
         <div>
           <label className="text-xs font-medium text-muted-foreground block mb-1">
-            Prompt
+            {t('newThread.prompt')}
           </label>
           <textarea
             className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm placeholder:text-muted-foreground min-h-[120px] resize-y transition-[border-color,box-shadow] duration-150 focus:outline-none focus:ring-1 focus:ring-ring"
-            placeholder="What should the agent do?"
+            placeholder={t('newThread.promptPlaceholder')}
             value={prompt}
             onChange={(e) => setPrompt(e.target.value)}
             autoFocus
@@ -184,13 +184,13 @@ export function NewThreadDialog() {
             variant="outline"
             onClick={() => cancelNewThread()}
           >
-            Cancel
+            {t('common.cancel')}
           </Button>
           <Button
             onClick={handleCreate}
             disabled={!prompt.trim() || creating}
           >
-            {creating ? 'Creating...' : 'Start Thread'}
+            {creating ? t('newThread.creating') : t('newThread.create')}
           </Button>
         </DialogFooter>
       </DialogContent>

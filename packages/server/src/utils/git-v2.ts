@@ -69,11 +69,29 @@ export async function getCurrentBranch(cwd: string): Promise<string> {
 }
 
 /**
- * List all branches in the repository
+ * List all branches in the repository.
+ * Falls back to remote branches if no local branches exist (e.g. fresh repo with no commits).
  */
 export async function listBranches(cwd: string): Promise<string[]> {
-  const output = await git(['branch', '--format=%(refname:short)'], cwd);
-  return output.split('\n').map((b) => b.trim()).filter(Boolean);
+  // Try local branches first
+  const localOutput = await gitSafe(['branch', '--format=%(refname:short)'], cwd);
+  if (localOutput) {
+    const locals = localOutput.split('\n').map((b) => b.trim()).filter(Boolean);
+    if (locals.length > 0) return locals;
+  }
+
+  // Fall back to remote tracking branches (strip 'origin/' prefix)
+  const remoteOutput = await gitSafe(['branch', '-r', '--format=%(refname:short)'], cwd);
+  if (remoteOutput) {
+    const remotes = remoteOutput
+      .split('\n')
+      .map((b) => b.trim())
+      .filter((b) => b && !b.includes('HEAD'))
+      .map((b) => b.replace(/^origin\//, ''));
+    if (remotes.length > 0) return [...new Set(remotes)];
+  }
+
+  return [];
 }
 
 /**

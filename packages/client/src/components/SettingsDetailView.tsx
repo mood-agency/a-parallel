@@ -1,6 +1,6 @@
 import { useAppStore } from '@/stores/app-store';
 import { useSettingsStore, editorLabels, type Theme, type Editor } from '@/stores/settings-store';
-import { settingsItems, type SettingsItemId } from './SettingsPanel';
+import { settingsItems, settingsLabelKeys, type SettingsItemId } from './SettingsPanel';
 import { cn } from '@/lib/utils';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import {
@@ -10,9 +10,29 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
+import {
+  Breadcrumb,
+  BreadcrumbList,
+  BreadcrumbItem,
+  BreadcrumbLink,
+  BreadcrumbPage,
+  BreadcrumbSeparator,
+} from '@/components/ui/breadcrumb';
 import { Sun, Moon, Monitor } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 import { McpServerSettings } from './McpServerSettings';
 import { SkillsSettings } from './SkillsSettings';
+import { WorktreeSettings } from './WorktreeSettings';
+import { ArchivedThreadsSettings } from './ArchivedThreadsSettings';
+
+function getLanguageName(code: string): string {
+  try {
+    const name = new Intl.DisplayNames([code], { type: 'language' }).of(code);
+    return name ? name.charAt(0).toUpperCase() + name.slice(1) : code;
+  } catch {
+    return code;
+  }
+}
 
 /* ── Reusable setting row ── */
 function SettingRow({
@@ -69,17 +89,18 @@ function SegmentedControl<T extends string>({
 /* ── General settings content ── */
 function GeneralSettings() {
   const { theme, defaultEditor, setTheme, setDefaultEditor } = useSettingsStore();
+  const { t, i18n } = useTranslation();
 
   return (
     <>
       {/* General section */}
       <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider px-1 pb-2">
-        General
+        {t('settings.general')}
       </h3>
       <div className="rounded-lg border border-border/50 overflow-hidden mb-6">
         <SettingRow
-          title="Default open destination"
-          description="Where files and folders open by default"
+          title={t('settings.defaultEditor')}
+          description={t('settings.defaultEditorDesc')}
         >
           <Select value={defaultEditor} onValueChange={(v) => setDefaultEditor(v as Editor)}>
             <SelectTrigger className="w-[140px]">
@@ -94,24 +115,42 @@ function GeneralSettings() {
             </SelectContent>
           </Select>
         </SettingRow>
+
+        <SettingRow
+          title={t('settings.language')}
+          description={t('settings.languageDesc')}
+        >
+          <Select value={i18n.language} onValueChange={(v) => i18n.changeLanguage(v)}>
+            <SelectTrigger className="w-[140px]">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {Object.keys(i18n.options.resources ?? {}).map((code) => (
+                <SelectItem key={code} value={code}>
+                  {getLanguageName(code)}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </SettingRow>
       </div>
 
       {/* Appearance section */}
       <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider px-1 pb-2">
-        Appearance
+        {t('settings.appearance')}
       </h3>
       <div className="rounded-lg border border-border/50 overflow-hidden">
         <SettingRow
-          title="Theme"
-          description="Use light, dark, or match your system"
+          title={t('settings.theme')}
+          description={t('settings.themeDesc')}
         >
           <SegmentedControl<Theme>
             value={theme}
             onChange={setTheme}
             options={[
-              { value: 'light', label: 'Light', icon: <Sun className="h-3 w-3" /> },
-              { value: 'dark', label: 'Dark', icon: <Moon className="h-3 w-3" /> },
-              { value: 'system', label: 'System', icon: <Monitor className="h-3 w-3" /> },
+              { value: 'light', label: t('settings.light'), icon: <Sun className="h-3 w-3" /> },
+              { value: 'dark', label: t('settings.dark'), icon: <Moon className="h-3 w-3" /> },
+              { value: 'system', label: t('settings.system'), icon: <Monitor className="h-3 w-3" /> },
             ]}
           />
         </SettingRow>
@@ -121,27 +160,47 @@ function GeneralSettings() {
 }
 
 export function SettingsDetailView() {
-  const { activeSettingsPage } = useAppStore();
+  const { t } = useTranslation();
+  const activeSettingsPage = useAppStore(s => s.activeSettingsPage);
+  const selectedProjectId = useAppStore(s => s.selectedProjectId);
+  const projects = useAppStore(s => s.projects);
   const page = activeSettingsPage as SettingsItemId | null;
-  const label = page ? settingsItems.find((i) => i.id === page)?.label : null;
+  const label = page ? t(settingsLabelKeys[page] ?? page) : null;
+  const selectedProject = projects.find((p) => p.id === selectedProjectId);
 
   if (!page) {
     return (
       <div className="flex-1 flex items-center justify-center text-muted-foreground text-sm">
-        Select a setting from the sidebar
+        {t('settings.selectSetting')}
       </div>
     );
   }
 
   return (
-    <div className="flex-1 flex flex-col h-full">
+    <div className="flex-1 flex flex-col h-full min-h-0">
       {/* Page header */}
-      <div className="px-8 pt-8 pb-4">
-        <h2 className="text-lg font-semibold tracking-tight">{label}</h2>
+      <div className="px-4 py-2 border-b border-border">
+        <Breadcrumb>
+          <BreadcrumbList>
+            {selectedProject && (
+              <BreadcrumbItem>
+                <BreadcrumbLink className="text-xs truncate cursor-default">
+                  {selectedProject.name}
+                </BreadcrumbLink>
+              </BreadcrumbItem>
+            )}
+            {selectedProject && <BreadcrumbSeparator />}
+            <BreadcrumbItem>
+              <BreadcrumbPage className="text-sm truncate">
+                {label}
+              </BreadcrumbPage>
+            </BreadcrumbItem>
+          </BreadcrumbList>
+        </Breadcrumb>
       </div>
 
       {/* Page content */}
-      <ScrollArea className="flex-1">
+      <ScrollArea className="flex-1 min-h-0">
         <div className="px-8 pb-8 max-w-2xl">
           {page === 'general' ? (
             <GeneralSettings />
@@ -149,9 +208,13 @@ export function SettingsDetailView() {
             <McpServerSettings />
           ) : page === 'skills' ? (
             <SkillsSettings />
+          ) : page === 'worktrees' ? (
+            <WorktreeSettings />
+          ) : page === 'archived-threads' ? (
+            <ArchivedThreadsSettings />
           ) : (
             <p className="text-sm text-muted-foreground">
-              {label} settings coming soon.
+              {t('settings.comingSoon', { label })}
             </p>
           )}
         </div>
