@@ -327,7 +327,7 @@ export function ReviewPane() {
       <ScrollArea className="flex-1">
         {selectedDiff ? (
           selectedDiff.diff ? (
-            <div className="text-xs [&_.diff-container]:font-mono [&_.diff-container]:text-[11px]">
+            <div className="text-xs overflow-hidden [&_.diff-container]:font-mono [&_.diff-container]:text-[11px] [&_table]:w-full [&_td:last-child]:w-full [&_td:last-child]:max-w-0 [&_pre]:whitespace-pre-wrap [&_pre]:break-all [&_pre]:overflow-hidden">
               <Suspense fallback={<div className="p-2 text-xs text-muted-foreground">Loading diff...</div>}>
                 <MemoizedDiffView diff={selectedDiff.diff} />
               </Suspense>

@@ -7,6 +7,7 @@ interface ProjectState {
   projects: Project[];
   expandedProjects: Set<string>;
   selectedProjectId: string | null;
+  initialized: boolean;
 
   loadProjects: () => Promise<void>;
   toggleProject: (projectId: string) => void;
@@ -18,6 +19,7 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
   projects: [],
   expandedProjects: new Set(),
   selectedProjectId: null,
+  initialized: false,
 
   loadProjects: async () => {
     const projects = await api.listProjects();
@@ -28,6 +30,7 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
     await Promise.all(
       projects.map((p) => threadStore.loadThreadsForProject(p.id))
     );
+    set({ initialized: true });
   },
 
   toggleProject: (projectId: string) => {

@@ -41,7 +41,23 @@ export const DIFF_VIEWER_STYLES = {
     fontSize: '11px',
     lineHeight: '1.4',
   },
-} as const;
+  contentText: {
+    whiteSpace: 'pre-wrap',
+    wordBreak: 'break-all',
+    overflow: 'hidden',
+  },
+  diffContainer: {
+    width: '100%',
+    maxWidth: '100%',
+    overflow: 'hidden',
+    tableLayout: 'auto',
+  },
+  gutter: {
+    whiteSpace: 'nowrap',
+    width: '1%',
+    minWidth: '40px',
+  },
+};
 
 export interface TodoItem {
   content: string;

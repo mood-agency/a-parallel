@@ -156,10 +156,20 @@ gitRoutes.post('/:threadId/merge', async (c) => {
     throw BadRequest('No target branch specified and no baseBranch set on thread');
   }
 
-  const output = await mergeBranch(project.path, thread.branch, targetBranch);
+  let output: string;
+  try {
+    output = await mergeBranch(project.path, thread.branch, targetBranch);
+  } catch (err: any) {
+    console.error('[merge] Failed:', err);
+    return c.json({ error: err.message || 'Merge failed' }, 400);
+  }
 
   if (parsed.data.push) {
-    await git(['push', 'origin', targetBranch], project.path);
+    try {
+      await git(['push', 'origin', targetBranch], project.path);
+    } catch (err: any) {
+      return c.json({ error: `Merge succeeded but push failed: ${err.message}` }, 400);
+    }
   }
 
   if (parsed.data.cleanup && thread.worktreePath) {

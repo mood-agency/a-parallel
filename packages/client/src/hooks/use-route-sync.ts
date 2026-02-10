@@ -55,9 +55,12 @@ const validSettingsIds = new Set(settingsItems.map((i) => i.id));
 
 export function useRouteSync() {
   const location = useLocation();
+  const initialized = useAppStore(s => s.initialized);
 
-  // Sync URL → store whenever location changes
+  // Sync URL → store whenever location changes (wait for auth + projects first)
   useEffect(() => {
+    if (!initialized) return;
+
     const { settingsPage, projectId, threadId, allThreads } = parseRoute(location.pathname);
     const store = useAppStore.getState();
 
@@ -105,5 +108,5 @@ export function useRouteSync() {
       if (store.selectedThreadId) store.selectThread(null);
       if (store.selectedProjectId) store.selectProject(null);
     }
-  }, [location.pathname]);
+  }, [location.pathname, initialized]);
 }

@@ -283,8 +283,8 @@ export function ThreadView() {
       <ProjectHeader />
 
       {/* Messages */}
-      <ScrollArea className="flex-1 p-4" viewportRef={scrollViewportRef}>
-        <div className="mx-auto w-1/2 min-w-[320px] max-w-full space-y-3 overflow-hidden">
+      <ScrollArea className="flex-1 px-4" viewportRef={scrollViewportRef}>
+        <div className="mx-auto w-1/2 min-w-[320px] max-w-full space-y-3 overflow-hidden py-4">
           {activeThread.initInfo && (
             <div className="rounded-lg border border-border bg-muted/50 px-3 py-2 text-xs text-muted-foreground space-y-1">
               <div className="flex items-center gap-2">
