@@ -4,6 +4,8 @@ import * as sc from '../services/startup-commands-service.js';
 import { listBranches, getDefaultBranch } from '../utils/git-v2.js';
 import { startCommand, stopCommand, isCommandRunning } from '../services/command-runner.js';
 import { createProjectSchema, createCommandSchema, validate } from '../validation/schemas.js';
+import { requireProject } from '../utils/route-helpers.js';
+import { NotFound } from '../middleware/error-handler.js';
 
 export const projectRoutes = new Hono();
 
@@ -46,22 +48,13 @@ projectRoutes.delete('/:id', (c) => {
 
 // GET /api/projects/:id/branches
 projectRoutes.get('/:id/branches', async (c) => {
-  const id = c.req.param('id');
-  const project = pm.getProject(id);
+  const project = requireProject(c.req.param('id'));
 
-  if (!project) {
-    return c.json({ error: 'Project not found' }, 404);
-  }
-
-  try {
-    const [branches, defaultBranch] = await Promise.all([
-      listBranches(project.path),
-      getDefaultBranch(project.path),
-    ]);
-    return c.json({ branches, defaultBranch });
-  } catch (e: any) {
-    return c.json({ error: e.message }, 500);
-  }
+  const [branches, defaultBranch] = await Promise.all([
+    listBranches(project.path),
+    getDefaultBranch(project.path),
+  ]);
+  return c.json({ branches, defaultBranch });
 });
 
 // ─── Startup Commands ───────────────────────────────────
@@ -111,15 +104,10 @@ projectRoutes.post('/:id/commands/:cmdId/start', async (c) => {
   const projectId = c.req.param('id');
   const cmdId = c.req.param('cmdId');
 
-  const project = pm.getProject(projectId);
-  if (!project) {
-    return c.json({ error: 'Project not found' }, 404);
-  }
+  const project = requireProject(projectId);
 
   const cmd = sc.getCommand(cmdId);
-  if (!cmd) {
-    return c.json({ error: 'Command not found' }, 404);
-  }
+  if (!cmd) throw NotFound('Command not found');
 
   const finalCommand = cmd.port ? buildCommandWithPort(cmd.command, cmd.port) : cmd.command;
   const extraEnv: Record<string, string> = {};

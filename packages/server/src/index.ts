@@ -66,6 +66,7 @@ getAuthToken(); // Ensure auth token file exists before accepting connections
 
 const server = Bun.serve({
   port,
+  hostname: '127.0.0.1',
   reusePort: true,
   fetch(req: Request, server: any) {
     // Handle WebSocket upgrade

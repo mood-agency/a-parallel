@@ -6,15 +6,14 @@ import {
   RECOMMENDED_SERVERS,
 } from '../services/mcp-service.js';
 import { addMcpServerSchema, validate } from '../validation/schemas.js';
+import { BadRequest } from '../middleware/error-handler.js';
 
 const app = new Hono();
 
 // List MCP servers for a project
 app.get('/servers', async (c) => {
   const projectPath = c.req.query('projectPath');
-  if (!projectPath) {
-    return c.json({ error: 'projectPath query parameter required' }, 400);
-  }
+  if (!projectPath) throw BadRequest('projectPath query parameter required');
 
   const servers = await listMcpServers(projectPath);
   return c.json({ servers });
@@ -36,9 +35,7 @@ app.delete('/servers/:name', async (c) => {
   const projectPath = c.req.query('projectPath');
   const scope = c.req.query('scope') as 'project' | 'user' | undefined;
 
-  if (!projectPath) {
-    return c.json({ error: 'projectPath query parameter required' }, 400);
-  }
+  if (!projectPath) throw BadRequest('projectPath query parameter required');
 
   await removeMcpServer({ name, projectPath, scope });
   return c.json({ ok: true });

@@ -1,7 +1,7 @@
 import type { ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 import { cn } from '@/lib/utils';
-import { statusConfig, formatDate, getStatusLabels } from '@/lib/thread-utils';
+import { statusConfig, timeAgo, getStatusLabels } from '@/lib/thread-utils';
 import { Search, ChevronLeft, ChevronRight, Loader2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import type { Thread, ThreadStatus } from '@a-parallel/shared';
@@ -130,7 +130,7 @@ export function ThreadListView({
                   </div>
                 </div>
                 <span className="text-[10px] text-muted-foreground flex-shrink-0 hidden sm:inline">
-                  {formatDate(thread.createdAt)}
+                  {timeAgo(thread.createdAt, t)}
                 </span>
                 {renderActions?.(thread)}
               </Wrapper>

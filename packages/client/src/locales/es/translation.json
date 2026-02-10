@@ -99,7 +99,10 @@
     "mergeSuccess": "\"{{branch}}\" fusionado en \"{{target}}\" exitosamente",
     "mergeFailed": "Fusión fallida: {{message}}",
     "mergeTooltip": "Fusionar {{branch}} en {{target}} localmente en tu máquina",
-    "mergeAndCleanupTooltip": "Fusionar en {{target}}, subir a origin y eliminar el worktree"
+    "mergeAndCleanupTooltip": "Fusionar en {{target}}, subir a origin y eliminar el worktree",
+    "generateCommitMsg": "Generar mensaje de commit con IA",
+    "generatingCommitMsg": "Generando mensaje de commit...",
+    "generateFailed": "Error al generar mensaje de commit: {{message}}"
   },
   "newThread": {
     "title": "Nuevo Hilo",

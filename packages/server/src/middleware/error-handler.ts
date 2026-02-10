@@ -14,6 +14,7 @@ export class AppError extends Error {
 /** Convenience factories */
 export const NotFound = (msg: string) => new AppError(msg, 404);
 export const BadRequest = (msg: string) => new AppError(msg, 400);
+export const Forbidden = (msg: string) => new AppError(msg, 403);
 
 /** Hono error handling middleware */
 export async function errorHandler(c: Context, next: Next) {

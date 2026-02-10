@@ -15,20 +15,8 @@ import {
   FolderOpenDot,
   Terminal,
 } from 'lucide-react';
-import { statusConfig } from '@/lib/thread-utils';
+import { statusConfig, timeAgo } from '@/lib/thread-utils';
 import type { Thread, ThreadStatus } from '@a-parallel/shared';
-
-function timeAgo(dateStr: string, t: (key: string, opts?: any) => string): string {
-  const seconds = Math.floor((Date.now() - new Date(dateStr).getTime()) / 1000);
-  if (seconds < 60) return t('time.now');
-  const minutes = Math.floor(seconds / 60);
-  if (minutes < 60) return t('time.minutes', { count: minutes });
-  const hours = Math.floor(minutes / 60);
-  if (hours < 24) return t('time.hours', { count: hours });
-  const days = Math.floor(hours / 24);
-  if (days < 30) return t('time.days', { count: days });
-  return t('time.months', { count: Math.floor(days / 30) });
-}
 
 interface ThreadItemProps {
   thread: Thread;

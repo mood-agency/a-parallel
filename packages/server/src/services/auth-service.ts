@@ -6,7 +6,7 @@
 import { resolve } from 'path';
 import { homedir } from 'os';
 import { readFileSync, writeFileSync, existsSync, mkdirSync } from 'fs';
-import { randomBytes } from 'crypto';
+import { randomBytes, timingSafeEqual } from 'crypto';
 
 const AUTH_DIR = resolve(homedir(), '.a-parallel');
 const TOKEN_PATH = resolve(AUTH_DIR, 'auth-token');
@@ -36,7 +36,10 @@ export function getAuthToken(): string {
 
 /**
  * Validate a provided token against the stored token.
+ * Uses constant-time comparison to prevent timing attacks.
  */
 export function validateToken(token: string): boolean {
-  return token === getAuthToken();
+  const expected = getAuthToken();
+  if (token.length !== expected.length) return false;
+  return timingSafeEqual(Buffer.from(token), Buffer.from(expected));
 }

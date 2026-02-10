@@ -99,7 +99,10 @@
     "mergeSuccess": "Merged \"{{branch}}\" into \"{{target}}\" successfully",
     "mergeFailed": "Merge failed: {{message}}",
     "mergeTooltip": "Merge {{branch}} into {{target}} locally on your machine",
-    "mergeAndCleanupTooltip": "Merge into {{target}}, push to origin, and remove the worktree"
+    "mergeAndCleanupTooltip": "Merge into {{target}}, push to origin, and remove the worktree",
+    "generateCommitMsg": "Generate commit message with AI",
+    "generatingCommitMsg": "Generating commit message...",
+    "generateFailed": "Failed to generate commit message: {{message}}"
   },
   "newThread": {
     "title": "New Thread",

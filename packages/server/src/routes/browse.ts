@@ -4,6 +4,7 @@ import { join, parse as parsePath, resolve, normalize } from 'path';
 import { homedir, platform } from 'os';
 import { getRemoteUrl, extractRepoName, initRepo } from '../utils/git-v2.js';
 import * as pm from '../services/project-manager.js';
+import { BadRequest, Forbidden } from '../middleware/error-handler.js';
 
 const app = new Hono();
 
@@ -33,6 +34,19 @@ function isPathAllowed(targetPath: string): boolean {
   return false;
 }
 
+/** Throw 403 if path is not in an allowed directory */
+function requireAllowedPath(path: string): void {
+  if (!isPathAllowed(path)) {
+    throw Forbidden('Access denied: path is outside allowed directories');
+  }
+}
+
+/** Require a non-empty string from a query param or body field, throw 400 if missing */
+function requirePath(value: string | undefined, label = 'path'): string {
+  if (!value) throw BadRequest(`${label} is required`);
+  return value;
+}
+
 // List drives (Windows) or root dirs
 app.get('/roots', (c) => {
   try {
@@ -56,49 +70,33 @@ app.get('/roots', (c) => {
 
 // List subdirectories of a given path
 app.get('/list', (c) => {
-  const dirPath = c.req.query('path');
-  if (!dirPath) {
-    return c.json({ error: 'path query parameter required' }, 400);
-  }
+  const dirPath = requirePath(c.req.query('path'), 'path query parameter');
+  requireAllowedPath(dirPath);
 
-  if (!isPathAllowed(dirPath)) {
-    return c.json({ error: 'Access denied: path is outside allowed directories' }, 403);
-  }
+  const entries = readdirSync(dirPath, { withFileTypes: true });
+  const dirs = entries
+    .filter((e) => {
+      if (!e.isDirectory()) return false;
+      // Skip hidden/system folders
+      if (e.name.startsWith('.') || e.name === 'node_modules' || e.name === '$Recycle.Bin' || e.name === 'System Volume Information') return false;
+      return true;
+    })
+    .map((e) => ({
+      name: e.name,
+      path: join(dirPath, e.name),
+    }))
+    .sort((a, b) => a.name.localeCompare(b.name));
 
-  try {
-    const entries = readdirSync(dirPath, { withFileTypes: true });
-    const dirs = entries
-      .filter((e) => {
-        if (!e.isDirectory()) return false;
-        // Skip hidden/system folders
-        if (e.name.startsWith('.') || e.name === 'node_modules' || e.name === '$Recycle.Bin' || e.name === 'System Volume Information') return false;
-        return true;
-      })
-      .map((e) => ({
-        name: e.name,
-        path: join(dirPath, e.name),
-      }))
-      .sort((a, b) => a.name.localeCompare(b.name));
+  const parsed = parsePath(dirPath);
+  const parent = parsed.dir || null;
 
-    const parsed = parsePath(dirPath);
-    const parent = parsed.dir || null;
-
-    return c.json({ path: dirPath, parent, dirs });
-  } catch (error: any) {
-    return c.json({ error: error.message }, 500);
-  }
+  return c.json({ path: dirPath, parent, dirs });
 });
 
 // Get git repo name from remote origin for a given path
 app.get('/repo-name', async (c) => {
-  const dirPath = c.req.query('path');
-  if (!dirPath) {
-    return c.json({ error: 'path query parameter required' }, 400);
-  }
-
-  if (!isPathAllowed(dirPath)) {
-    return c.json({ error: 'Access denied: path is outside allowed directories' }, 403);
-  }
+  const dirPath = requirePath(c.req.query('path'), 'path query parameter');
+  requireAllowedPath(dirPath);
 
   try {
     const remoteUrl = await getRemoteUrl(dirPath);
@@ -121,95 +119,68 @@ app.get('/repo-name', async (c) => {
 // Initialize a git repo at the given path
 app.post('/git-init', async (c) => {
   const { path: dirPath } = await c.req.json<{ path: string }>();
-  if (!dirPath) {
-    return c.json({ error: 'path is required' }, 400);
-  }
+  requirePath(dirPath, 'path');
+  requireAllowedPath(dirPath);
 
-  if (!isPathAllowed(dirPath)) {
-    return c.json({ error: 'Access denied: path is outside allowed directories' }, 403);
-  }
-
-  try {
-    await initRepo(dirPath);
-    return c.json({ ok: true });
-  } catch (error: any) {
-    return c.json({ error: error.message }, 500);
-  }
+  await initRepo(dirPath);
+  return c.json({ ok: true });
 });
 
 // Open directory in file explorer
 app.post('/open-directory', async (c) => {
   const { path: dirPath } = await c.req.json<{ path: string }>();
-  if (!dirPath) {
-    return c.json({ error: 'path is required' }, 400);
+  requirePath(dirPath, 'path');
+  requireAllowedPath(dirPath);
+
+  const os = platform();
+  let cmd: string;
+  let args: string[];
+
+  if (os === 'win32') {
+    cmd = 'explorer';
+    args = [dirPath.replace(/\//g, '\\')];
+  } else if (os === 'darwin') {
+    cmd = 'open';
+    args = [dirPath];
+  } else {
+    cmd = 'xdg-open';
+    args = [dirPath];
   }
 
-  if (!isPathAllowed(dirPath)) {
-    return c.json({ error: 'Access denied: path is outside allowed directories' }, 403);
-  }
+  Bun.spawn([cmd, ...args], {
+    stdio: ['ignore', 'ignore', 'ignore'],
+  });
 
-  try {
-    const os = platform();
-    let cmd: string;
-    let args: string[];
-
-    if (os === 'win32') {
-      cmd = 'explorer';
-      args = [dirPath.replace(/\//g, '\\')];
-    } else if (os === 'darwin') {
-      cmd = 'open';
-      args = [dirPath];
-    } else {
-      cmd = 'xdg-open';
-      args = [dirPath];
-    }
-
-    Bun.spawn([cmd, ...args], {
-      stdio: ['ignore', 'ignore', 'ignore'],
-    });
-
-    return c.json({ ok: true });
-  } catch (error: any) {
-    return c.json({ error: error.message }, 500);
-  }
+  return c.json({ ok: true });
 });
 
 // Open terminal at directory
 app.post('/open-terminal', async (c) => {
   const { path: dirPath } = await c.req.json<{ path: string }>();
-  if (!dirPath) {
-    return c.json({ error: 'path is required' }, 400);
+  requirePath(dirPath, 'path');
+  requireAllowedPath(dirPath);
+
+  const os = platform();
+  let cmd: string;
+  let args: string[];
+
+  if (os === 'win32') {
+    cmd = 'cmd';
+    args = ['/c', 'start', 'cmd'];
+  } else if (os === 'darwin') {
+    cmd = 'open';
+    args = ['-a', 'Terminal', dirPath];
+  } else {
+    cmd = 'x-terminal-emulator';
+    args = ['--working-directory', dirPath];
   }
 
-  if (!isPathAllowed(dirPath)) {
-    return c.json({ error: 'Access denied: path is outside allowed directories' }, 403);
-  }
+  Bun.spawn([cmd, ...args], {
+    cwd: dirPath,
+    stdio: ['ignore', 'ignore', 'ignore'],
+  });
 
-  try {
-    const os = platform();
-    let cmd: string;
-    let args: string[];
-
-    if (os === 'win32') {
-      cmd = 'cmd';
-      args = ['/c', 'start', 'cmd'];
-    } else if (os === 'darwin') {
-      cmd = 'open';
-      args = ['-a', 'Terminal', dirPath];
-    } else {
-      cmd = 'x-terminal-emulator';
-      args = ['--working-directory', dirPath];
-    }
-
-    Bun.spawn([cmd, ...args], {
-      cwd: dirPath,
-      stdio: ['ignore', 'ignore', 'ignore'],
-    });
-
-    return c.json({ ok: true });
-  } catch (error: any) {
-    return c.json({ error: error.message }, 500);
-  }
+  return c.json({ ok: true });
 });
 
 export default app;

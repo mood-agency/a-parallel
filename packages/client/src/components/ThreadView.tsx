@@ -50,7 +50,7 @@ const markdownComponents = {
 
 const remarkPlugins = [remarkGfm];
 
-const MessageContent = memo(function MessageContent({ content }: { content: string }) {
+export const MessageContent = memo(function MessageContent({ content }: { content: string }) {
   return (
     <div className="prose prose-sm max-w-none">
     <ReactMarkdown
@@ -63,7 +63,7 @@ const MessageContent = memo(function MessageContent({ content }: { content: stri
   );
 });
 
-function CopyButton({ content }: { content: string }) {
+export function CopyButton({ content }: { content: string }) {
   const [copied, setCopied] = useState(false);
 
   const handleCopy = () => {
@@ -83,7 +83,7 @@ function CopyButton({ content }: { content: string }) {
   );
 }
 
-function WaitingActions({ onSend }: { onSend: (text: string) => void }) {
+export function WaitingActions({ onSend }: { onSend: (text: string) => void }) {
   const { t } = useTranslation();
   const [input, setInput] = useState('');
   const inputRef = useRef<HTMLInputElement>(null);

@@ -476,8 +476,8 @@ export function PromptInput({
   const defaultPlaceholder = placeholder ?? t('thread.describeTaskDefault');
 
   return (
-    <div className="p-3 border-t border-border flex justify-center">
-      <div className="w-1/2 min-w-[320px]">
+    <div className="p-3 border-t border-border md:flex md:justify-center">
+      <div className="w-full md:w-1/2 md:min-w-[320px]">
         {/* Image previews */}
         {images.length > 0 && (
           <div className="flex flex-wrap gap-2 mb-2">
@@ -563,115 +563,157 @@ export function PromptInput({
             disabled={loading}
           />
           {/* Bottom toolbar */}
-          <div className="flex items-center px-2 py-2 gap-1">
-            {!isNewThread && effectiveCwd && selectedProjectId && (
-              <WorktreePicker
-                projectId={selectedProjectId}
-                currentPath={effectiveCwd}
-                onChange={setCwdOverride}
-              />
-            )}
-            {isNewThread && (
-              <>
-                <div className="flex items-center gap-0.5 border border-border rounded-md overflow-hidden">
-                  <button
-                    onClick={() => setThreadMode('local')}
-                    className={cn(
-                      'px-2 py-1 text-[11px] flex items-center gap-1 transition-colors',
-                      threadMode === 'local' ? 'bg-primary/10 text-primary' : 'text-muted-foreground hover:text-foreground'
-                    )}
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept="image/*"
+            multiple
+            className="hidden"
+            onChange={handleFileSelect}
+            disabled={loading || running}
+          />
+          {/* Mobile: two rows — Desktop: single row */}
+          <div className="px-2 py-2 space-y-2 md:space-y-0">
+            {/* Row 1 on mobile / only row on desktop: config + actions */}
+            <div className="flex items-center gap-1 flex-wrap">
+              {!isNewThread && effectiveCwd && selectedProjectId && (
+                <WorktreePicker
+                  projectId={selectedProjectId}
+                  currentPath={effectiveCwd}
+                  onChange={setCwdOverride}
+                />
+              )}
+              {isNewThread && (
+                <>
+                  <div className="flex items-center gap-0.5 border border-border rounded-md overflow-hidden">
+                    <button
+                      onClick={() => setThreadMode('local')}
+                      className={cn(
+                        'px-2 py-1 text-[11px] flex items-center gap-1 transition-colors',
+                        threadMode === 'local' ? 'bg-primary/10 text-primary' : 'text-muted-foreground hover:text-foreground'
+                      )}
+                    >
+                      <Monitor className="h-3 w-3" />
+                      {t('thread.mode.local')}
+                    </button>
+                    <button
+                      onClick={() => setThreadMode('worktree')}
+                      className={cn(
+                        'px-2 py-1 text-[11px] flex items-center gap-1 transition-colors',
+                        threadMode === 'worktree' ? 'bg-primary/10 text-primary' : 'text-muted-foreground hover:text-foreground'
+                      )}
+                    >
+                      <GitBranch className="h-3 w-3" />
+                      {t('thread.mode.worktree')}
+                    </button>
+                  </div>
+                  {threadMode === 'worktree' && newThreadBranches.length > 0 && (
+                    <BranchPicker
+                      branches={newThreadBranches}
+                      selected={selectedBranch}
+                      onChange={setSelectedBranch}
+                    />
+                  )}
+                </>
+              )}
+              <Select value={model} onValueChange={setModel}>
+                <SelectTrigger className="h-7 w-[100px] text-xs">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {models.map((m) => (
+                    <SelectItem key={m.value} value={m.value}>
+                      {m.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <Select value={mode} onValueChange={setMode}>
+                <SelectTrigger className="h-7 w-[140px] text-xs">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {modes.map((m) => (
+                    <SelectItem key={m.value} value={m.value}>
+                      {m.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              {/* On desktop: image + send stay in this row */}
+              <div className="hidden md:flex items-center gap-1 ml-auto">
+                <Button
+                  onClick={() => fileInputRef.current?.click()}
+                  variant="ghost"
+                  size="icon-sm"
+                  title={t('prompt.addImage')}
+                  disabled={loading || running}
+                  className="text-muted-foreground hover:text-foreground"
+                >
+                  <ImageIcon className="h-4 w-4" />
+                </Button>
+                {running ? (
+                  <Button
+                    onClick={onStop}
+                    variant="destructive"
+                    size="icon-sm"
+                    title={t('prompt.stopAgent')}
                   >
-                    <Monitor className="h-3 w-3" />
-                    {t('thread.mode.local')}
-                  </button>
-                  <button
-                    onClick={() => setThreadMode('worktree')}
-                    className={cn(
-                      'px-2 py-1 text-[11px] flex items-center gap-1 transition-colors',
-                      threadMode === 'worktree' ? 'bg-primary/10 text-primary' : 'text-muted-foreground hover:text-foreground'
-                    )}
-                  >
-                    <GitBranch className="h-3 w-3" />
-                    {t('thread.mode.worktree')}
-                  </button>
-                </div>
-                {threadMode === 'worktree' && newThreadBranches.length > 0 && (
-                  <BranchPicker
-                    branches={newThreadBranches}
-                    selected={selectedBranch}
-                    onChange={setSelectedBranch}
-                  />
-                )}
-              </>
-            )}
-            <div className="flex-1" />
-            <input
-              ref={fileInputRef}
-              type="file"
-              accept="image/*"
-              multiple
-              className="hidden"
-              onChange={handleFileSelect}
-              disabled={loading || running}
-            />
-            <Select value={model} onValueChange={setModel}>
-              <SelectTrigger className="h-7 w-[100px] text-xs">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                {models.map((m) => (
-                  <SelectItem key={m.value} value={m.value}>
-                    {m.label}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-
-            <Select value={mode} onValueChange={setMode}>
-              <SelectTrigger className="h-7 w-[140px] text-xs">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                {modes.map((m) => (
-                  <SelectItem key={m.value} value={m.value}>
-                    {m.label}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-
-            <Button
-              onClick={() => fileInputRef.current?.click()}
-              variant="ghost"
-              size="icon-sm"
-              title={t('prompt.addImage')}
-              disabled={loading || running}
-              className="text-muted-foreground hover:text-foreground"
-            >
-              <ImageIcon className="h-4 w-4" />
-            </Button>
-            {running ? (
-              <Button
-                onClick={onStop}
-                variant="destructive"
-                size="icon-sm"
-                title={t('prompt.stopAgent')}
-              >
-                <Square className="h-3.5 w-3.5" />
-              </Button>
-            ) : (
-              <Button
-                onClick={handleSubmit}
-                disabled={(!prompt.trim() && images.length === 0) || loading}
-                size="icon-sm"
-              >
-                {loading ? (
-                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                    <Square className="h-3.5 w-3.5" />
+                  </Button>
                 ) : (
-                  <Send className="h-3.5 w-3.5" />
+                  <Button
+                    onClick={handleSubmit}
+                    disabled={(!prompt.trim() && images.length === 0) || loading}
+                    size="icon-sm"
+                  >
+                    {loading ? (
+                      <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                    ) : (
+                      <Send className="h-3.5 w-3.5" />
+                    )}
+                  </Button>
                 )}
+              </div>
+            </div>
+            {/* Row 2 on mobile only: image + send */}
+            <div className="flex items-center gap-1.5 md:hidden">
+              <div className="flex-1" />
+              <Button
+                onClick={() => fileInputRef.current?.click()}
+                variant="ghost"
+                size="icon-sm"
+                title={t('prompt.addImage')}
+                disabled={loading || running}
+                className="text-muted-foreground hover:text-foreground shrink-0"
+              >
+                <ImageIcon className="h-4 w-4" />
               </Button>
-            )}
+              {running ? (
+                <Button
+                  onClick={onStop}
+                  variant="destructive"
+                  size="icon-sm"
+                  title={t('prompt.stopAgent')}
+                  className="shrink-0"
+                >
+                  <Square className="h-3.5 w-3.5" />
+                </Button>
+              ) : (
+                <Button
+                  onClick={handleSubmit}
+                  disabled={(!prompt.trim() && images.length === 0) || loading}
+                  size="icon-sm"
+                  className="shrink-0"
+                >
+                  {loading ? (
+                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                  ) : (
+                    <Send className="h-3.5 w-3.5" />
+                  )}
+                </Button>
+              )}
+            </div>
           </div>
         </div>
       </div>

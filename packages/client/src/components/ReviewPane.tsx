@@ -34,6 +34,7 @@ import {
   FileCode,
   FilePlus,
   FileX,
+  Sparkles,
 } from 'lucide-react';
 import type { FileDiff } from '@a-parallel/shared';
 
@@ -110,6 +111,7 @@ export function ReviewPane() {
   const [mergeConfirm, setMergeConfirm] = useState<{ push?: boolean; cleanup?: boolean } | null>(null);
   const [prDialog, setPrDialog] = useState(false);
   const [prTitle, setPrTitle] = useState('');
+  const [generatingMsg, setGeneratingMsg] = useState(false);
 
   const threadId = activeThread?.id;
   const [defaultBranch, setDefaultBranch] = useState<string | null>(null);
@@ -175,6 +177,19 @@ export function ReviewPane() {
       await refresh();
     } catch (e: any) {
       toast.error(t('review.commitFailed', { message: e.message }));
+    }
+  };
+
+  const handleGenerateCommitMsg = async () => {
+    if (!threadId || generatingMsg) return;
+    setGeneratingMsg(true);
+    try {
+      const { message } = await api.generateCommitMessage(threadId);
+      setCommitMsg(message);
+    } catch (e: any) {
+      toast.error(t('review.generateFailed', { message: e.message }));
+    } finally {
+      setGeneratingMsg(false);
     }
   };
 
@@ -348,6 +363,23 @@ export function ReviewPane() {
             onKeyDown={(e) => e.key === 'Enter' && handleCommit()}
             disabled={!hasStagedFiles}
           />
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <span>
+                <Button
+                  variant="ghost"
+                  size="icon-sm"
+                  onClick={handleGenerateCommitMsg}
+                  disabled={!hasStagedFiles || generatingMsg}
+                >
+                  <Sparkles className={cn('h-3.5 w-3.5', generatingMsg && 'animate-pulse')} />
+                </Button>
+              </span>
+            </TooltipTrigger>
+            <TooltipContent>
+              {generatingMsg ? t('review.generatingCommitMsg') : t('review.generateCommitMsg')}
+            </TooltipContent>
+          </Tooltip>
           <Tooltip>
             <TooltipTrigger asChild>
               <span>

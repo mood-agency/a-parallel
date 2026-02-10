@@ -4,7 +4,7 @@ import { useTranslation } from 'react-i18next';
 import { useThreadStore } from '@/stores/thread-store';
 import { useProjectStore } from '@/stores/project-store';
 import { cn } from '@/lib/utils';
-import { statusConfig } from '@/lib/thread-utils';
+import { statusConfig, timeAgo } from '@/lib/thread-utils';
 import { History } from 'lucide-react';
 import type { Thread, ThreadStatus } from '@a-parallel/shared';
 
@@ -81,11 +81,9 @@ export function RecentThreads() {
                 <span className="text-[11px] leading-tight truncate">{thread.title}</span>
                 <span className="text-[10px] text-muted-foreground truncate">{thread.projectName}</span>
               </div>
-              {thread.completedAt && (
-                <span className="text-[10px] text-muted-foreground flex-shrink-0 tabular-nums">
-                  {new Date(thread.completedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                </span>
-              )}
+              <span className="text-[10px] text-muted-foreground flex-shrink-0 tabular-nums">
+                {timeAgo(thread.completedAt ?? thread.createdAt, t)}
+              </span>
             </button>
           );
         })}

@@ -1,22 +1,17 @@
 import { Hono } from 'hono';
-import * as pm from '../services/project-manager.js';
 import * as wm from '../services/worktree-manager.js';
 import { createWorktreeSchema, deleteWorktreeSchema, validate } from '../validation/schemas.js';
+import { requireProject } from '../utils/route-helpers.js';
+import { BadRequest } from '../middleware/error-handler.js';
 
 export const worktreeRoutes = new Hono();
 
 // GET /api/worktrees?projectId=xxx
 worktreeRoutes.get('/', async (c) => {
   const projectId = c.req.query('projectId');
-  if (!projectId) {
-    return c.json({ error: 'projectId is required' }, 400);
-  }
+  if (!projectId) throw BadRequest('projectId is required');
 
-  const project = pm.getProject(projectId);
-  if (!project) {
-    return c.json({ error: 'Project not found' }, 404);
-  }
-
+  const project = requireProject(projectId);
   const worktrees = await wm.listWorktrees(project.path);
   return c.json(worktrees);
 });
@@ -28,11 +23,7 @@ worktreeRoutes.post('/', async (c) => {
   if (!parsed.success) return c.json({ error: parsed.error }, 400);
   const { projectId, branchName, baseBranch } = parsed.data;
 
-  const project = pm.getProject(projectId);
-  if (!project) {
-    return c.json({ error: 'Project not found' }, 404);
-  }
-
+  const project = requireProject(projectId);
   const worktreePath = await wm.createWorktree(project.path, branchName, baseBranch);
   return c.json({ path: worktreePath, branch: branchName }, 201);
 });
@@ -44,11 +35,7 @@ worktreeRoutes.delete('/', async (c) => {
   if (!parsed.success) return c.json({ error: parsed.error }, 400);
   const { projectId, worktreePath } = parsed.data;
 
-  const project = pm.getProject(projectId);
-  if (!project) {
-    return c.json({ error: 'Project not found' }, 404);
-  }
-
+  const project = requireProject(projectId);
   await wm.removeWorktree(project.path, worktreePath);
   return c.json({ ok: true });
 });

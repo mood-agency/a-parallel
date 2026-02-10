@@ -5,6 +5,8 @@ import * as wm from '../services/worktree-manager.js';
 import { startAgent, stopAgent, isAgentRunning } from '../services/agent-runner.js';
 import { nanoid } from 'nanoid';
 import { createThreadSchema, sendMessageSchema, updateThreadSchema, validate } from '../validation/schemas.js';
+import { requireThread, requireThreadWithMessages, requireProject } from '../utils/route-helpers.js';
+import { NotFound } from '../middleware/error-handler.js';
 
 export const threadRoutes = new Hono();
 
@@ -40,13 +42,7 @@ threadRoutes.get('/archived', (c) => {
 
 // GET /api/threads/:id
 threadRoutes.get('/:id', (c) => {
-  const id = c.req.param('id');
-  const result = tm.getThreadWithMessages(id);
-
-  if (!result) {
-    return c.json({ error: 'Thread not found' }, 404);
-  }
-
+  const result = requireThreadWithMessages(c.req.param('id'));
   return c.json(result);
 });
 
@@ -57,10 +53,7 @@ threadRoutes.post('/', async (c) => {
   if (!parsed.success) return c.json({ error: parsed.error }, 400);
   const { projectId, title, mode, model, permissionMode, baseBranch, prompt, images } = parsed.data;
 
-  const project = pm.getProject(projectId);
-  if (!project) {
-    return c.json({ error: 'Project not found' }, 404);
-  }
+  const project = requireProject(projectId);
 
   const threadId = nanoid();
   let worktreePath: string | undefined;
@@ -116,16 +109,10 @@ threadRoutes.post('/:id/message', async (c) => {
   const parsed = validate(sendMessageSchema, raw);
   if (!parsed.success) return c.json({ error: parsed.error }, 400);
   const { content, model, permissionMode, images } = parsed.data;
-  const thread = tm.getThread(id);
-
-  if (!thread) {
-    return c.json({ error: 'Thread not found' }, 404);
-  }
+  const thread = requireThread(id);
 
   const cwd = thread.worktreePath ?? pm.getProject(thread.projectId)?.path;
-  if (!cwd) {
-    return c.json({ error: 'Project path not found' }, 500);
-  }
+  if (!cwd) throw NotFound('Project path not found');
 
   const effectiveModel = (model || 'sonnet') as import('@a-parallel/shared').ClaudeModel;
   const effectivePermission = (permissionMode || thread.permissionMode || 'autoEdit') as import('@a-parallel/shared').PermissionMode;
@@ -136,14 +123,8 @@ threadRoutes.post('/:id/message', async (c) => {
 
 // POST /api/threads/:id/stop
 threadRoutes.post('/:id/stop', async (c) => {
-  const id = c.req.param('id');
-  try {
-    await stopAgent(id);
-    return c.json({ ok: true });
-  } catch (e: any) {
-    console.error(`[threads] Failed to stop agent ${id}:`, e);
-    return c.json({ error: e.message }, 500);
-  }
+  await stopAgent(c.req.param('id'));
+  return c.json({ ok: true });
 });
 
 // PATCH /api/threads/:id — update thread fields (e.g. archived)
@@ -153,10 +134,7 @@ threadRoutes.patch('/:id', async (c) => {
   const parsed = validate(updateThreadSchema, raw);
   if (!parsed.success) return c.json({ error: parsed.error }, 400);
 
-  const thread = tm.getThread(id);
-  if (!thread) {
-    return c.json({ error: 'Thread not found' }, 404);
-  }
+  const thread = requireThread(id);
 
   const updates: Record<string, any> = {};
   if (parsed.data.archived !== undefined) {

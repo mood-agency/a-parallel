@@ -36,6 +36,18 @@ export function getAuthToken(): string | null {
   return authToken;
 }
 
+// ── API Error ───────────────────────────────────────────────────
+
+export class ApiError extends Error {
+  constructor(
+    message: string,
+    public status: number,
+  ) {
+    super(message);
+    this.name = 'ApiError';
+  }
+}
+
 // ── Request helper ──────────────────────────────────────────────
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const headers: Record<string, string> = {
@@ -51,7 +63,7 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const res = await fetch(`${BASE}${path}`, { ...init, headers });
   if (!res.ok) {
     const body = await res.json().catch(() => ({}));
-    throw new Error(body.error || `HTTP ${res.status}`);
+    throw new ApiError(body.error || `HTTP ${res.status}`, res.status);
   }
   return res.json();
 }
@@ -137,6 +149,10 @@ export const api = {
     request<{ ok: boolean; output?: string }>(`/git/${threadId}/merge`, {
       method: 'POST',
       body: JSON.stringify(opts ?? {}),
+    }),
+  generateCommitMessage: (threadId: string) =>
+    request<{ message: string }>(`/git/${threadId}/generate-commit-message`, {
+      method: 'POST',
     }),
 
   // Startup Commands

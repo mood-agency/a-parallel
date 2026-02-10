@@ -124,7 +124,8 @@ describe('AppStore', () => {
       mockApi.listThreads.mockResolvedValueOnce([]);
 
       await useAppStore.getState().selectThread('t1');
-      expect(useAppStore.getState().activeThread).toEqual(mockThread);
+      // selectThread enriches the thread with initInfo, resultInfo, waitingReason
+      expect(useAppStore.getState().activeThread).toMatchObject(mockThread);
       expect(useAppStore.getState().selectedThreadId).toBe('t1');
     });
 
@@ -293,6 +294,7 @@ describe('AppStore', () => {
         });
 
         useAppStore.getState().handleWSToolCall('t1', {
+          messageId: 'msg1',
           name: 'Read',
           input: { file: 'test.ts' },
         });
@@ -442,6 +444,7 @@ describe('AppStore', () => {
       });
 
       useAppStore.getState().handleWSToolCall('t1', {
+        messageId: 'msg3',
         name: 'Read',
         input: { file: 'test.ts' },
       });
@@ -461,9 +464,9 @@ describe('AppStore', () => {
         } as any,
       });
 
-      useAppStore.getState().handleWSToolCall('t1', { name: 'Read', input: {} });
-      useAppStore.getState().handleWSToolCall('t1', { name: 'Edit', input: {} });
-      useAppStore.getState().handleWSToolCall('t1', { name: 'Bash', input: {} });
+      useAppStore.getState().handleWSToolCall('t1', { messageId: 'msg1', name: 'Read', input: {} });
+      useAppStore.getState().handleWSToolCall('t1', { messageId: 'msg1', name: 'Edit', input: {} });
+      useAppStore.getState().handleWSToolCall('t1', { messageId: 'msg1', name: 'Bash', input: {} });
 
       const msg = useAppStore.getState().activeThread!.messages[0];
       expect(msg.toolCalls).toHaveLength(3);
