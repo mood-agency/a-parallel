@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { useWS } from '@/hooks/use-ws';
 import { useRouteSync } from '@/hooks/use-route-sync';
 import { useAppStore, setAppNavigate } from '@/stores/app-store';
+import { initAuth } from '@/lib/api';
 import { useTerminalStore } from '@/stores/terminal-store';
 import { Sidebar } from '@/components/Sidebar';
 import { ThreadView } from '@/components/ThreadView';
@@ -31,9 +32,9 @@ export function App() {
   // Sync URL ↔ store
   useRouteSync();
 
-  // Load projects on mount
+  // Fetch auth token, then load projects
   useEffect(() => {
-    loadProjects();
+    initAuth().then(() => loadProjects());
   }, [loadProjects]);
 
   // Global keyboard shortcuts

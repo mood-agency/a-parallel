@@ -2,6 +2,11 @@ import { eq, and, or, desc, inArray, like, count as drizzleCount } from 'drizzle
 import { nanoid } from 'nanoid';
 import { db, schema } from '../db/index.js';
 
+/** Escape SQL LIKE wildcards so user input is treated as literal text */
+function escapeLike(value: string): string {
+  return value.replace(/%/g, '\\%').replace(/_/g, '\\_');
+}
+
 // ── Thread CRUD ──────────────────────────────────────────────────
 
 /** List threads, optionally filtered by projectId and archive status */
@@ -34,13 +39,14 @@ export function listArchivedThreads(opts: {
   const { page, limit, search } = opts;
   const offset = (page - 1) * limit;
 
+  const safeSearch = search ? escapeLike(search) : '';
   const conditions = search
     ? and(
         eq(schema.threads.archived, 1),
         or(
-          like(schema.threads.title, `%${search}%`),
-          like(schema.threads.branch, `%${search}%`),
-          like(schema.threads.status, `%${search}%`)
+          like(schema.threads.title, `%${safeSearch}%`),
+          like(schema.threads.branch, `%${safeSearch}%`),
+          like(schema.threads.status, `%${safeSearch}%`)
         )
       )
     : eq(schema.threads.archived, 1);

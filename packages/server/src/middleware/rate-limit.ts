@@ -1,0 +1,44 @@
+import type { Context, Next } from 'hono';
+
+/**
+ * Simple in-memory sliding-window rate limiter.
+ * Keyed by client IP. Tracks request timestamps and rejects with 429 when
+ * the count within `windowMs` exceeds `max`.
+ */
+export function rateLimit(opts: { windowMs: number; max: number }) {
+  const { windowMs, max } = opts;
+  const hits = new Map<string, number[]>();
+
+  // Periodically prune stale entries to prevent memory growth
+  setInterval(() => {
+    const now = Date.now();
+    for (const [key, timestamps] of hits) {
+      const valid = timestamps.filter((t) => now - t < windowMs);
+      if (valid.length === 0) {
+        hits.delete(key);
+      } else {
+        hits.set(key, valid);
+      }
+    }
+  }, windowMs).unref();
+
+  return async (c: Context, next: Next) => {
+    const ip =
+      c.req.header('x-forwarded-for')?.split(',')[0]?.trim() ||
+      c.req.header('x-real-ip') ||
+      'unknown';
+
+    const now = Date.now();
+    const timestamps = hits.get(ip) ?? [];
+    const valid = timestamps.filter((t) => now - t < windowMs);
+
+    if (valid.length >= max) {
+      c.header('Retry-After', String(Math.ceil(windowMs / 1000)));
+      return c.json({ error: 'Too many requests' }, 429);
+    }
+
+    valid.push(now);
+    hits.set(ip, valid);
+    return next();
+  };
+}

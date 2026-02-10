@@ -1,9 +1,14 @@
 import { Hono } from 'hono';
 import { cors } from 'hono/cors';
 import { logger } from 'hono/logger';
+import { secureHeaders } from 'hono/secure-headers';
 import { errorHandler } from './middleware/error-handler.js';
+import { authMiddleware } from './middleware/auth.js';
+import { rateLimit } from './middleware/rate-limit.js';
 import { autoMigrate } from './db/migrate.js';
 import { markStaleThreadsInterrupted } from './services/thread-manager.js';
+import { getAuthToken, validateToken } from './services/auth-service.js';
+import { authRoutes } from './routes/auth.js';
 import { projectRoutes } from './routes/projects.js';
 import { threadRoutes } from './routes/threads.js';
 import { gitRoutes } from './routes/git.js';
@@ -22,6 +27,7 @@ const app = new Hono();
 // Middleware
 app.use('*', errorHandler);
 app.use('*', logger());
+app.use('*', secureHeaders());
 app.use(
   '*',
   cors({
@@ -33,6 +39,8 @@ app.use(
     ],
   })
 );
+app.use('/api/*', rateLimit({ windowMs: 60_000, max: 1000 }));
+app.use('/api/*', authMiddleware);
 
 // Health check
 app.get('/api/health', (c) => {
@@ -40,6 +48,7 @@ app.get('/api/health', (c) => {
 });
 
 // Mount routes
+app.route('/api/auth', authRoutes);
 app.route('/api/projects', projectRoutes);
 app.route('/api/threads', threadRoutes);
 app.route('/api/git', gitRoutes);
@@ -52,6 +61,7 @@ app.route('/api/worktrees', worktreeRoutes);
 // Auto-create tables on startup, then start server
 autoMigrate();
 markStaleThreadsInterrupted();
+getAuthToken(); // Ensure auth token file exists before accepting connections
 // Server started below via Bun.serve()
 
 const server = Bun.serve({
@@ -61,6 +71,10 @@ const server = Bun.serve({
     // Handle WebSocket upgrade
     const url = new URL(req.url);
     if (url.pathname === '/ws') {
+      const token = url.searchParams.get('token');
+      if (!token || !validateToken(token)) {
+        return new Response('Unauthorized', { status: 401 });
+      }
       if (server.upgrade(req)) return;
       return new Response('WebSocket upgrade failed', { status: 400 });
     }

@@ -15,11 +15,40 @@ const isTauri = !!(window as any).__TAURI_INTERNALS__;
 const serverPort = import.meta.env.VITE_SERVER_PORT || '3001';
 const BASE = isTauri ? `http://localhost:${serverPort}/api` : '/api';
 
+// ── Auth token ──────────────────────────────────────────────────
+let authToken: string | null = null;
+
+/** Fetch the auth token from the server. Call once at app startup. */
+export async function initAuth(): Promise<void> {
+  try {
+    const res = await fetch(`${BASE}/auth/token`);
+    if (res.ok) {
+      const data = await res.json();
+      authToken = data.token;
+    }
+  } catch (e) {
+    console.error('[auth] Failed to fetch auth token:', e);
+  }
+}
+
+/** Get the current auth token (for WebSocket connections). */
+export function getAuthToken(): string | null {
+  return authToken;
+}
+
+// ── Request helper ──────────────────────────────────────────────
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
-  const res = await fetch(`${BASE}${path}`, {
-    headers: { 'Content-Type': 'application/json' },
-    ...init,
-  });
+  const headers: Record<string, string> = {
+    'Content-Type': 'application/json',
+  };
+  if (authToken) {
+    headers['Authorization'] = `Bearer ${authToken}`;
+  }
+  // Merge any caller-provided headers
+  if (init?.headers) {
+    Object.assign(headers, init.headers);
+  }
+  const res = await fetch(`${BASE}${path}`, { ...init, headers });
   if (!res.ok) {
     const body = await res.json().catch(() => ({}));
     throw new Error(body.error || `HTTP ${res.status}`);

@@ -3,7 +3,8 @@ import * as tm from '../services/thread-manager.js';
 import * as pm from '../services/project-manager.js';
 import { getDiff, stageFiles, unstageFiles, revertFiles, commit, push, createPR, mergeBranch, git } from '../utils/git-v2.js';
 import * as wm from '../services/worktree-manager.js';
-import { validate, mergeSchema } from '../validation/schemas.js';
+import { validate, mergeSchema, stageFilesSchema, commitSchema, createPRSchema } from '../validation/schemas.js';
+import { sanitizePath } from '../utils/path-validation.js';
 
 export const gitRoutes = new Hono();
 
@@ -16,6 +17,21 @@ function resolveThreadCwd(threadId: string): string | null {
 
   const project = pm.getProject(thread.projectId);
   return project?.path ?? null;
+}
+
+/**
+ * Validate that all file paths stay within the working directory.
+ * Prevents directory traversal attacks (e.g. "../../etc/passwd").
+ */
+function validateFilePaths(cwd: string, paths: string[]): string | null {
+  for (const p of paths) {
+    try {
+      sanitizePath(cwd, p);
+    } catch {
+      return `Invalid path: ${p}`;
+    }
+  }
+  return null;
 }
 
 // GET /api/git/:threadId/diff
@@ -36,9 +52,15 @@ gitRoutes.post('/:threadId/stage', async (c) => {
   const cwd = resolveThreadCwd(c.req.param('threadId'));
   if (!cwd) return c.json({ error: 'Thread not found' }, 404);
 
-  const { paths } = await c.req.json<{ paths: string[] }>();
+  const raw = await c.req.json().catch(() => ({}));
+  const parsed = validate(stageFilesSchema, raw);
+  if (!parsed.success) return c.json({ error: parsed.error }, 400);
+
+  const pathError = validateFilePaths(cwd, parsed.data.paths);
+  if (pathError) return c.json({ error: pathError }, 400);
+
   try {
-    await stageFiles(cwd, paths);
+    await stageFiles(cwd, parsed.data.paths);
     return c.json({ ok: true });
   } catch (e: any) {
     return c.json({ error: e.message }, 500);
@@ -50,9 +72,15 @@ gitRoutes.post('/:threadId/unstage', async (c) => {
   const cwd = resolveThreadCwd(c.req.param('threadId'));
   if (!cwd) return c.json({ error: 'Thread not found' }, 404);
 
-  const { paths } = await c.req.json<{ paths: string[] }>();
+  const raw = await c.req.json().catch(() => ({}));
+  const parsed = validate(stageFilesSchema, raw);
+  if (!parsed.success) return c.json({ error: parsed.error }, 400);
+
+  const pathError = validateFilePaths(cwd, parsed.data.paths);
+  if (pathError) return c.json({ error: pathError }, 400);
+
   try {
-    await unstageFiles(cwd, paths);
+    await unstageFiles(cwd, parsed.data.paths);
     return c.json({ ok: true });
   } catch (e: any) {
     return c.json({ error: e.message }, 500);
@@ -64,9 +92,15 @@ gitRoutes.post('/:threadId/revert', async (c) => {
   const cwd = resolveThreadCwd(c.req.param('threadId'));
   if (!cwd) return c.json({ error: 'Thread not found' }, 404);
 
-  const { paths } = await c.req.json<{ paths: string[] }>();
+  const raw = await c.req.json().catch(() => ({}));
+  const parsed = validate(stageFilesSchema, raw);
+  if (!parsed.success) return c.json({ error: parsed.error }, 400);
+
+  const pathError = validateFilePaths(cwd, parsed.data.paths);
+  if (pathError) return c.json({ error: pathError }, 400);
+
   try {
-    await revertFiles(cwd, paths);
+    await revertFiles(cwd, parsed.data.paths);
     return c.json({ ok: true });
   } catch (e: any) {
     return c.json({ error: e.message }, 500);
@@ -78,9 +112,12 @@ gitRoutes.post('/:threadId/commit', async (c) => {
   const cwd = resolveThreadCwd(c.req.param('threadId'));
   if (!cwd) return c.json({ error: 'Thread not found' }, 404);
 
-  const { message } = await c.req.json<{ message: string }>();
+  const raw = await c.req.json().catch(() => ({}));
+  const parsed = validate(commitSchema, raw);
+  if (!parsed.success) return c.json({ error: parsed.error }, 400);
+
   try {
-    const result = await commit(cwd, message);
+    const result = await commit(cwd, parsed.data.message);
     return c.json({ ok: true, output: result });
   } catch (e: any) {
     return c.json({ error: e.message }, 500);
@@ -107,9 +144,12 @@ gitRoutes.post('/:threadId/pr', async (c) => {
   if (!cwd) return c.json({ error: 'Thread not found' }, 404);
 
   const thread = tm.getThread(threadId);
-  const { title, body } = await c.req.json<{ title: string; body: string }>();
+  const raw = await c.req.json().catch(() => ({}));
+  const parsed = validate(createPRSchema, raw);
+  if (!parsed.success) return c.json({ error: parsed.error }, 400);
+
   try {
-    const url = await createPR(cwd, title, body, thread?.baseBranch ?? undefined);
+    const url = await createPR(cwd, parsed.data.title, parsed.data.body, thread?.baseBranch ?? undefined);
     return c.json({ ok: true, url });
   } catch (e: any) {
     return c.json({ error: e.message }, 500);

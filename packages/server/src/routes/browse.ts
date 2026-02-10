@@ -1,10 +1,37 @@
 import { Hono } from 'hono';
 import { readdirSync } from 'fs';
-import { join, parse as parsePath } from 'path';
+import { join, parse as parsePath, resolve, normalize } from 'path';
 import { homedir, platform } from 'os';
 import { getRemoteUrl, extractRepoName, initRepo } from '../utils/git-v2.js';
+import * as pm from '../services/project-manager.js';
 
 const app = new Hono();
+
+/**
+ * Check if a path is within an allowed directory:
+ * - The user's home directory (and subtrees)
+ * - Any registered project path (and subtrees)
+ * - Ancestor directories of registered projects (so the folder picker can navigate to them)
+ */
+function isPathAllowed(targetPath: string): boolean {
+  const normalizedTarget = normalize(resolve(targetPath));
+
+  // Allow anything under the user's home directory
+  const home = normalize(resolve(homedir()));
+  if (normalizedTarget.startsWith(home)) return true;
+
+  // Allow registered project paths (and their subtrees) and ancestor directories
+  const projects = pm.listProjects();
+  for (const project of projects) {
+    const projectPath = normalize(resolve(project.path));
+    // Target is inside or equal to a project path
+    if (normalizedTarget.startsWith(projectPath)) return true;
+    // Target is an ancestor of a project path (e.g. browsing C:\ to reach C:\Users\x\project)
+    if (projectPath.startsWith(normalizedTarget)) return true;
+  }
+
+  return false;
+}
 
 // List drives (Windows) or root dirs
 app.get('/roots', (c) => {
@@ -32,6 +59,10 @@ app.get('/list', (c) => {
   const dirPath = c.req.query('path');
   if (!dirPath) {
     return c.json({ error: 'path query parameter required' }, 400);
+  }
+
+  if (!isPathAllowed(dirPath)) {
+    return c.json({ error: 'Access denied: path is outside allowed directories' }, 403);
   }
 
   try {
@@ -65,6 +96,10 @@ app.get('/repo-name', async (c) => {
     return c.json({ error: 'path query parameter required' }, 400);
   }
 
+  if (!isPathAllowed(dirPath)) {
+    return c.json({ error: 'Access denied: path is outside allowed directories' }, 403);
+  }
+
   try {
     const remoteUrl = await getRemoteUrl(dirPath);
 
@@ -90,6 +125,10 @@ app.post('/git-init', async (c) => {
     return c.json({ error: 'path is required' }, 400);
   }
 
+  if (!isPathAllowed(dirPath)) {
+    return c.json({ error: 'Access denied: path is outside allowed directories' }, 403);
+  }
+
   try {
     await initRepo(dirPath);
     return c.json({ ok: true });
@@ -103,6 +142,10 @@ app.post('/open-directory', async (c) => {
   const { path: dirPath } = await c.req.json<{ path: string }>();
   if (!dirPath) {
     return c.json({ error: 'path is required' }, 400);
+  }
+
+  if (!isPathAllowed(dirPath)) {
+    return c.json({ error: 'Access denied: path is outside allowed directories' }, 403);
   }
 
   try {
@@ -136,6 +179,10 @@ app.post('/open-terminal', async (c) => {
   const { path: dirPath } = await c.req.json<{ path: string }>();
   if (!dirPath) {
     return c.json({ error: 'path is required' }, 400);
+  }
+
+  if (!isPathAllowed(dirPath)) {
+    return c.json({ error: 'Access denied: path is outside allowed directories' }, 403);
   }
 
   try {

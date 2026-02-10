@@ -24,8 +24,7 @@ export async function errorHandler(c: Context, next: Next) {
       return c.json({ error: err.message }, err.statusCode as any);
     }
 
-    const message = err instanceof Error ? err.message : 'Something went wrong';
     console.error('[error-handler]', err);
-    return c.json({ error: message }, 500);
+    return c.json({ error: 'Internal server error' }, 500);
   }
 }

@@ -12,3 +12,4 @@ src-tauri/binaries/
 app-icon.png
 .agents
 .claude
+TODO.md
