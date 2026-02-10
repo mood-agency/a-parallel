@@ -263,7 +263,7 @@ describe('API Client', () => {
         mode: 'worktree',
         model: 'opus',
         permissionMode: 'plan',
-        branch: 'feature/auth',
+        baseBranch: 'feature/auth',
         prompt: 'Implement authentication',
       });
 
@@ -271,7 +271,7 @@ describe('API Client', () => {
       const body = JSON.parse(call[1].body);
       expect(body.model).toBe('opus');
       expect(body.permissionMode).toBe('plan');
-      expect(body.branch).toBe('feature/auth');
+      expect(body.baseBranch).toBe('feature/auth');
     });
 
     test('stageFiles sends array of paths', async () => {

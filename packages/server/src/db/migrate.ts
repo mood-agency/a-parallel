@@ -44,6 +44,13 @@ export function autoMigrate() {
     // Column already exists
   }
 
+  // Add base_branch column to existing tables that don't have it
+  try {
+    db.run(sql`ALTER TABLE threads ADD COLUMN base_branch TEXT`);
+  } catch {
+    // Column already exists
+  }
+
   db.run(sql`
     CREATE TABLE IF NOT EXISTS messages (
       id TEXT PRIMARY KEY,

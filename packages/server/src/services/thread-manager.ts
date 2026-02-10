@@ -111,6 +111,9 @@ export function updateThread(
     cost: number;
     completedAt: string | null;
     archived: number;
+    branch: string | null;
+    baseBranch: string | null;
+    worktreePath: string | null;
   }>
 ) {
   db.update(schema.threads).set(updates).where(eq(schema.threads.id, id)).run();

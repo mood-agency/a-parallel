@@ -3,6 +3,7 @@ import { persist } from 'zustand/middleware';
 
 export type Theme = 'light' | 'dark' | 'system';
 export type Editor = 'cursor' | 'vscode' | 'windsurf' | 'zed' | 'sublime' | 'vim';
+export type ThreadMode = 'local' | 'worktree';
 
 const editorLabels: Record<Editor, string> = {
   cursor: 'Cursor',
@@ -16,8 +17,10 @@ const editorLabels: Record<Editor, string> = {
 interface SettingsState {
   theme: Theme;
   defaultEditor: Editor;
+  defaultThreadMode: ThreadMode;
   setTheme: (theme: Theme) => void;
   setDefaultEditor: (editor: Editor) => void;
+  setDefaultThreadMode: (mode: ThreadMode) => void;
 }
 
 function applyTheme(theme: Theme) {
@@ -35,11 +38,13 @@ export const useSettingsStore = create<SettingsState>()(
     (set) => ({
       theme: 'dark',
       defaultEditor: 'cursor',
+      defaultThreadMode: 'worktree',
       setTheme: (theme) => {
         applyTheme(theme);
         set({ theme });
       },
       setDefaultEditor: (editor) => set({ defaultEditor: editor }),
+      setDefaultThreadMode: (mode) => set({ defaultThreadMode: mode }),
     }),
     {
       name: 'a-parallel-settings',

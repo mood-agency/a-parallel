@@ -12,8 +12,9 @@ import {
   DropdownMenuTrigger,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuSeparator,
 } from '@/components/ui/dropdown-menu';
-import { FolderOpen, Plus, Trash2, ChevronRight, MoreHorizontal } from 'lucide-react';
+import { FolderOpen, FolderOpenDot, Plus, Search, Trash2, ChevronRight, MoreHorizontal, Terminal } from 'lucide-react';
 import {
   Tooltip,
   TooltipContent,
@@ -98,6 +99,24 @@ export function ProjectItem({
               {t('sidebar.newThread')}
             </TooltipContent>
           </Tooltip>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button
+                variant="ghost"
+                size="icon-xs"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onShowAllThreads();
+                }}
+                className="text-muted-foreground hover:text-foreground"
+              >
+                <Search className="h-3.5 w-3.5" />
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent side="bottom">
+              {t('sidebar.searchThreads')}
+            </TooltipContent>
+          </Tooltip>
           <DropdownMenu onOpenChange={setOpenDropdown}>
             <DropdownMenuTrigger asChild>
               <Button
@@ -110,6 +129,41 @@ export function ProjectItem({
               </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="start" side="bottom">
+              <DropdownMenuItem
+                onClick={async (e) => {
+                  e.stopPropagation();
+                  try {
+                    await fetch('/api/browse/open-directory', {
+                      method: 'POST',
+                      headers: { 'Content-Type': 'application/json' },
+                      body: JSON.stringify({ path: project.path }),
+                    });
+                  } catch (error) {
+                    console.error('Failed to open directory:', error);
+                  }
+                }}
+              >
+                <FolderOpenDot className="h-3.5 w-3.5" />
+                {t('sidebar.openDirectory')}
+              </DropdownMenuItem>
+              <DropdownMenuItem
+                onClick={async (e) => {
+                  e.stopPropagation();
+                  try {
+                    await fetch('/api/browse/open-terminal', {
+                      method: 'POST',
+                      headers: { 'Content-Type': 'application/json' },
+                      body: JSON.stringify({ path: project.path }),
+                    });
+                  } catch (error) {
+                    console.error('Failed to open terminal:', error);
+                  }
+                }}
+              >
+                <Terminal className="h-3.5 w-3.5" />
+                {t('sidebar.openTerminal')}
+              </DropdownMenuItem>
+              <DropdownMenuSeparator />
               <DropdownMenuItem
                 onClick={(e) => {
                   e.stopPropagation();
@@ -137,6 +191,7 @@ export function ProjectItem({
               key={th.id}
               thread={th}
               projectId={project.id}
+              projectPath={project.path}
               isSelected={selectedThreadId === th.id}
               onSelect={() => onSelectThread(th.id)}
               onArchive={() => onArchiveThread(th.id, th.title)}

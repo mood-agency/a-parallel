@@ -45,11 +45,13 @@ export function Sidebar() {
     threadId: string;
     projectId: string;
     title: string;
+    isWorktree?: boolean;
   } | null>(null);
   const [deleteThreadConfirm, setDeleteThreadConfirm] = useState<{
     threadId: string;
     projectId: string;
     title: string;
+    isWorktree?: boolean;
   } | null>(null);
   const [deleteProjectConfirm, setDeleteProjectConfirm] = useState<{
     projectId: string;
@@ -152,10 +154,14 @@ export function Sidebar() {
               navigate(`/projects/${project.id}/threads/${threadId}`);
             }}
             onArchiveThread={(threadId, title) => {
-              setArchiveConfirm({ threadId, projectId: project.id, title });
+              const threads = threadsByProject[project.id] ?? [];
+              const th = threads.find(t => t.id === threadId);
+              setArchiveConfirm({ threadId, projectId: project.id, title, isWorktree: th?.mode === 'worktree' && !!th?.branch });
             }}
             onDeleteThread={(threadId, title) => {
-              setDeleteThreadConfirm({ threadId, projectId: project.id, title });
+              const threads = threadsByProject[project.id] ?? [];
+              const th = threads.find(t => t.id === threadId);
+              setDeleteThreadConfirm({ threadId, projectId: project.id, title, isWorktree: th?.mode === 'worktree' && !!th?.branch });
             }}
             onShowAllThreads={() => {
               showAllThreads(project.id);
@@ -177,6 +183,11 @@ export function Sidebar() {
               {t('dialog.archiveThreadDesc', { title: archiveConfirm?.title })}
             </DialogDescription>
           </DialogHeader>
+          {archiveConfirm?.isWorktree && (
+            <p className="text-xs text-amber-500 bg-amber-500/10 rounded-md px-3 py-2">
+              {t('dialog.worktreeWarning')}
+            </p>
+          )}
           <DialogFooter>
             <Button variant="outline" size="sm" onClick={() => setArchiveConfirm(null)}>
               {t('common.cancel')}
@@ -200,6 +211,11 @@ export function Sidebar() {
               {t('dialog.deleteThreadDesc', { title: deleteThreadConfirm?.title })}
             </DialogDescription>
           </DialogHeader>
+          {deleteThreadConfirm?.isWorktree && (
+            <p className="text-xs text-amber-500 bg-amber-500/10 rounded-md px-3 py-2">
+              {t('dialog.worktreeWarning')}
+            </p>
+          )}
           <DialogFooter>
             <Button variant="outline" size="sm" onClick={() => setDeleteThreadConfirm(null)}>
               {t('common.cancel')}

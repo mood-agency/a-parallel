@@ -8,6 +8,8 @@
     "addProject": "Agregar proyecto",
     "newThread": "Nuevo hilo",
     "deleteProject": "Eliminar proyecto",
+    "openDirectory": "Abrir directorio",
+    "openTerminal": "Abrir terminal",
     "noThreads": "No hay hilos aún",
     "viewAll": "Ver todos",
     "archive": "Archivar",
@@ -18,7 +20,8 @@
     "add": "Agregar",
     "settings": "Configuración",
     "activeThreads": "Activos",
-    "recentThreads": "Recientes"
+    "recentThreads": "Recientes",
+    "searchThreads": "Buscar hilos"
   },
   "thread": {
     "status": {
@@ -83,7 +86,20 @@
     "prTitle": "Título del PR:",
     "prCreated": "PR creado",
     "binaryOrNoDiff": "(archivo binario o sin diff disponible)",
-    "selectFile": "Selecciona un archivo para ver el diff"
+    "selectFile": "Selecciona un archivo para ver el diff",
+    "commitFirst": "Haz commit de tus cambios primero",
+    "stageFirst": "Prepara archivos antes de hacer commit",
+    "commitTooltip": "Guardar los cambios preparados como un nuevo commit",
+    "pushTooltip": "Subir {{branch}} al repositorio remoto (origin)",
+    "createPRTooltip": "Abrir un Pull Request en GitHub: {{branch}} → {{target}}",
+    "merge": "Fusionar",
+    "merging": "Fusionando...",
+    "mergeAndCleanup": "Fusionar, Push y Limpiar",
+    "mergeConfirm": "¿Fusionar \"{{branch}}\" en \"{{target}}\"? Esto modificará la rama destino.",
+    "mergeSuccess": "\"{{branch}}\" fusionado en \"{{target}}\" exitosamente",
+    "mergeFailed": "Fusión fallida: {{message}}",
+    "mergeTooltip": "Fusionar {{branch}} en {{target}} localmente en tu máquina",
+    "mergeAndCleanupTooltip": "Fusionar en {{target}}, subir a origin y eliminar el worktree"
   },
   "newThread": {
     "title": "Nuevo Hilo",
@@ -92,8 +108,8 @@
     "mode": "Modo",
     "model": "Modelo",
     "branch": "Rama",
-    "baseBranch": "Rama base (genera nueva rama automáticamente si se deja en blanco)",
-    "autoGenerate": "Generar rama automáticamente",
+    "baseBranch": "Rama base",
+    "selectBranch": "Seleccionar rama...",
     "titleOptional": "Título (opcional)",
     "autoFromPrompt": "Generado automáticamente desde el prompt",
     "create": "Iniciar Hilo",
@@ -128,7 +144,10 @@
     "themeDesc": "Usa claro, oscuro o el del sistema",
     "light": "Claro",
     "dark": "Oscuro",
-    "system": "Sistema"
+    "system": "Sistema",
+    "threads": "Hilos",
+    "defaultThreadMode": "Modo de hilo predeterminado",
+    "defaultThreadModeDesc": "Elige si los nuevos hilos se ejecutan localmente o en un git worktree"
   },
   "skills": {
     "showingFor": "Mostrando skills para:",
@@ -145,6 +164,15 @@
     "noGlobalSkills": "No hay skills globales instalados. Instala uno de la lista recomendada.",
     "recommendedSkills": "Skills Recomendados",
     "noSkillsFound": "No se encontraron skills"
+  },
+  "plugins": {
+    "installedPlugins": "Plugins Instalados",
+    "noPlugins": "No hay plugins instalados.",
+    "loadingPlugins": "Cargando plugins...",
+    "managedByClaudeCode": "Gestionados por Claude Code",
+    "commands": "comandos",
+    "command": "comando",
+    "by": "por"
   },
   "mcp": {
     "selectProject": "Selecciona un proyecto para gestionar servidores MCP.",
@@ -286,7 +314,8 @@
     "deleteThread": "Eliminar hilo",
     "deleteThreadDesc": "¿Estás seguro de que quieres eliminar \"{{title}}\"? Esta acción no se puede deshacer.",
     "deleteProject": "Eliminar proyecto",
-    "deleteProjectDesc": "¿Estás seguro de que quieres eliminar el proyecto \"{{name}}\"? Todos los hilos de este proyecto también serán eliminados. Esta acción no se puede deshacer."
+    "deleteProjectDesc": "¿Estás seguro de que quieres eliminar el proyecto \"{{name}}\"? Todos los hilos de este proyecto también serán eliminados. Esta acción no se puede deshacer.",
+    "worktreeWarning": "Este hilo tiene un worktree. La rama y el worktree serán eliminados. Los commits no pusheados ni mergeados se perderán."
   },
   "toast": {
     "threadArchived": "Hilo archivado exitosamente",

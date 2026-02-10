@@ -1,7 +1,9 @@
 import { useState, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useAppStore } from '@/stores/app-store';
+import { useSettingsStore } from '@/stores/settings-store';
 import { api } from '@/lib/api';
+import { toast } from 'sonner';
 import { GitBranch, Monitor, Sparkles, Zap, Cpu } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
@@ -27,7 +29,8 @@ export function NewThreadDialog() {
   const loadThreadsForProject = useAppStore(s => s.loadThreadsForProject);
   const selectThread = useAppStore(s => s.selectThread);
 
-  const [mode, setMode] = useState<'local' | 'worktree'>('worktree');
+  const defaultThreadMode = useSettingsStore(s => s.defaultThreadMode);
+  const [mode, setMode] = useState<'local' | 'worktree'>(defaultThreadMode);
   const [model, setModel] = useState<'sonnet' | 'opus' | 'haiku'>('opus');
   const [branches, setBranches] = useState<string[]>([]);
   const [selectedBranch, setSelectedBranch] = useState('');
@@ -35,10 +38,17 @@ export function NewThreadDialog() {
   const [title, setTitle] = useState('');
   const [creating, setCreating] = useState(false);
 
-  // Load branches when dialog opens
+  // Load branches and detect default branch when dialog opens
   useEffect(() => {
     if (newThreadProjectId) {
-      api.listBranches(newThreadProjectId).then(setBranches).catch(console.error);
+      api.listBranches(newThreadProjectId).then((data) => {
+        setBranches(data.branches);
+        if (data.defaultBranch) {
+          setSelectedBranch(data.defaultBranch);
+        } else if (data.branches.length > 0) {
+          setSelectedBranch(data.branches[0]);
+        }
+      }).catch(console.error);
     }
   }, [newThreadProjectId]);
 
@@ -52,7 +62,7 @@ export function NewThreadDialog() {
         title: title || prompt,
         mode,
         model,
-        branch: mode === 'worktree' ? selectedBranch || undefined : undefined,
+        baseBranch: mode === 'worktree' ? selectedBranch || undefined : undefined,
         prompt,
       });
 
@@ -60,7 +70,7 @@ export function NewThreadDialog() {
       await selectThread(thread.id);
       cancelNewThread();
     } catch (e: any) {
-      alert(e.message);
+      toast.error(e.message);
     } finally {
       setCreating(false);
     }
@@ -137,10 +147,9 @@ export function NewThreadDialog() {
             </label>
             <Select value={selectedBranch} onValueChange={setSelectedBranch}>
               <SelectTrigger className="w-full h-9 text-sm">
-                <SelectValue placeholder={t('newThread.autoGenerate')} />
+                <SelectValue placeholder={t('newThread.selectBranch')} />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value=" ">{t('newThread.autoGenerate')}</SelectItem>
                 {branches.map((b) => (
                   <SelectItem key={b} value={b}>
                     {b}

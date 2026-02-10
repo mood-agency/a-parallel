@@ -17,6 +17,7 @@ export const threads = sqliteTable('threads', {
   permissionMode: text('permission_mode').notNull().default('autoEdit'), // 'plan' | 'autoEdit' | 'confirmEdit'
   status: text('status').notNull().default('pending'), // 'pending' | 'running' | 'waiting' | 'completed' | 'failed' | 'stopped' | 'interrupted'
   branch: text('branch'),
+  baseBranch: text('base_branch'),
   worktreePath: text('worktree_path'),
   sessionId: text('session_id'),
   cost: real('cost').notNull().default(0),

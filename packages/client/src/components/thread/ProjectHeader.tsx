@@ -1,10 +1,9 @@
 import { memo } from 'react';
-import { useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { useAppStore } from '@/stores/app-store';
 import { useTerminalStore } from '@/stores/terminal-store';
 import { usePreviewWindow } from '@/hooks/use-preview-window';
-import { GitCompare, Terminal, Globe } from 'lucide-react';
+import { GitCompare, Globe } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import {
   Tooltip,
@@ -22,7 +21,6 @@ import {
 
 export const ProjectHeader = memo(function ProjectHeader() {
   const { t } = useTranslation();
-  const navigate = useNavigate();
   const activeThread = useAppStore(s => s.activeThread);
   const selectedProjectId = useAppStore(s => s.selectedProjectId);
   const projects = useAppStore(s => s.projects);
@@ -44,8 +42,8 @@ export const ProjectHeader = memo(function ProjectHeader() {
       <Breadcrumb className="min-w-0">
         <BreadcrumbList>
           {project && (
-            <BreadcrumbItem>
-              <BreadcrumbLink className="text-xs truncate cursor-default">
+            <BreadcrumbItem className="flex-shrink-0">
+              <BreadcrumbLink className="text-xs whitespace-nowrap cursor-default">
                 {project.name}
               </BreadcrumbLink>
             </BreadcrumbItem>
@@ -59,6 +57,11 @@ export const ProjectHeader = memo(function ProjectHeader() {
               {activeThread.branch && (
                 <span className="text-xs text-muted-foreground bg-secondary px-1.5 py-0.5 rounded truncate flex-shrink-0 max-w-[200px]">
                   {activeThread.branch}
+                </span>
+              )}
+              {activeThread.baseBranch && (
+                <span className="text-xs text-muted-foreground/60 px-1 truncate flex-shrink-0">
+                  from {activeThread.baseBranch}
                 </span>
               )}
             </BreadcrumbItem>
@@ -89,19 +92,6 @@ export const ProjectHeader = memo(function ProjectHeader() {
             <TooltipContent>{t('preview.openPreview')}</TooltipContent>
           </Tooltip>
         )}
-        <Tooltip>
-          <TooltipTrigger asChild>
-            <Button
-              variant="ghost"
-              size="icon-sm"
-              onClick={() => navigate(`/projects/${activeThread?.projectId ?? selectedProjectId}/commands`)}
-              className="text-muted-foreground hover:text-foreground"
-            >
-              <Terminal className="h-4 w-4" />
-            </Button>
-          </TooltipTrigger>
-          <TooltipContent>{t('startup.title')}</TooltipContent>
-        </Tooltip>
         <Tooltip>
           <TooltipTrigger asChild>
             <Button

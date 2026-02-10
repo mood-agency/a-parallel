@@ -15,6 +15,7 @@ import {
   Monitor,
   GitFork,
   Archive,
+  Terminal,
 } from 'lucide-react';
 
 export const settingsItems = [
@@ -26,6 +27,7 @@ export const settingsItems = [
   { id: 'git', label: 'Git', icon: GitBranch },
   { id: 'environments', label: 'Environments', icon: Monitor },
   { id: 'worktrees', label: 'Worktrees', icon: GitFork },
+  { id: 'startup-commands', label: 'Startup Commands', icon: Terminal },
   { id: 'archived-threads', label: 'Archived Threads', icon: Archive },
 ] as const;
 
@@ -40,6 +42,7 @@ export const settingsLabelKeys: Record<string, string> = {
   git: 'settings.gitSettings',
   environments: 'settings.environments',
   worktrees: 'settings.worktrees',
+  'startup-commands': 'startup.title',
   'archived-threads': 'settings.archivedThreads',
 };
 

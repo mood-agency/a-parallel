@@ -8,6 +8,18 @@ import { createThreadSchema, sendMessageSchema, updateThreadSchema, validate } f
 
 export const threadRoutes = new Hono();
 
+/** Create a URL-safe slug from a title for branch naming */
+function slugifyTitle(title: string, maxLength = 40): string {
+  return title
+    .toLowerCase()
+    .replace(/[^a-z0-9\s-]/g, '')
+    .trim()
+    .replace(/\s+/g, '-')
+    .replace(/-+/g, '-')
+    .slice(0, maxLength)
+    .replace(/-$/, '') || 'thread';
+}
+
 // GET /api/threads?projectId=xxx&includeArchived=true
 threadRoutes.get('/', (c) => {
   const projectId = c.req.query('projectId');
@@ -43,7 +55,7 @@ threadRoutes.post('/', async (c) => {
   const raw = await c.req.json();
   const parsed = validate(createThreadSchema, raw);
   if (!parsed.success) return c.json({ error: parsed.error }, 400);
-  const { projectId, title, mode, model, permissionMode, branch, prompt, images } = parsed.data;
+  const { projectId, title, mode, model, permissionMode, baseBranch, prompt, images } = parsed.data;
 
   const project = pm.getProject(projectId);
   if (!project) {
@@ -52,13 +64,16 @@ threadRoutes.post('/', async (c) => {
 
   const threadId = nanoid();
   let worktreePath: string | undefined;
-  let threadBranch = branch;
+  let threadBranch: string | undefined;
 
   // Create worktree if needed
+  const resolvedBaseBranch = baseBranch?.trim() || undefined;
   if (mode === 'worktree') {
-    const branchName = branch ?? `a-parallel/${threadId}`;
+    const slug = slugifyTitle(title || prompt);
+    const projectSlug = slugifyTitle(project.name);
+    const branchName = `${projectSlug}/${slug}-${threadId.slice(0, 6)}`;
     try {
-      worktreePath = await wm.createWorktree(project.path, branchName);
+      worktreePath = await wm.createWorktree(project.path, branchName, resolvedBaseBranch);
       threadBranch = branchName;
     } catch (e: any) {
       return c.json({ error: `Failed to create worktree: ${e.message}` }, 500);
@@ -73,6 +88,7 @@ threadRoutes.post('/', async (c) => {
     permissionMode: permissionMode || 'autoEdit',
     status: 'pending' as const,
     branch: threadBranch,
+    baseBranch: mode === 'worktree' ? resolvedBaseBranch : undefined,
     worktreePath,
     cost: 0,
     createdAt: new Date().toISOString(),
@@ -147,6 +163,23 @@ threadRoutes.patch('/:id', async (c) => {
     updates.archived = parsed.data.archived ? 1 : 0;
   }
 
+  // Cleanup worktree + branch when archiving
+  if (parsed.data.archived && thread.worktreePath) {
+    const project = pm.getProject(thread.projectId);
+    if (project) {
+      await wm.removeWorktree(project.path, thread.worktreePath).catch((e) => {
+        console.warn(`[cleanup] Failed to remove worktree: ${e}`);
+      });
+      if (thread.branch) {
+        await wm.removeBranch(project.path, thread.branch).catch((e) => {
+          console.warn(`[cleanup] Failed to remove branch: ${e}`);
+        });
+      }
+    }
+    updates.worktreePath = null;
+    updates.branch = null;
+  }
+
   if (Object.keys(updates).length > 0) {
     tm.updateThread(id, updates);
   }
@@ -166,13 +199,18 @@ threadRoutes.delete('/:id', async (c) => {
       stopAgent(id).catch(console.error);
     }
 
-    // Remove worktree if exists
+    // Remove worktree + branch if exists
     if (thread.worktreePath) {
       const project = pm.getProject(thread.projectId);
       if (project) {
         await wm.removeWorktree(project.path, thread.worktreePath).catch((e) => {
           console.warn(`[cleanup] Failed to remove worktree: ${e}`);
         });
+        if (thread.branch) {
+          await wm.removeBranch(project.path, thread.branch).catch((e) => {
+            console.warn(`[cleanup] Failed to remove branch: ${e}`);
+          });
+        }
       }
     }
 

@@ -24,6 +24,7 @@ export interface Thread {
   status: ThreadStatus;
   permissionMode: PermissionMode;
   branch?: string;
+  baseBranch?: string;
   worktreePath?: string;
   sessionId?: string;
   cost: number;
@@ -174,7 +175,7 @@ export interface CreateThreadRequest {
   mode: ThreadMode;
   model?: ClaudeModel;
   permissionMode?: PermissionMode;
-  branch?: string;
+  baseBranch?: string;
   prompt: string;
 }
 
@@ -256,4 +257,25 @@ export interface SkillAddRequest {
 
 export interface SkillRemoveRequest {
   name: string;
+}
+
+// ─── Plugins ─────────────────────────────────────────────
+
+export interface PluginCommand {
+  name: string;
+  description: string;
+}
+
+export interface Plugin {
+  name: string;
+  description: string;
+  author: string;
+  installed: boolean;
+  installedAt?: string;
+  lastUpdated?: string;
+  commands: PluginCommand[];
+}
+
+export interface PluginListResponse {
+  plugins: Plugin[];
 }

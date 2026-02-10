@@ -8,6 +8,8 @@
     "addProject": "Adicionar projeto",
     "newThread": "Nova thread",
     "deleteProject": "Excluir projeto",
+    "openDirectory": "Abrir diretório",
+    "openTerminal": "Abrir terminal",
     "noThreads": "Nenhuma thread ainda",
     "viewAll": "Ver todos",
     "archive": "Arquivar",
@@ -18,7 +20,8 @@
     "add": "Adicionar",
     "settings": "Configurações",
     "activeThreads": "Ativos",
-    "recentThreads": "Recentes"
+    "recentThreads": "Recentes",
+    "searchThreads": "Buscar threads"
   },
   "thread": {
     "status": {
@@ -83,7 +86,20 @@
     "prTitle": "Título do PR:",
     "prCreated": "PR criado",
     "binaryOrNoDiff": "(arquivo binário ou sem diff disponível)",
-    "selectFile": "Selecione um arquivo para ver o diff"
+    "selectFile": "Selecione um arquivo para ver o diff",
+    "commitFirst": "Faça commit das suas alterações primeiro",
+    "stageFirst": "Prepare arquivos antes de fazer commit",
+    "commitTooltip": "Salvar as alterações preparadas como um novo commit",
+    "pushTooltip": "Enviar {{branch}} para o repositório remoto (origin)",
+    "createPRTooltip": "Abrir um Pull Request no GitHub: {{branch}} → {{target}}",
+    "merge": "Mesclar",
+    "merging": "Mesclando...",
+    "mergeAndCleanup": "Mesclar, Push e Limpar",
+    "mergeConfirm": "Mesclar \"{{branch}}\" em \"{{target}}\"? Isso modificará a branch de destino.",
+    "mergeSuccess": "\"{{branch}}\" mesclado em \"{{target}}\" com sucesso",
+    "mergeFailed": "Merge falhou: {{message}}",
+    "mergeTooltip": "Mesclar {{branch}} em {{target}} localmente na sua máquina",
+    "mergeAndCleanupTooltip": "Mesclar em {{target}}, enviar para origin e remover o worktree"
   },
   "newThread": {
     "title": "Nova Thread",
@@ -92,8 +108,8 @@
     "mode": "Modo",
     "model": "Modelo",
     "branch": "Branch",
-    "baseBranch": "Branch base (gera nova branch automaticamente se em branco)",
-    "autoGenerate": "Gerar branch automaticamente",
+    "baseBranch": "Branch base",
+    "selectBranch": "Selecionar branch...",
     "titleOptional": "Título (opcional)",
     "autoFromPrompt": "Gerado automaticamente a partir do prompt",
     "create": "Iniciar Thread",
@@ -128,7 +144,10 @@
     "themeDesc": "Use claro, escuro ou acompanhe o sistema",
     "light": "Claro",
     "dark": "Escuro",
-    "system": "Sistema"
+    "system": "Sistema",
+    "threads": "Threads",
+    "defaultThreadMode": "Modo de thread padrão",
+    "defaultThreadModeDesc": "Escolha se novas threads rodam localmente ou em um git worktree"
   },
   "skills": {
     "showingFor": "Mostrando skills para:",
@@ -145,6 +164,15 @@
     "noGlobalSkills": "Nenhum skill global instalado. Instale um da lista recomendada abaixo.",
     "recommendedSkills": "Skills Recomendados",
     "noSkillsFound": "Nenhum skill encontrado"
+  },
+  "plugins": {
+    "installedPlugins": "Plugins Instalados",
+    "noPlugins": "Nenhum plugin instalado.",
+    "loadingPlugins": "Carregando plugins...",
+    "managedByClaudeCode": "Gerenciados pelo Claude Code",
+    "commands": "comandos",
+    "command": "comando",
+    "by": "por"
   },
   "mcp": {
     "selectProject": "Selecione um projeto para gerenciar servidores MCP.",
@@ -286,7 +314,8 @@
     "deleteThread": "Excluir thread",
     "deleteThreadDesc": "Tem certeza de que deseja excluir \"{{title}}\"? Esta ação não pode ser desfeita.",
     "deleteProject": "Excluir projeto",
-    "deleteProjectDesc": "Tem certeza de que deseja excluir o projeto \"{{name}}\"? Todas as threads deste projeto também serão removidas. Esta ação não pode ser desfeita."
+    "deleteProjectDesc": "Tem certeza de que deseja excluir o projeto \"{{name}}\"? Todas as threads deste projeto também serão removidas. Esta ação não pode ser desfeita.",
+    "worktreeWarning": "Esta thread tem um worktree. A branch e o worktree serão excluídos. Commits não enviados ou mesclados serão perdidos."
   },
   "toast": {
     "threadArchived": "Thread arquivada com sucesso",

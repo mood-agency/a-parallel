@@ -11,7 +11,6 @@ function parseRoute(pathname: string) {
       projectId: null,
       threadId: null,
       allThreads: false,
-      startupCommands: false,
     };
   }
 
@@ -25,7 +24,6 @@ function parseRoute(pathname: string) {
       projectId: threadMatch.params.projectId!,
       threadId: threadMatch.params.threadId!,
       allThreads: false,
-      startupCommands: false,
     };
   }
 
@@ -37,7 +35,6 @@ function parseRoute(pathname: string) {
       projectId: allThreadsMatch.params.projectId!,
       threadId: null,
       allThreads: true,
-      startupCommands: false,
     };
   }
 
@@ -48,22 +45,10 @@ function parseRoute(pathname: string) {
       projectId: projectMatch.params.projectId!,
       threadId: null,
       allThreads: false,
-      startupCommands: false,
     };
   }
 
-  const commandsMatch = matchPath('/projects/:projectId/commands', pathname);
-  if (commandsMatch) {
-    return {
-      settingsPage: null,
-      projectId: commandsMatch.params.projectId!,
-      threadId: null,
-      allThreads: false,
-      startupCommands: true,
-    };
-  }
-
-  return { settingsPage: null, projectId: null, threadId: null, allThreads: false, startupCommands: false };
+  return { settingsPage: null, projectId: null, threadId: null, allThreads: false };
 }
 
 const validSettingsIds = new Set(settingsItems.map((i) => i.id));
@@ -73,7 +58,7 @@ export function useRouteSync() {
 
   // Sync URL → store whenever location changes
   useEffect(() => {
-    const { settingsPage, projectId, threadId, allThreads, startupCommands } = parseRoute(location.pathname);
+    const { settingsPage, projectId, threadId, allThreads } = parseRoute(location.pathname);
     const store = useAppStore.getState();
 
     if (settingsPage && validSettingsIds.has(settingsPage as any)) {
@@ -85,18 +70,6 @@ export function useRouteSync() {
     // Close settings if navigating away from /settings
     if (store.settingsOpen) {
       store.setSettingsOpen(false);
-    }
-
-    if (startupCommands && projectId) {
-      if (store.startupCommandsProjectId !== projectId) {
-        store.showStartupCommands(projectId);
-      }
-      return;
-    }
-
-    // Clear startup commands view if navigating away
-    if (store.startupCommandsProjectId) {
-      store.closeStartupCommands();
     }
 
     if (allThreads && projectId) {

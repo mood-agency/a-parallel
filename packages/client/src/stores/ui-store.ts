@@ -8,7 +8,6 @@ interface UIState {
   activeSettingsPage: string | null;
   newThreadProjectId: string | null;
   allThreadsProjectId: string | null;
-  startupCommandsProjectId: string | null;
 
   setReviewPaneOpen: (open: boolean) => void;
   setSettingsOpen: (open: boolean) => void;
@@ -17,8 +16,6 @@ interface UIState {
   cancelNewThread: () => void;
   showAllThreads: (projectId: string) => void;
   closeAllThreads: () => void;
-  showStartupCommands: (projectId: string) => void;
-  closeStartupCommands: () => void;
 }
 
 export const useUIStore = create<UIState>((set) => ({
@@ -27,7 +24,6 @@ export const useUIStore = create<UIState>((set) => ({
   activeSettingsPage: null,
   newThreadProjectId: null,
   allThreadsProjectId: null,
-  startupCommandsProjectId: null,
 
   setReviewPaneOpen: (open) => set({ reviewPaneOpen: open }),
   setSettingsOpen: (open) => set(open ? { settingsOpen: true } : { settingsOpen: false, activeSettingsPage: null }),
@@ -53,14 +49,5 @@ export const useUIStore = create<UIState>((set) => ({
 
   closeAllThreads: () => {
     set({ allThreadsProjectId: null });
-  },
-
-  showStartupCommands: (projectId: string) => {
-    useProjectStore.getState().selectProject(projectId);
-    set({ startupCommandsProjectId: projectId });
-  },
-
-  closeStartupCommands: () => {
-    set({ startupCommandsProjectId: null });
   },
 }));

@@ -1,7 +1,7 @@
 import { Hono } from 'hono';
 import * as pm from '../services/project-manager.js';
 import * as sc from '../services/startup-commands-service.js';
-import { listBranches } from '../utils/git-v2.js';
+import { listBranches, getDefaultBranch } from '../utils/git-v2.js';
 import { startCommand, stopCommand, isCommandRunning } from '../services/command-runner.js';
 import { createProjectSchema, createCommandSchema, validate } from '../validation/schemas.js';
 
@@ -54,8 +54,11 @@ projectRoutes.get('/:id/branches', async (c) => {
   }
 
   try {
-    const branches = await listBranches(project.path);
-    return c.json(branches);
+    const [branches, defaultBranch] = await Promise.all([
+      listBranches(project.path),
+      getDefaultBranch(project.path),
+    ]);
+    return c.json({ branches, defaultBranch });
   } catch (e: any) {
     return c.json({ error: e.message }, 500);
   }

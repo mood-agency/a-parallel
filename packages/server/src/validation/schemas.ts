@@ -30,7 +30,7 @@ export const createThreadSchema = z.object({
   mode: threadModeSchema,
   model: claudeModelSchema.optional().default('sonnet'),
   permissionMode: permissionModeSchema.optional().default('autoEdit'),
-  branch: z.string().optional(),
+  baseBranch: z.string().optional(),
   prompt: z.string().min(1, 'prompt is required'),
   images: z.array(imageAttachmentSchema).optional(),
 });
@@ -91,6 +91,12 @@ export const addMcpServerSchema = z.object({
   env: z.record(z.string()).optional(),
   scope: z.enum(['project', 'user']).optional(),
   projectPath: z.string().min(1),
+});
+
+export const mergeSchema = z.object({
+  targetBranch: z.string().optional(),
+  push: z.boolean().optional().default(false),
+  cleanup: z.boolean().optional().default(false),
 });
 
 export const gitInitSchema = z.object({

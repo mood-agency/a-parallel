@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect, useCallback, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Send, Square, Loader2, Image as ImageIcon, X, Zap, GitBranch, Check } from 'lucide-react';
+import { Send, Square, Loader2, Image as ImageIcon, X, Zap, GitBranch, Check, Monitor } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import {
   Select,
@@ -18,6 +18,7 @@ import { ScrollArea } from '@/components/ui/scroll-area';
 import { cn } from '@/lib/utils';
 import { api } from '@/lib/api';
 import { useAppStore } from '@/stores/app-store';
+import { useSettingsStore } from '@/stores/settings-store';
 import { ImageLightbox } from './ImageLightbox';
 import type { ImageAttachment, Skill } from '@a-parallel/shared';
 
@@ -135,13 +136,76 @@ function WorktreePicker({
   );
 }
 
+function BranchPicker({
+  branches,
+  selected,
+  onChange,
+}: {
+  branches: string[];
+  selected: string;
+  onChange: (branch: string) => void;
+}) {
+  const { t } = useTranslation();
+  const [open, setOpen] = useState(false);
+
+  return (
+    <Popover open={open} onOpenChange={setOpen}>
+      <PopoverTrigger asChild>
+        <button
+          className="flex items-center gap-1 px-2 py-1 text-[11px] text-muted-foreground hover:text-foreground transition-colors rounded hover:bg-muted truncate max-w-[200px]"
+        >
+          <GitBranch className="h-3 w-3 shrink-0" />
+          <span className="truncate">{selected || t('newThread.selectBranch')}</span>
+        </button>
+      </PopoverTrigger>
+      <PopoverContent
+        side="top"
+        align="start"
+        className="w-64 p-0 flex flex-col"
+        style={{ maxHeight: '280px' }}
+      >
+        <div className="px-3 py-2 border-b border-border bg-muted/30">
+          <p className="text-[11px] font-medium text-muted-foreground">
+            {t('newThread.baseBranch', 'Base branch')}
+          </p>
+        </div>
+        <ScrollArea className="flex-1 min-h-0" style={{ maxHeight: '220px' }}>
+          <div className="p-1">
+            {branches.map((branch) => {
+              const isSelected = branch === selected;
+              return (
+                <button
+                  key={branch}
+                  onClick={() => { onChange(branch); setOpen(false); }}
+                  className={cn(
+                    'w-full flex items-center gap-2 rounded px-2 py-1.5 text-left text-[11px] transition-colors',
+                    isSelected
+                      ? 'bg-accent text-foreground'
+                      : 'text-muted-foreground hover:bg-accent hover:text-foreground'
+                  )}
+                >
+                  <GitBranch className="h-3 w-3 shrink-0 text-blue-400" />
+                  <span className="font-medium truncate">{branch}</span>
+                  {isSelected && <Check className="h-3 w-3 shrink-0 text-blue-400 ml-auto" />}
+                </button>
+              );
+            })}
+          </div>
+        </ScrollArea>
+      </PopoverContent>
+    </Popover>
+  );
+}
+
 interface PromptInputProps {
-  onSubmit: (prompt: string, opts: { model: string; mode: string; cwd?: string }, images?: ImageAttachment[]) => void;
+  onSubmit: (prompt: string, opts: { model: string; mode: string; threadMode?: string; baseBranch?: string; cwd?: string }, images?: ImageAttachment[]) => void;
   onStop?: () => void;
   loading?: boolean;
   running?: boolean;
   queuedCount?: number;
   placeholder?: string;
+  isNewThread?: boolean;
+  projectId?: string;
 }
 
 export function PromptInput({
@@ -150,6 +214,8 @@ export function PromptInput({
   loading = false,
   running = false,
   placeholder,
+  isNewThread = false,
+  projectId: propProjectId,
 }: PromptInputProps) {
   const { t } = useTranslation();
 
@@ -165,9 +231,14 @@ export function PromptInput({
     { value: 'confirmEdit', label: t('prompt.askBeforeEdits') },
   ], [t]);
 
+  const defaultThreadMode = useSettingsStore(s => s.defaultThreadMode);
+
   const [prompt, setPrompt] = useState('');
   const [model, setModel] = useState<string>('opus');
   const [mode, setMode] = useState<string>('autoEdit');
+  const [threadMode, setThreadMode] = useState<string>(defaultThreadMode);
+  const [newThreadBranches, setNewThreadBranches] = useState<string[]>([]);
+  const [selectedBranch, setSelectedBranch] = useState<string>('');
   const [images, setImages] = useState<ImageAttachment[]>([]);
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
   const textareaCallbackRef = useCallback((node: HTMLTextAreaElement | null) => {
@@ -188,6 +259,7 @@ export function PromptInput({
   const projects = useAppStore(s => s.projects);
   const selectedProjectId = useAppStore(s => s.selectedProjectId);
   const selectedThreadId = useAppStore(s => s.selectedThreadId);
+  const activeThread = useAppStore(s => s.activeThread);
 
   // Derive project path and manage cwd override
   const projectPath = useMemo(
@@ -195,18 +267,34 @@ export function PromptInput({
     [selectedProjectId, projects]
   );
   const [cwdOverride, setCwdOverride] = useState<string | null>(null);
-  const effectiveCwd = cwdOverride || projectPath;
+  const threadCwd = activeThread?.worktreePath || projectPath;
+  const effectiveCwd = cwdOverride || threadCwd;
 
-  // Reset cwd override when project changes
+  // Reset cwd override when thread or project changes
   useEffect(() => {
     setCwdOverride(null);
-  }, [selectedProjectId]);
+  }, [selectedProjectId, selectedThreadId]);
 
   // Reset skills cache when project changes
   useEffect(() => {
     setSkillsLoaded(false);
     setSkills([]);
   }, [selectedProjectId]);
+
+  // Fetch branches for new thread mode
+  const effectiveProjectId = propProjectId || selectedProjectId;
+  useEffect(() => {
+    if (isNewThread && effectiveProjectId) {
+      api.listBranches(effectiveProjectId).then((data) => {
+        setNewThreadBranches(data.branches);
+        if (data.defaultBranch) {
+          setSelectedBranch(data.defaultBranch);
+        } else if (data.branches.length > 0) {
+          setSelectedBranch(data.branches[0]);
+        }
+      }).catch(() => setNewThreadBranches([]));
+    }
+  }, [isNewThread, effectiveProjectId]);
 
   // Fetch skills once when the menu first opens
   const loadSkills = useCallback(async () => {
@@ -285,7 +373,16 @@ export function PromptInput({
 
   const handleSubmit = () => {
     if ((!prompt.trim() && images.length === 0) || loading) return;
-    onSubmit(prompt, { model, mode, cwd: cwdOverride || undefined }, images.length > 0 ? images : undefined);
+    onSubmit(
+      prompt,
+      {
+        model,
+        mode,
+        ...(isNewThread ? { threadMode, baseBranch: threadMode === 'worktree' ? selectedBranch : undefined } : {}),
+        cwd: cwdOverride || undefined,
+      },
+      images.length > 0 ? images : undefined
+    );
     setPrompt('');
     setImages([]);
   };
@@ -467,12 +564,45 @@ export function PromptInput({
           />
           {/* Bottom toolbar */}
           <div className="flex items-center px-2 py-2 gap-1">
-            {effectiveCwd && selectedProjectId && (
+            {!isNewThread && effectiveCwd && selectedProjectId && (
               <WorktreePicker
                 projectId={selectedProjectId}
                 currentPath={effectiveCwd}
                 onChange={setCwdOverride}
               />
+            )}
+            {isNewThread && (
+              <>
+                <div className="flex items-center gap-0.5 border border-border rounded-md overflow-hidden">
+                  <button
+                    onClick={() => setThreadMode('local')}
+                    className={cn(
+                      'px-2 py-1 text-[11px] flex items-center gap-1 transition-colors',
+                      threadMode === 'local' ? 'bg-primary/10 text-primary' : 'text-muted-foreground hover:text-foreground'
+                    )}
+                  >
+                    <Monitor className="h-3 w-3" />
+                    {t('thread.mode.local')}
+                  </button>
+                  <button
+                    onClick={() => setThreadMode('worktree')}
+                    className={cn(
+                      'px-2 py-1 text-[11px] flex items-center gap-1 transition-colors',
+                      threadMode === 'worktree' ? 'bg-primary/10 text-primary' : 'text-muted-foreground hover:text-foreground'
+                    )}
+                  >
+                    <GitBranch className="h-3 w-3" />
+                    {t('thread.mode.worktree')}
+                  </button>
+                </div>
+                {threadMode === 'worktree' && newThreadBranches.length > 0 && (
+                  <BranchPicker
+                    branches={newThreadBranches}
+                    selected={selectedBranch}
+                    onChange={setSelectedBranch}
+                  />
+                )}
+              </>
             )}
             <div className="flex-1" />
             <input

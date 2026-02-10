@@ -9,6 +9,7 @@ import {
 import { FolderOpen, Loader2, Plus } from 'lucide-react';
 import { FolderPicker } from '../FolderPicker';
 import { api } from '@/lib/api';
+import { toast } from 'sonner';
 
 interface AddProjectFormProps {
   onProjectAdded: () => Promise<void>;
@@ -49,11 +50,11 @@ export function AddProjectForm({ onProjectAdded }: AddProjectFormProps) {
             setNewProjectName('');
             setNewProjectPath('');
           } catch (initErr: any) {
-            alert(initErr.message);
+            toast.error(initErr.message);
           }
         }
       } else {
-        alert(e.message);
+        toast.error(e.message);
       }
     } finally {
       setIsCreating(false);

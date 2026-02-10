@@ -114,9 +114,9 @@ export function WorktreeSettings() {
     if (!project) return;
     try {
       const data = await api.listBranches(project.id);
-      setBranches(data);
-      if (data.length > 0) {
-        setBaseBranch((prev) => prev || data[0]);
+      setBranches(data.branches);
+      if (data.branches.length > 0) {
+        setBaseBranch((prev) => prev || data.defaultBranch || data.branches[0]);
       }
     } catch (err: any) {
       console.error('Failed to load branches:', err);

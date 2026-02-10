@@ -8,6 +8,8 @@
     "addProject": "Add project",
     "newThread": "New thread",
     "deleteProject": "Delete project",
+    "openDirectory": "Open directory",
+    "openTerminal": "Open terminal",
     "noThreads": "No threads yet",
     "viewAll": "View all",
     "archive": "Archive",
@@ -18,7 +20,8 @@
     "add": "Add",
     "settings": "Settings",
     "activeThreads": "Active",
-    "recentThreads": "Recent"
+    "recentThreads": "Recent",
+    "searchThreads": "Search threads"
   },
   "thread": {
     "status": {
@@ -83,7 +86,20 @@
     "prTitle": "PR title:",
     "prCreated": "PR created",
     "binaryOrNoDiff": "(binary file or no diff available)",
-    "selectFile": "Select a file to view diff"
+    "selectFile": "Select a file to view diff",
+    "commitFirst": "Commit your changes first",
+    "stageFirst": "Stage files before committing",
+    "commitTooltip": "Save staged changes as a new commit",
+    "pushTooltip": "Upload {{branch}} to the remote repository (origin)",
+    "createPRTooltip": "Open a Pull Request on GitHub: {{branch}} → {{target}}",
+    "merge": "Merge",
+    "merging": "Merging...",
+    "mergeAndCleanup": "Merge, Push & Cleanup",
+    "mergeConfirm": "Merge \"{{branch}}\" into \"{{target}}\"? This will modify the target branch.",
+    "mergeSuccess": "Merged \"{{branch}}\" into \"{{target}}\" successfully",
+    "mergeFailed": "Merge failed: {{message}}",
+    "mergeTooltip": "Merge {{branch}} into {{target}} locally on your machine",
+    "mergeAndCleanupTooltip": "Merge into {{target}}, push to origin, and remove the worktree"
   },
   "newThread": {
     "title": "New Thread",
@@ -92,8 +108,8 @@
     "mode": "Mode",
     "model": "Model",
     "branch": "Branch",
-    "baseBranch": "Base branch (auto-generates new branch if blank)",
-    "autoGenerate": "Auto-generate branch",
+    "baseBranch": "Base branch",
+    "selectBranch": "Select branch...",
     "titleOptional": "Title (optional)",
     "autoFromPrompt": "Auto-generated from prompt",
     "create": "Start Thread",
@@ -128,7 +144,10 @@
     "themeDesc": "Use light, dark, or match your system",
     "light": "Light",
     "dark": "Dark",
-    "system": "System"
+    "system": "System",
+    "threads": "Threads",
+    "defaultThreadMode": "Default thread mode",
+    "defaultThreadModeDesc": "Choose whether new threads run locally or in a git worktree"
   },
   "skills": {
     "showingFor": "Showing skills for:",
@@ -145,6 +164,15 @@
     "noGlobalSkills": "No global skills installed. Install one from the recommended list below.",
     "recommendedSkills": "Recommended Skills",
     "noSkillsFound": "No skills found"
+  },
+  "plugins": {
+    "installedPlugins": "Installed Plugins",
+    "noPlugins": "No plugins installed.",
+    "loadingPlugins": "Loading plugins...",
+    "managedByClaudeCode": "Managed by Claude Code",
+    "commands": "commands",
+    "command": "command",
+    "by": "by"
   },
   "mcp": {
     "selectProject": "Select a project to manage MCP servers.",
@@ -286,7 +314,8 @@
     "deleteThread": "Delete thread",
     "deleteThreadDesc": "Are you sure you want to delete \"{{title}}\"? This action cannot be undone.",
     "deleteProject": "Delete project",
-    "deleteProjectDesc": "Are you sure you want to delete the project \"{{name}}\"? All threads in this project will also be removed. This action cannot be undone."
+    "deleteProjectDesc": "Are you sure you want to delete the project \"{{name}}\"? All threads in this project will also be removed. This action cannot be undone.",
+    "worktreeWarning": "This thread has a worktree. The branch and worktree will be deleted. Any commits not pushed or merged will be lost."
   },
   "toast": {
     "threadArchived": "Thread archived successfully",

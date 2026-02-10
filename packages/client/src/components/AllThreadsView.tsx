@@ -69,6 +69,7 @@ export function AllThreadsView() {
       <div className="flex-1 min-h-0 px-4 py-3">
         <ThreadListView
           className="h-full"
+          autoFocusSearch
           threads={paginated}
           totalCount={filtered.length}
           search={search}

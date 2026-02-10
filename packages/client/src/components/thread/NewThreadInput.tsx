@@ -2,7 +2,9 @@ import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { useAppStore } from '@/stores/app-store';
+import { useSettingsStore } from '@/stores/settings-store';
 import { api } from '@/lib/api';
+import { toast } from 'sonner';
 import { PromptInput } from '../PromptInput';
 
 export function NewThreadInput() {
@@ -11,10 +13,15 @@ export function NewThreadInput() {
   const newThreadProjectId = useAppStore(s => s.newThreadProjectId);
   const cancelNewThread = useAppStore(s => s.cancelNewThread);
   const loadThreadsForProject = useAppStore(s => s.loadThreadsForProject);
+  const defaultThreadMode = useSettingsStore(s => s.defaultThreadMode);
 
   const [creating, setCreating] = useState(false);
 
-  const handleCreate = async (prompt: string, opts: { model: string; mode: string }, images?: any[]) => {
+  const handleCreate = async (
+    prompt: string,
+    opts: { model: string; mode: string; threadMode?: string; baseBranch?: string },
+    images?: any[]
+  ) => {
     if (!newThreadProjectId || creating) return;
     setCreating(true);
 
@@ -22,9 +29,10 @@ export function NewThreadInput() {
       const thread = await api.createThread({
         projectId: newThreadProjectId,
         title: prompt.slice(0, 200),
-        mode: 'local',
+        mode: (opts.threadMode as 'local' | 'worktree') || defaultThreadMode,
         model: opts.model,
         permissionMode: opts.mode,
+        baseBranch: opts.baseBranch,
         prompt,
         images,
       });
@@ -33,7 +41,7 @@ export function NewThreadInput() {
       setCreating(false);
       navigate(`/projects/${newThreadProjectId}/threads/${thread.id}`);
     } catch (e: any) {
-      alert(e.message);
+      toast.error(e.message);
       setCreating(false);
     }
   };
@@ -52,6 +60,8 @@ export function NewThreadInput() {
         key={newThreadProjectId}
         onSubmit={handleCreate}
         loading={creating}
+        isNewThread
+        projectId={newThreadProjectId || undefined}
       />
     </>
   );

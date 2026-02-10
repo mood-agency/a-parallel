@@ -12,6 +12,8 @@ import {
   Archive,
   Trash2,
   MoreHorizontal,
+  FolderOpenDot,
+  Terminal,
 } from 'lucide-react';
 import { statusConfig } from '@/lib/thread-utils';
 import type { Thread, ThreadStatus } from '@a-parallel/shared';
@@ -31,13 +33,14 @@ function timeAgo(dateStr: string, t: (key: string, opts?: any) => string): strin
 interface ThreadItemProps {
   thread: Thread;
   projectId: string;
+  projectPath: string;
   isSelected: boolean;
   onSelect: () => void;
   onArchive: () => void;
   onDelete: () => void;
 }
 
-export function ThreadItem({ thread, projectId, isSelected, onSelect, onArchive, onDelete }: ThreadItemProps) {
+export function ThreadItem({ thread, projectId, projectPath, isSelected, onSelect, onArchive, onDelete }: ThreadItemProps) {
   const { t } = useTranslation();
   const [openDropdown, setOpenDropdown] = useState(false);
 
@@ -62,10 +65,15 @@ export function ThreadItem({ thread, projectId, isSelected, onSelect, onArchive,
           <span className="text-[11px] leading-tight truncate">{thread.title}</span>
         </div>
         {thread.branch && (
-          <div className="flex items-center gap-1.5 ml-[18px] min-w-0">
+          <div className="flex items-center gap-1 ml-[18px] min-w-0">
             <span className="text-[10px] text-muted-foreground truncate">
-              {thread.branch}
+              {thread.branch.includes('/') ? thread.branch.split('/').slice(1).join('/') : thread.branch}
             </span>
+            {thread.baseBranch && (
+              <span className="text-[10px] text-muted-foreground/50 flex-shrink-0">
+                from {thread.baseBranch}
+              </span>
+            )}
           </div>
         )}
       </button>
@@ -91,6 +99,42 @@ export function ThreadItem({ thread, projectId, isSelected, onSelect, onArchive,
                 </button>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="start" side="left">
+                <DropdownMenuItem
+                  onClick={async (e) => {
+                    e.stopPropagation();
+                    const folderPath = thread.worktreePath || projectPath;
+                    try {
+                      await fetch('/api/browse/open-directory', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ path: folderPath }),
+                      });
+                    } catch (error) {
+                      console.error('Failed to open directory:', error);
+                    }
+                  }}
+                >
+                  <FolderOpenDot className="h-3.5 w-3.5" />
+                  {t('sidebar.openDirectory')}
+                </DropdownMenuItem>
+                <DropdownMenuItem
+                  onClick={async (e) => {
+                    e.stopPropagation();
+                    const folderPath = thread.worktreePath || projectPath;
+                    try {
+                      await fetch('/api/browse/open-terminal', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ path: folderPath }),
+                      });
+                    } catch (error) {
+                      console.error('Failed to open terminal:', error);
+                    }
+                  }}
+                >
+                  <Terminal className="h-3.5 w-3.5" />
+                  {t('sidebar.openTerminal')}
+                </DropdownMenuItem>
                 <DropdownMenuItem
                   onClick={(e) => {
                     e.stopPropagation();

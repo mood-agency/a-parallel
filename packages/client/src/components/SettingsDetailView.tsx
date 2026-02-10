@@ -1,5 +1,5 @@
 import { useAppStore } from '@/stores/app-store';
-import { useSettingsStore, editorLabels, type Theme, type Editor } from '@/stores/settings-store';
+import { useSettingsStore, editorLabels, type Theme, type Editor, type ThreadMode } from '@/stores/settings-store';
 import { settingsItems, settingsLabelKeys, type SettingsItemId } from './SettingsPanel';
 import { cn } from '@/lib/utils';
 import { ScrollArea } from '@/components/ui/scroll-area';
@@ -18,12 +18,13 @@ import {
   BreadcrumbPage,
   BreadcrumbSeparator,
 } from '@/components/ui/breadcrumb';
-import { Sun, Moon, Monitor } from 'lucide-react';
+import { Sun, Moon, Monitor, GitBranch } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { McpServerSettings } from './McpServerSettings';
 import { SkillsSettings } from './SkillsSettings';
 import { WorktreeSettings } from './WorktreeSettings';
 import { ArchivedThreadsSettings } from './ArchivedThreadsSettings';
+import { StartupCommandsSettings } from './StartupCommandsSettings';
 
 function getLanguageName(code: string): string {
   try {
@@ -88,7 +89,7 @@ function SegmentedControl<T extends string>({
 
 /* ── General settings content ── */
 function GeneralSettings() {
-  const { theme, defaultEditor, setTheme, setDefaultEditor } = useSettingsStore();
+  const { theme, defaultEditor, defaultThreadMode, setTheme, setDefaultEditor, setDefaultThreadMode } = useSettingsStore();
   const { t, i18n } = useTranslation();
 
   return (
@@ -155,6 +156,26 @@ function GeneralSettings() {
           />
         </SettingRow>
       </div>
+
+      {/* Threads section */}
+      <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider px-1 pb-2 mt-6">
+        {t('settings.threads')}
+      </h3>
+      <div className="rounded-lg border border-border/50 overflow-hidden">
+        <SettingRow
+          title={t('settings.defaultThreadMode')}
+          description={t('settings.defaultThreadModeDesc')}
+        >
+          <SegmentedControl<ThreadMode>
+            value={defaultThreadMode}
+            onChange={setDefaultThreadMode}
+            options={[
+              { value: 'local', label: t('thread.mode.local'), icon: <Monitor className="h-3 w-3" /> },
+              { value: 'worktree', label: t('thread.mode.worktree'), icon: <GitBranch className="h-3 w-3" /> },
+            ]}
+          />
+        </SettingRow>
+      </div>
     </>
   );
 }
@@ -210,6 +231,8 @@ export function SettingsDetailView() {
             <SkillsSettings />
           ) : page === 'worktrees' ? (
             <WorktreeSettings />
+          ) : page === 'startup-commands' ? (
+            <StartupCommandsSettings />
           ) : page === 'archived-threads' ? (
             <ArchivedThreadsSettings />
           ) : (

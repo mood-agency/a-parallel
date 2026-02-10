@@ -2,10 +2,19 @@ import { useState, useEffect, useMemo, memo, Suspense } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useAppStore } from '@/stores/app-store';
 import { api } from '@/lib/api';
+import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
 import { ReactDiffViewer, DIFF_VIEWER_STYLES } from './tool-cards/utils';
 import { Button } from '@/components/ui/button';
 import { ScrollArea } from '@/components/ui/scroll-area';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
 import {
   Tooltip,
   TooltipContent,
@@ -20,6 +29,8 @@ import {
   GitCommit,
   Upload,
   GitPullRequest,
+  GitMerge,
+  GitBranch,
   FileCode,
   FilePlus,
   FileX,
@@ -94,8 +105,27 @@ export function ReviewPane() {
   const [selectedFile, setSelectedFile] = useState<string | null>(null);
   const [commitMsg, setCommitMsg] = useState('');
   const [loading, setLoading] = useState(false);
+  const [merging, setMerging] = useState(false);
+  const [revertConfirm, setRevertConfirm] = useState<{ paths: string[] } | null>(null);
+  const [mergeConfirm, setMergeConfirm] = useState<{ push?: boolean; cleanup?: boolean } | null>(null);
+  const [prDialog, setPrDialog] = useState(false);
+  const [prTitle, setPrTitle] = useState('');
 
   const threadId = activeThread?.id;
+  const [defaultBranch, setDefaultBranch] = useState<string | null>(null);
+
+  // Fetch default branch as fallback for threads without baseBranch
+  useEffect(() => {
+    if (activeThread?.mode === 'worktree' && activeThread?.branch && !activeThread?.baseBranch && activeThread?.projectId) {
+      api.listBranches(activeThread.projectId)
+        .then(data => setDefaultBranch(data.defaultBranch))
+        .catch(() => {});
+    }
+  }, [activeThread?.projectId, activeThread?.mode, activeThread?.branch, activeThread?.baseBranch]);
+
+  const mergeTarget = activeThread?.baseBranch || defaultBranch;
+  const hasUncommittedChanges = diffs.length > 0;
+  const hasStagedFiles = diffs.some(d => d.staged);
 
   const refresh = async () => {
     if (!threadId) return;
@@ -133,7 +163,6 @@ export function ReviewPane() {
 
   const handleRevert = async (paths: string[]) => {
     if (!threadId) return;
-    if (!confirm(t('review.revertConfirm', { paths: paths.join(', ') }))) return;
     await api.revertFiles(threadId, paths);
     await refresh();
   };
@@ -145,7 +174,7 @@ export function ReviewPane() {
       setCommitMsg('');
       await refresh();
     } catch (e: any) {
-      alert(t('review.commitFailed', { message: e.message }));
+      toast.error(t('review.commitFailed', { message: e.message }));
     }
   };
 
@@ -153,9 +182,28 @@ export function ReviewPane() {
     if (!threadId) return;
     try {
       await api.push(threadId);
-      alert(t('review.pushedSuccess'));
+      toast.success(t('review.pushedSuccess'));
     } catch (e: any) {
-      alert(t('review.pushFailed', { message: e.message }));
+      toast.error(t('review.pushFailed', { message: e.message }));
+    }
+  };
+
+  const handleMerge = async (opts?: { push?: boolean; cleanup?: boolean }) => {
+    if (!threadId || !activeThread?.branch || !mergeTarget) return;
+
+    setMerging(true);
+    try {
+      await api.merge(threadId, {
+        targetBranch: mergeTarget,
+        push: opts?.push ?? false,
+        cleanup: opts?.cleanup ?? false,
+      });
+      toast.success(t('review.mergeSuccess', { branch: activeThread.branch, target: mergeTarget }));
+      await refresh();
+    } catch (e: any) {
+      toast.error(t('review.mergeFailed', { message: e.message }));
+    } finally {
+      setMerging(false);
     }
   };
 
@@ -245,7 +293,7 @@ export function ReviewPane() {
                       <Button
                         variant="ghost"
                         size="icon-xs"
-                        onClick={(e) => { e.stopPropagation(); handleRevert([f.path]); }}
+                        onClick={(e) => { e.stopPropagation(); setRevertConfirm({ paths: [f.path] }); }}
                         className="text-destructive"
                       >
                         <Undo2 className="h-3 w-3" />
@@ -279,6 +327,18 @@ export function ReviewPane() {
 
       {/* Git actions */}
       <div className="p-3 border-t border-border space-y-2">
+        {/* Branch context */}
+        {activeThread?.branch && (
+          <div className="flex items-center gap-1.5 text-[10px] text-muted-foreground px-0.5">
+            <GitBranch className="h-3 w-3 flex-shrink-0" />
+            <span className="truncate font-mono">{activeThread.branch.replace(/^[^/]+\//, '')}</span>
+            {mergeTarget && (
+              <span className="text-muted-foreground/50 flex-shrink-0">→ {mergeTarget}</span>
+            )}
+          </div>
+        )}
+
+        {/* Commit */}
         <div className="flex gap-1.5">
           <input
             className="flex-1 rounded-md border border-input bg-background px-2 py-1.5 text-xs placeholder:text-muted-foreground transition-[border-color,box-shadow] duration-150 focus:outline-none focus:ring-1 focus:ring-ring"
@@ -286,45 +346,216 @@ export function ReviewPane() {
             value={commitMsg}
             onChange={(e) => setCommitMsg(e.target.value)}
             onKeyDown={(e) => e.key === 'Enter' && handleCommit()}
+            disabled={!hasStagedFiles}
           />
           <Tooltip>
             <TooltipTrigger asChild>
-              <Button
-                size="icon-sm"
-                onClick={handleCommit}
-                disabled={!commitMsg.trim()}
-              >
-                <GitCommit className="h-3.5 w-3.5" />
-              </Button>
+              <span>
+                <Button
+                  size="icon-sm"
+                  onClick={handleCommit}
+                  disabled={!commitMsg.trim() || !hasStagedFiles}
+                >
+                  <GitCommit className="h-3.5 w-3.5" />
+                </Button>
+              </span>
             </TooltipTrigger>
-            <TooltipContent>{t('review.commit')}</TooltipContent>
+            <TooltipContent>
+              {!hasStagedFiles ? t('review.stageFirst') : t('review.commitTooltip')}
+            </TooltipContent>
           </Tooltip>
         </div>
+
+        {/* Push & PR */}
         <div className="flex gap-1.5">
-          <Button
-            variant="outline"
-            size="sm"
-            className="flex-1 h-8 text-xs"
-            onClick={handlePush}
-          >
-            <Upload className="h-3 w-3 mr-1" />
-            {t('review.push')}
-          </Button>
-          <Button
-            variant="outline"
-            size="sm"
-            className="flex-1 h-8 text-xs"
-            onClick={() => {
-              const title = prompt(t('review.prTitle'));
-              if (!title || !threadId) return;
-              api.createPR(threadId, title, '').then(() => alert(t('review.prCreated'))).catch((e: any) => alert(e.message));
-            }}
-          >
-            <GitPullRequest className="h-3 w-3 mr-1" />
-            {t('review.createPR')}
-          </Button>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <span className="flex-1">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="w-full h-8 text-xs"
+                  onClick={handlePush}
+                  disabled={hasUncommittedChanges}
+                >
+                  <Upload className="h-3 w-3 mr-1" />
+                  {t('review.push')}
+                </Button>
+              </span>
+            </TooltipTrigger>
+            <TooltipContent>
+              {hasUncommittedChanges
+                ? t('review.commitFirst')
+                : t('review.pushTooltip', { branch: activeThread?.branch?.replace(/^[^/]+\//, '') ?? '' })}
+            </TooltipContent>
+          </Tooltip>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <span className="flex-1">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="w-full h-8 text-xs"
+                  onClick={() => { setPrTitle(''); setPrDialog(true); }}
+                  disabled={hasUncommittedChanges}
+                >
+                  <GitPullRequest className="h-3 w-3 mr-1" />
+                  {t('review.createPR')}
+                </Button>
+              </span>
+            </TooltipTrigger>
+            <TooltipContent>
+              {hasUncommittedChanges
+                ? t('review.commitFirst')
+                : t('review.createPRTooltip', {
+                    branch: activeThread?.branch?.replace(/^[^/]+\//, '') ?? '',
+                    target: mergeTarget ?? 'default',
+                  })}
+            </TooltipContent>
+          </Tooltip>
         </div>
+
+        {/* Merge (worktree only) */}
+        {activeThread?.mode === 'worktree' && activeThread?.branch && mergeTarget && (
+          <div className="flex gap-1.5">
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <span className="flex-1">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="w-full h-8 text-xs"
+                    onClick={() => setMergeConfirm({})}
+                    disabled={merging || hasUncommittedChanges}
+                  >
+                    <GitMerge className="h-3 w-3 mr-1" />
+                    {merging ? t('review.merging') : t('review.merge')}
+                  </Button>
+                </span>
+              </TooltipTrigger>
+              <TooltipContent>
+                {hasUncommittedChanges
+                  ? t('review.commitFirst')
+                  : t('review.mergeTooltip', {
+                      branch: activeThread.branch.replace(/^[^/]+\//, ''),
+                      target: mergeTarget,
+                    })}
+              </TooltipContent>
+            </Tooltip>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <span className="flex-1">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="w-full h-8 text-xs"
+                    onClick={() => setMergeConfirm({ push: true, cleanup: true })}
+                    disabled={merging || hasUncommittedChanges}
+                  >
+                    <GitMerge className="h-3 w-3 mr-1" />
+                    {t('review.mergeAndCleanup')}
+                  </Button>
+                </span>
+              </TooltipTrigger>
+              <TooltipContent>
+                {hasUncommittedChanges
+                  ? t('review.commitFirst')
+                  : t('review.mergeAndCleanupTooltip', { target: mergeTarget })}
+              </TooltipContent>
+            </Tooltip>
+          </div>
+        )}
       </div>
+
+      {/* Revert confirmation dialog */}
+      <Dialog open={!!revertConfirm} onOpenChange={(open) => { if (!open) setRevertConfirm(null); }}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle>{t('review.revert')}</DialogTitle>
+            <DialogDescription>
+              {t('review.revertConfirm', { paths: revertConfirm?.paths.join(', ') ?? '' })}
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="outline" size="sm" onClick={() => setRevertConfirm(null)}>
+              {t('common.cancel')}
+            </Button>
+            <Button variant="destructive" size="sm" onClick={() => {
+              if (revertConfirm) handleRevert(revertConfirm.paths);
+              setRevertConfirm(null);
+            }}>
+              {t('review.revert')}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Merge confirmation dialog */}
+      <Dialog open={!!mergeConfirm} onOpenChange={(open) => { if (!open) setMergeConfirm(null); }}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle>{t('review.merge')}</DialogTitle>
+            <DialogDescription>
+              {t('review.mergeConfirm', {
+                branch: activeThread?.branch ?? '',
+                target: mergeTarget ?? '',
+              })}
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="outline" size="sm" onClick={() => setMergeConfirm(null)}>
+              {t('common.cancel')}
+            </Button>
+            <Button size="sm" onClick={() => {
+              const opts = mergeConfirm;
+              setMergeConfirm(null);
+              handleMerge(opts ?? undefined);
+            }}>
+              {mergeConfirm?.cleanup ? t('review.mergeAndCleanup') : t('review.merge')}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Create PR dialog */}
+      <Dialog open={prDialog} onOpenChange={(open) => { if (!open) setPrDialog(false); }}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle>{t('review.createPR')}</DialogTitle>
+          </DialogHeader>
+          <input
+            className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-ring"
+            placeholder={t('review.prTitle')}
+            value={prTitle}
+            onChange={(e) => setPrTitle(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' && prTitle.trim() && threadId) {
+                setPrDialog(false);
+                const body = activeThread?.branch
+                  ? `Branch: \`${activeThread.branch}\`\nBase: \`${activeThread.baseBranch || 'default'}\``
+                  : '';
+                api.createPR(threadId, prTitle, body).then(() => toast.success(t('review.prCreated'))).catch((err: any) => toast.error(err.message));
+              }
+            }}
+            autoFocus
+          />
+          <DialogFooter>
+            <Button variant="outline" size="sm" onClick={() => setPrDialog(false)}>
+              {t('common.cancel')}
+            </Button>
+            <Button size="sm" disabled={!prTitle.trim()} onClick={() => {
+              if (!threadId || !prTitle.trim()) return;
+              setPrDialog(false);
+              const body = activeThread?.branch
+                ? `Branch: \`${activeThread.branch}\`\nBase: \`${activeThread.baseBranch || 'default'}\``
+                : '';
+              api.createPR(threadId, prTitle, body).then(() => toast.success(t('review.prCreated'))).catch((err: any) => toast.error(err.message));
+            }}>
+              {t('review.createPR')}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

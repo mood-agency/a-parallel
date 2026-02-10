@@ -7,6 +7,7 @@ import type {
   McpServer,
   McpAddRequest,
   Skill,
+  PluginListResponse,
   ImageAttachment,
 } from '@a-parallel/shared';
 
@@ -32,7 +33,8 @@ export const api = {
   createProject: (name: string, path: string) =>
     request<Project>('/projects', { method: 'POST', body: JSON.stringify({ name, path }) }),
   deleteProject: (id: string) => request<{ ok: boolean }>(`/projects/${id}`, { method: 'DELETE' }),
-  listBranches: (projectId: string) => request<string[]>(`/projects/${projectId}/branches`),
+  listBranches: (projectId: string) =>
+    request<{ branches: string[]; defaultBranch: string | null }>(`/projects/${projectId}/branches`),
 
   // Threads
   listThreads: (projectId?: string) =>
@@ -44,7 +46,7 @@ export const api = {
     mode: string;
     model?: string;
     permissionMode?: string;
-    branch?: string;
+    baseBranch?: string;
     prompt: string;
     images?: ImageAttachment[];
   }) => request<Thread>('/threads', { method: 'POST', body: JSON.stringify(data) }),
@@ -102,6 +104,11 @@ export const api = {
       method: 'POST',
       body: JSON.stringify({ title, body }),
     }),
+  merge: (threadId: string, opts?: { targetBranch?: string; push?: boolean; cleanup?: boolean }) =>
+    request<{ ok: boolean; output?: string }>(`/git/${threadId}/merge`, {
+      method: 'POST',
+      body: JSON.stringify(opts ?? {}),
+    }),
 
   // Startup Commands
   listCommands: (projectId: string) =>
@@ -153,4 +160,8 @@ export const api = {
     request<{ ok: boolean }>(`/skills/${encodeURIComponent(name)}`, { method: 'DELETE' }),
   getRecommendedSkills: () =>
     request<{ skills: Skill[] }>('/skills/recommended'),
+
+  // Plugins
+  listPlugins: () =>
+    request<PluginListResponse>('/plugins'),
 };

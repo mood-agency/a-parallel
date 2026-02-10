@@ -10,6 +10,7 @@ import { gitRoutes } from './routes/git.js';
 import browseRoutes from './routes/browse.js';
 import mcpRoutes from './routes/mcp.js';
 import skillsRoutes from './routes/skills.js';
+import pluginRoutes from './routes/plugins.js';
 import { worktreeRoutes } from './routes/worktrees.js';
 import { wsBroker } from './services/ws-broker.js';
 
@@ -45,6 +46,7 @@ app.route('/api/git', gitRoutes);
 app.route('/api/browse', browseRoutes);
 app.route('/api/mcp', mcpRoutes);
 app.route('/api/skills', skillsRoutes);
+app.route('/api/plugins', pluginRoutes);
 app.route('/api/worktrees', worktreeRoutes);
 
 // Auto-create tables on startup, then start server

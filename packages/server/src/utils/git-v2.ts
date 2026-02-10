@@ -95,6 +95,27 @@ export async function listBranches(cwd: string): Promise<string[]> {
 }
 
 /**
+ * Detect the default branch of the repository.
+ * Checks the remote HEAD reference first, then falls back to common branch names.
+ */
+export async function getDefaultBranch(cwd: string): Promise<string | null> {
+  const remoteHead = await gitSafe(
+    ['symbolic-ref', '--short', 'refs/remotes/origin/HEAD'],
+    cwd
+  );
+  if (remoteHead) {
+    return remoteHead.replace(/^origin\//, '');
+  }
+
+  const branches = await listBranches(cwd);
+  if (branches.includes('main')) return 'main';
+  if (branches.includes('master')) return 'master';
+  if (branches.includes('develop')) return 'develop';
+
+  return branches.length > 0 ? branches[0] : null;
+}
+
+/**
  * Get the remote URL for origin
  */
 export async function getRemoteUrl(cwd: string): Promise<string | null> {
@@ -183,13 +204,50 @@ export async function push(cwd: string): Promise<string> {
 export async function createPR(
   cwd: string,
   title: string,
-  body: string
+  body: string,
+  baseBranch?: string
 ): Promise<string> {
-  const { stdout } = await execute('gh', ['pr', 'create', '--title', title, '--body', body], {
+  const args = ['pr', 'create', '--title', title, '--body', body];
+  if (baseBranch) {
+    args.push('--base', baseBranch);
+  }
+  const { stdout } = await execute('gh', args, {
     cwd,
     timeout: 30_000,
   });
   return stdout.trim();
+}
+
+/**
+ * Merge a feature branch into a target branch.
+ * Must be run from the main repo directory (not a worktree).
+ */
+export async function mergeBranch(
+  cwd: string,
+  featureBranch: string,
+  targetBranch: string
+): Promise<string> {
+  const status = await git(['status', '--porcelain'], cwd);
+  if (status.trim()) {
+    throw new Error(
+      'Cannot merge: the main working tree has uncommitted changes. Please commit or stash changes first.'
+    );
+  }
+
+  const originalBranch = await getCurrentBranch(cwd);
+
+  try {
+    await git(['checkout', targetBranch], cwd);
+    const output = await git(
+      ['merge', '--no-ff', featureBranch, '-m', `Merge branch '${featureBranch}' into ${targetBranch}`],
+      cwd
+    );
+    return output;
+  } catch (error) {
+    await gitSafe(['merge', '--abort'], cwd);
+    await gitSafe(['checkout', originalBranch], cwd);
+    throw error;
+  }
 }
 
 /**

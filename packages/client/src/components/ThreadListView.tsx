@@ -25,6 +25,7 @@ interface ThreadListViewProps {
   renderActions?: (thread: Thread) => ReactNode;
   paginationLabel: (info: { from: number; to: number; total: number }) => string;
   className?: string;
+  autoFocusSearch?: boolean;
 }
 
 export function ThreadListView({
@@ -46,6 +47,7 @@ export function ThreadListView({
   renderActions,
   paginationLabel,
   className,
+  autoFocusSearch,
 }: ThreadListViewProps) {
   const { t } = useTranslation();
   const statusLabels = getStatusLabels(t);
@@ -67,6 +69,7 @@ export function ThreadListView({
             placeholder={searchPlaceholder}
             value={search}
             onChange={(e) => onSearchChange(e.target.value)}
+            autoFocus={autoFocusSearch}
             className="w-full rounded-md border border-input bg-background pl-8 pr-3 py-1.5 text-xs transition-[border-color,box-shadow] duration-150 focus:outline-none focus:ring-1 focus:ring-ring"
           />
         </div>

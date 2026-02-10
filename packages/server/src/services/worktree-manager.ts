@@ -1,4 +1,4 @@
-import { resolve, dirname, normalize } from 'path';
+import { resolve, dirname, basename, normalize } from 'path';
 import { mkdir } from 'fs/promises';
 import { existsSync } from 'fs';
 import { git, gitSafe } from '../utils/git-v2.js';
@@ -6,7 +6,8 @@ import { git, gitSafe } from '../utils/git-v2.js';
 const WORKTREE_DIR_NAME = '.a-parallel-worktrees';
 
 async function getWorktreeBase(projectPath: string): Promise<string> {
-  const base = resolve(dirname(projectPath), WORKTREE_DIR_NAME);
+  const projectName = basename(projectPath);
+  const base = resolve(dirname(projectPath), WORKTREE_DIR_NAME, projectName);
   await mkdir(base, { recursive: true });
   return base;
 }
@@ -21,8 +22,16 @@ export interface WorktreeInfo {
 export async function createWorktree(
   projectPath: string,
   branchName: string,
-  baseBranch = 'main'
+  baseBranch?: string
 ): Promise<string> {
+  // Verify the repo has at least one commit — worktrees need committed content
+  const hasCommits = await gitSafe(['rev-parse', 'HEAD'], projectPath);
+  if (!hasCommits) {
+    throw new Error(
+      'Cannot create worktree: the repository has no commits yet. Please make an initial commit first.'
+    );
+  }
+
   const base = await getWorktreeBase(projectPath);
   const worktreePath = resolve(base, branchName.replace(/\//g, '-'));
 
@@ -30,7 +39,10 @@ export async function createWorktree(
     throw new Error(`Worktree already exists: ${worktreePath}`);
   }
 
-  await git(['worktree', 'add', '-b', branchName, worktreePath, baseBranch], projectPath);
+  // If baseBranch is specified, branch from it; otherwise omit to use HEAD
+  const args = ['worktree', 'add', '-b', branchName, worktreePath];
+  if (baseBranch) args.push(baseBranch);
+  await git(args, projectPath);
   return worktreePath;
 }
 
@@ -63,4 +75,8 @@ export async function listWorktrees(projectPath: string): Promise<WorktreeInfo[]
 
 export async function removeWorktree(projectPath: string, worktreePath: string): Promise<void> {
   await gitSafe(['worktree', 'remove', '-f', worktreePath], projectPath);
+}
+
+export async function removeBranch(projectPath: string, branchName: string): Promise<void> {
+  await gitSafe(['branch', '-D', branchName], projectPath);
 }

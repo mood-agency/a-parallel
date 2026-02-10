@@ -56,8 +56,9 @@ export async function execute(
 
     const shouldReject = options.reject ?? true;
     if (shouldReject && exitCode !== 0) {
+      const reason = stderr.trim() || stdout.trim();
       throw new ProcessExecutionError(
-        `Command failed: ${command} ${args.join(' ')}`,
+        reason || `Command failed: ${command} ${args.join(' ')}`,
         exitCode,
         stdout,
         stderr,
@@ -94,8 +95,9 @@ export function executeSync(
 
   const shouldReject = options.reject ?? true;
   if (shouldReject && exitCode !== 0) {
+    const reason = stderr.trim() || stdout.trim();
     throw new ProcessExecutionError(
-      `Command failed: ${command} ${args.join(' ')}`,
+      reason || `Command failed: ${command} ${args.join(' ')}`,
       exitCode,
       stdout,
       stderr,

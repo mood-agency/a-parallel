@@ -5,6 +5,11 @@ import { api } from '@/lib/api';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 import {
+  Collapsible,
+  CollapsibleContent,
+  CollapsibleTrigger,
+} from '@/components/ui/collapsible';
+import {
   Trash2,
   Plus,
   Loader2,
@@ -15,8 +20,9 @@ import {
   ChevronDown,
   ChevronUp,
   FolderOpen,
+  Puzzle,
 } from 'lucide-react';
-import type { Skill } from '@a-parallel/shared';
+import type { Skill, Plugin, PluginCommand } from '@a-parallel/shared';
 
 interface RecommendedSkill {
   name: string;
@@ -129,13 +135,95 @@ function RecommendedSkillCard({
   );
 }
 
+function PluginCommandRow({ command }: { command: PluginCommand }) {
+  return (
+    <div className="flex items-center gap-2 px-3 py-1.5 text-xs">
+      <span className="font-mono text-foreground/80">/{command.name}</span>
+      {command.description && (
+        <span className="text-muted-foreground/70 truncate">
+          {command.description}
+        </span>
+      )}
+    </div>
+  );
+}
+
+function PluginCard({ plugin }: { plugin: Plugin }) {
+  const { t } = useTranslation();
+  const [open, setOpen] = useState(false);
+  const hasCommands = plugin.commands.length > 0;
+
+  return (
+    <Collapsible open={open} onOpenChange={setOpen}>
+      <div className="rounded-md border border-border/50 bg-card">
+        <CollapsibleTrigger asChild>
+          <button
+            className="flex items-center justify-between gap-3 px-3 py-2.5 w-full text-left hover:bg-muted/30 transition-colors rounded-md"
+            disabled={!hasCommands}
+          >
+            <div className="flex items-center gap-3 min-w-0">
+              <Puzzle className="h-4 w-4 text-purple-500 flex-shrink-0" />
+              <div className="min-w-0">
+                <div className="flex items-center gap-2">
+                  <span className="text-sm font-medium truncate">{plugin.name}</span>
+                  {hasCommands && (
+                    <span className="text-[10px] px-1.5 py-0.5 rounded bg-muted text-muted-foreground font-medium">
+                      {plugin.commands.length} {plugin.commands.length === 1 ? t('plugins.command') : t('plugins.commands')}
+                    </span>
+                  )}
+                </div>
+                {plugin.description && (
+                  <p className="text-xs text-muted-foreground truncate mt-0.5">
+                    {plugin.description}
+                  </p>
+                )}
+                <div className="flex items-center gap-2 mt-1">
+                  {plugin.author && (
+                    <span className="text-[10px] text-muted-foreground/70">
+                      {t('plugins.by')} {plugin.author}
+                    </span>
+                  )}
+                  {plugin.installedAt && (
+                    <span className="text-[10px] text-muted-foreground/70">
+                      installed {new Date(plugin.installedAt).toLocaleDateString()}
+                    </span>
+                  )}
+                </div>
+              </div>
+            </div>
+            {hasCommands && (
+              <ChevronDown
+                className={cn(
+                  'h-3.5 w-3.5 text-muted-foreground transition-transform flex-shrink-0',
+                  open && 'rotate-180'
+                )}
+              />
+            )}
+          </button>
+        </CollapsibleTrigger>
+        {hasCommands && (
+          <CollapsibleContent>
+            <div className="border-t border-border/50 py-1">
+              {plugin.commands.map((cmd) => (
+                <PluginCommandRow key={cmd.name} command={cmd} />
+              ))}
+            </div>
+          </CollapsibleContent>
+        )}
+      </div>
+    </Collapsible>
+  );
+}
+
 export function SkillsSettings() {
   const { t } = useTranslation();
   const projects = useAppStore(s => s.projects);
   const selectedProjectId = useAppStore(s => s.selectedProjectId);
   const [skills, setSkills] = useState<Skill[]>([]);
+  const [plugins, setPlugins] = useState<Plugin[]>([]);
   const [recommended, setRecommended] = useState<RecommendedSkill[]>([]);
   const [loading, setLoading] = useState(false);
+  const [loadingPlugins, setLoadingPlugins] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [removingName, setRemovingName] = useState<string | null>(null);
   const [installingId, setInstallingId] = useState<string | null>(null);
@@ -161,6 +249,18 @@ export function SkillsSettings() {
     }
   }, [projectPath]);
 
+  const loadPlugins = useCallback(async () => {
+    setLoadingPlugins(true);
+    try {
+      const res = await api.listPlugins();
+      setPlugins(res.plugins);
+    } catch {
+      // Silently fail — plugins are optional
+    } finally {
+      setLoadingPlugins(false);
+    }
+  }, []);
+
   const loadRecommended = useCallback(async () => {
     try {
       const res = await api.getRecommendedSkills();
@@ -173,6 +273,10 @@ export function SkillsSettings() {
   useEffect(() => {
     loadSkills();
   }, [loadSkills]);
+
+  useEffect(() => {
+    loadPlugins();
+  }, [loadPlugins]);
 
   useEffect(() => {
     loadRecommended();
@@ -338,6 +442,35 @@ export function SkillsSettings() {
                 onRemove={() => handleRemove(skill.name)}
                 removing={removingName === skill.name}
               />
+            ))}
+          </div>
+        )}
+      </div>
+
+      {/* Installed plugins */}
+      <div>
+        <div className="flex items-center justify-between mb-2">
+          <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">
+            {t('plugins.installedPlugins')}
+          </h3>
+          <span className="text-[10px] text-muted-foreground/60">
+            {t('plugins.managedByClaudeCode')}
+          </span>
+        </div>
+
+        {loadingPlugins ? (
+          <div className="flex items-center gap-2 py-6 justify-center text-sm text-muted-foreground">
+            <Loader2 className="h-4 w-4 animate-spin" />
+            {t('plugins.loadingPlugins')}
+          </div>
+        ) : plugins.length === 0 ? (
+          <div className="py-4 text-center text-sm text-muted-foreground">
+            {t('plugins.noPlugins')}
+          </div>
+        ) : (
+          <div className="space-y-1.5">
+            {plugins.map((plugin) => (
+              <PluginCard key={plugin.name} plugin={plugin} />
             ))}
           </div>
         )}
