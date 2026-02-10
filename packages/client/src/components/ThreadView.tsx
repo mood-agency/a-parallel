@@ -9,6 +9,7 @@ import { Loader2, Clock, Copy, Check, Send, CheckCircle2, XCircle, ArrowDown } f
 import { api } from '@/lib/api';
 import { PromptInput } from './PromptInput';
 import { ToolCallCard } from './ToolCallCard';
+import { ToolCallGroup } from './ToolCallGroup';
 import { ImageLightbox } from './ImageLightbox';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { ProjectHeader } from './thread/ProjectHeader';
@@ -155,6 +156,47 @@ export function WaitingActions({ onSend }: { onSend: (text: string) => void }) {
       </div>
     </div>
   );
+}
+
+type RenderItem =
+  | { type: 'message'; msg: any }
+  | { type: 'toolcall'; tc: any }
+  | { type: 'toolcall-group'; name: string; calls: any[] };
+
+function buildGroupedRenderItems(messages: any[]): RenderItem[] {
+  // Flatten all messages into a single stream of items
+  const flat: RenderItem[] = [];
+  for (const msg of messages) {
+    if (msg.content) {
+      flat.push({ type: 'message', msg });
+    }
+    for (const tc of msg.toolCalls ?? []) {
+      flat.push({ type: 'toolcall', tc });
+    }
+  }
+
+  // Group consecutive same-type tool calls (across message boundaries)
+  const grouped: RenderItem[] = [];
+  for (const item of flat) {
+    if (item.type === 'toolcall') {
+      const last = grouped[grouped.length - 1];
+      if (last?.type === 'toolcall' && (last as any).tc.name === item.tc.name) {
+        grouped[grouped.length - 1] = {
+          type: 'toolcall-group',
+          name: item.tc.name,
+          calls: [(last as any).tc, item.tc],
+        };
+      } else if (last?.type === 'toolcall-group' && last.name === item.tc.name) {
+        last.calls.push(item.tc);
+      } else {
+        grouped.push(item);
+      }
+    } else {
+      grouped.push(item);
+    }
+  }
+
+  return grouped;
 }
 
 export function ThreadView() {
@@ -309,74 +351,99 @@ export function ThreadView() {
             </div>
           )}
 
-          {activeThread.messages?.flatMap((msg) => [
-              msg.content && (
-                <motion.div
-                  key={msg.id}
-                  initial={{ opacity: 0, y: 8 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  transition={{ duration: 0.3, ease: 'easeOut' }}
-                  className={cn(
-                    'relative group rounded-lg px-3 py-2 text-sm max-w-[80%]',
-                    msg.role === 'user'
-                      ? 'ml-auto bg-primary text-primary-foreground'
-                      : 'bg-secondary text-secondary-foreground'
-                  )}
-                >
-                  {msg.role !== 'user' && (
-                    <CopyButton content={msg.content} />
-                  )}
-                  {msg.role !== 'user' && (
-                    <span className="text-[10px] font-medium uppercase text-muted-foreground block mb-0.5">
-                      {msg.role}
-                    </span>
-                  )}
-                  {msg.images && msg.images.length > 0 && (() => {
-                    const allImages = msg.images!.map((i: any, j: number) => ({
-                      src: `data:${i.source.media_type};base64,${i.source.data}`,
-                      alt: `Attachment ${j + 1}`,
-                    }));
-                    return (
-                      <div className="flex flex-wrap gap-2 mb-2">
-                        {msg.images!.map((img: any, idx: number) => (
-                          <img
-                            key={idx}
-                            src={`data:${img.source.media_type};base64,${img.source.data}`}
-                            alt={`Attachment ${idx + 1}`}
-                            className="max-h-40 rounded border border-border cursor-pointer hover:opacity-80 transition-opacity"
-                            onClick={() => openLightbox(allImages, idx)}
-                          />
-                        ))}
+          {buildGroupedRenderItems(activeThread.messages ?? []).map((item) => {
+              if (item.type === 'message') {
+                const msg = item.msg;
+                return (
+                  <motion.div
+                    key={msg.id}
+                    initial={{ opacity: 0, y: 8 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{ duration: 0.3, ease: 'easeOut' }}
+                    className={cn(
+                      'relative group rounded-lg px-3 py-2 text-sm max-w-[80%]',
+                      msg.role === 'user'
+                        ? 'ml-auto bg-primary text-primary-foreground'
+                        : 'bg-secondary text-secondary-foreground'
+                    )}
+                  >
+                    {msg.role !== 'user' && (
+                      <CopyButton content={msg.content} />
+                    )}
+                    {msg.role !== 'user' && (
+                      <span className="text-[10px] font-medium uppercase text-muted-foreground block mb-0.5">
+                        {msg.role}
+                      </span>
+                    )}
+                    {msg.images && msg.images.length > 0 && (() => {
+                      const allImages = msg.images!.map((i: any, j: number) => ({
+                        src: `data:${i.source.media_type};base64,${i.source.data}`,
+                        alt: `Attachment ${j + 1}`,
+                      }));
+                      return (
+                        <div className="flex flex-wrap gap-2 mb-2">
+                          {msg.images!.map((img: any, idx: number) => (
+                            <img
+                              key={idx}
+                              src={`data:${img.source.media_type};base64,${img.source.data}`}
+                              alt={`Attachment ${idx + 1}`}
+                              className="max-h-40 rounded border border-border cursor-pointer hover:opacity-80 transition-opacity"
+                              onClick={() => openLightbox(allImages, idx)}
+                            />
+                          ))}
+                        </div>
+                      );
+                    })()}
+                    {msg.role === 'user' ? (
+                      <pre className="whitespace-pre-wrap font-mono text-xs leading-relaxed break-words overflow-x-auto">
+                        {msg.content.trim()}
+                      </pre>
+                    ) : (
+                      <div className="text-xs leading-relaxed break-words overflow-x-auto">
+                        <MessageContent content={msg.content.trim()} />
                       </div>
-                    );
-                  })()}
-                  {msg.role === 'user' ? (
-                    <pre className="whitespace-pre-wrap font-mono text-xs leading-relaxed break-words overflow-x-auto">
-                      {msg.content.trim()}
-                    </pre>
-                  ) : (
-                    <div className="text-xs leading-relaxed break-words overflow-x-auto">
-                      <MessageContent content={msg.content.trim()} />
-                    </div>
-                  )}
-                </motion.div>
-              ),
-              ...(msg.toolCalls?.map((tc: any) => (
-                <motion.div
-                  key={tc.id}
-                  initial={{ opacity: 0, y: 6 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  transition={{ duration: 0.25, ease: 'easeOut' }}
-                >
-                  <ToolCallCard
-                    name={tc.name}
-                    input={tc.input}
-                    output={tc.output}
-                    onRespond={(tc.name === 'AskUserQuestion' || tc.name === 'ExitPlanMode') ? (answer: string) => handleSend(answer, { model: '', mode: '' }) : undefined}
-                  />
-                </motion.div>
-              )) ?? []),
-            ])}
+                    )}
+                  </motion.div>
+                );
+              }
+              if (item.type === 'toolcall') {
+                const tc = item.tc;
+                return (
+                  <motion.div
+                    key={tc.id}
+                    initial={{ opacity: 0, y: 6 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{ duration: 0.25, ease: 'easeOut' }}
+                  >
+                    <ToolCallCard
+                      name={tc.name}
+                      input={tc.input}
+                      output={tc.output}
+                      onRespond={(tc.name === 'AskUserQuestion' || tc.name === 'ExitPlanMode') ? (answer: string) => handleSend(answer, { model: '', mode: '' }) : undefined}
+                    />
+                  </motion.div>
+                );
+              }
+              if (item.type === 'toolcall-group') {
+                return (
+                  <motion.div
+                    key={item.calls[0].id}
+                    initial={{ opacity: 0, y: 6 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{ duration: 0.25, ease: 'easeOut' }}
+                  >
+                    <ToolCallGroup
+                      name={item.name}
+                      calls={item.calls}
+                      onRespond={(item.name === 'AskUserQuestion' || item.name === 'ExitPlanMode')
+                        ? (answer: string) => handleSend(answer, { model: '', mode: '' })
+                        : undefined}
+                    />
+                  </motion.div>
+                );
+              }
+              return null;
+            })}
 
           {isRunning && (
             <motion.div

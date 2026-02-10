@@ -618,7 +618,7 @@ export function PromptInput({
                 </>
               )}
               <Select value={model} onValueChange={setModel}>
-                <SelectTrigger className="h-7 w-[100px] text-xs">
+                <SelectTrigger className="h-7 w-[100px] text-xs border-0 bg-transparent shadow-none text-muted-foreground hover:bg-accent hover:text-accent-foreground">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
@@ -630,7 +630,7 @@ export function PromptInput({
                 </SelectContent>
               </Select>
               <Select value={mode} onValueChange={setMode}>
-                <SelectTrigger className="h-7 w-[140px] text-xs">
+                <SelectTrigger className="h-7 w-[140px] text-xs border-0 bg-transparent shadow-none text-muted-foreground hover:bg-accent hover:text-accent-foreground">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
