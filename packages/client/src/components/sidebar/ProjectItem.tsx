@@ -77,12 +77,100 @@ export function ProjectItem({
           )}
           <span className="truncate font-medium">{project.name}</span>
         </CollapsibleTrigger>
-        <div className={cn(
-          'flex items-center mr-1 gap-0.5 transition-opacity',
-          hovered || openDropdown
-            ? 'opacity-100'
-            : 'opacity-0 pointer-events-none'
-        )}>
+        <div className="flex items-center mr-1 gap-0.5">
+          <div className={cn(
+            'flex items-center gap-0.5 transition-opacity',
+            hovered || openDropdown
+              ? 'opacity-100'
+              : 'opacity-0 pointer-events-none'
+          )}>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  variant="ghost"
+                  size="icon-xs"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onShowAllThreads();
+                  }}
+                  className="text-muted-foreground hover:text-foreground"
+                >
+                  <Search className="h-3.5 w-3.5" />
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent side="bottom">
+                {t('sidebar.searchThreads')}
+              </TooltipContent>
+            </Tooltip>
+            <DropdownMenu onOpenChange={setOpenDropdown}>
+              <DropdownMenuTrigger asChild>
+                <Button
+                  variant="ghost"
+                  size="icon-xs"
+                  onClick={(e) => e.stopPropagation()}
+                  className="text-muted-foreground hover:text-foreground"
+                >
+                  <MoreHorizontal className="h-3.5 w-3.5" />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="start" side="bottom">
+                <DropdownMenuItem
+                  onClick={async (e) => {
+                    e.stopPropagation();
+                    try {
+                      await fetch('/api/browse/open-directory', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ path: project.path }),
+                      });
+                    } catch (error) {
+                      console.error('Failed to open directory:', error);
+                    }
+                  }}
+                >
+                  <FolderOpenDot className="h-3.5 w-3.5" />
+                  {t('sidebar.openDirectory')}
+                </DropdownMenuItem>
+                <DropdownMenuItem
+                  onClick={async (e) => {
+                    e.stopPropagation();
+                    try {
+                      await fetch('/api/browse/open-terminal', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ path: project.path }),
+                      });
+                    } catch (error) {
+                      console.error('Failed to open terminal:', error);
+                    }
+                  }}
+                >
+                  <Terminal className="h-3.5 w-3.5" />
+                  {t('sidebar.openTerminal')}
+                </DropdownMenuItem>
+                <DropdownMenuItem
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    navigate(`/projects/${project.id}/settings/general`);
+                  }}
+                >
+                  <Settings className="h-3.5 w-3.5" />
+                  {t('sidebar.settings')}
+                </DropdownMenuItem>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onDeleteProject();
+                  }}
+                  className="text-red-400 focus:text-red-400"
+                >
+                  <Trash2 className="h-3.5 w-3.5" />
+                  {t('sidebar.deleteProject')}
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+          </div>
           <Tooltip>
             <TooltipTrigger asChild>
               <Button
@@ -101,92 +189,6 @@ export function ProjectItem({
               {t('sidebar.newThread')}
             </TooltipContent>
           </Tooltip>
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <Button
-                variant="ghost"
-                size="icon-xs"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  onShowAllThreads();
-                }}
-                className="text-muted-foreground hover:text-foreground"
-              >
-                <Search className="h-3.5 w-3.5" />
-              </Button>
-            </TooltipTrigger>
-            <TooltipContent side="bottom">
-              {t('sidebar.searchThreads')}
-            </TooltipContent>
-          </Tooltip>
-          <DropdownMenu onOpenChange={setOpenDropdown}>
-            <DropdownMenuTrigger asChild>
-              <Button
-                variant="ghost"
-                size="icon-xs"
-                onClick={(e) => e.stopPropagation()}
-                className="text-muted-foreground hover:text-foreground"
-              >
-                <MoreHorizontal className="h-3.5 w-3.5" />
-              </Button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="start" side="bottom">
-              <DropdownMenuItem
-                onClick={async (e) => {
-                  e.stopPropagation();
-                  try {
-                    await fetch('/api/browse/open-directory', {
-                      method: 'POST',
-                      headers: { 'Content-Type': 'application/json' },
-                      body: JSON.stringify({ path: project.path }),
-                    });
-                  } catch (error) {
-                    console.error('Failed to open directory:', error);
-                  }
-                }}
-              >
-                <FolderOpenDot className="h-3.5 w-3.5" />
-                {t('sidebar.openDirectory')}
-              </DropdownMenuItem>
-              <DropdownMenuItem
-                onClick={async (e) => {
-                  e.stopPropagation();
-                  try {
-                    await fetch('/api/browse/open-terminal', {
-                      method: 'POST',
-                      headers: { 'Content-Type': 'application/json' },
-                      body: JSON.stringify({ path: project.path }),
-                    });
-                  } catch (error) {
-                    console.error('Failed to open terminal:', error);
-                  }
-                }}
-              >
-                <Terminal className="h-3.5 w-3.5" />
-                {t('sidebar.openTerminal')}
-              </DropdownMenuItem>
-              <DropdownMenuItem
-                onClick={(e) => {
-                  e.stopPropagation();
-                  navigate(`/projects/${project.id}/settings/general`);
-                }}
-              >
-                <Settings className="h-3.5 w-3.5" />
-                {t('sidebar.settings')}
-              </DropdownMenuItem>
-              <DropdownMenuSeparator />
-              <DropdownMenuItem
-                onClick={(e) => {
-                  e.stopPropagation();
-                  onDeleteProject();
-                }}
-                className="text-red-400 focus:text-red-400"
-              >
-                <Trash2 className="h-3.5 w-3.5" />
-                {t('sidebar.deleteProject')}
-              </DropdownMenuItem>
-            </DropdownMenuContent>
-          </DropdownMenu>
         </div>
       </div>
 

@@ -74,7 +74,7 @@ export function AddProjectForm({ onProjectAdded }: AddProjectFormProps) {
                 variant="ghost"
                 size="icon-xs"
                 onClick={() => setAddingProject(!addingProject)}
-                className="text-muted-foreground opacity-0 group-hover/projects:opacity-100 transition-opacity"
+                className="text-muted-foreground"
               >
                 <Plus className="h-3.5 w-3.5" />
               </Button>
