@@ -83,16 +83,31 @@ function flushWSBuffer(threadId: string, store: ThreadState) {
 
 // ── Store ────────────────────────────────────────────────────────
 
+const _threadLoadPromises = new Map<string, Promise<void>>();
+
 export const useThreadStore = create<ThreadState>((set, get) => ({
   threadsByProject: {},
   selectedThreadId: null,
   activeThread: null,
 
   loadThreadsForProject: async (projectId: string) => {
-    const threads = await api.listThreads(projectId);
-    set((state) => ({
-      threadsByProject: { ...state.threadsByProject, [projectId]: threads },
-    }));
+    // Deduplicate concurrent loads for the same project
+    const existing = _threadLoadPromises.get(projectId);
+    if (existing) return existing;
+
+    const promise = (async () => {
+      try {
+        const threads = await api.listThreads(projectId);
+        set((state) => ({
+          threadsByProject: { ...state.threadsByProject, [projectId]: threads },
+        }));
+      } finally {
+        _threadLoadPromises.delete(projectId);
+      }
+    })();
+
+    _threadLoadPromises.set(projectId, promise);
+    return promise;
   },
 
   selectThread: async (threadId) => {

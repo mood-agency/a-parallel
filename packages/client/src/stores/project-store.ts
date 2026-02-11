@@ -16,6 +16,8 @@ interface ProjectState {
   deleteProject: (projectId: string) => Promise<void>;
 }
 
+let _loadProjectsPromise: Promise<void> | null = null;
+
 export const useProjectStore = create<ProjectState>((set, get) => ({
   projects: [],
   expandedProjects: new Set(),
@@ -23,21 +25,32 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
   initialized: false,
 
   loadProjects: async () => {
-    const projects = await api.listProjects();
-    set({ projects });
+    // Deduplicate concurrent calls (StrictMode, cascading re-renders, etc.)
+    if (_loadProjectsPromise) return _loadProjectsPromise;
 
-    // Load threads for all projects so Running/Recent sections work immediately
-    const threadStore = useThreadStore.getState();
-    await Promise.all(
-      projects.map((p) => threadStore.loadThreadsForProject(p.id))
-    );
-    set({ initialized: true });
+    _loadProjectsPromise = (async () => {
+      try {
+        const projects = await api.listProjects();
+        set({ projects });
 
-    // Fetch git statuses for all projects (best-effort, non-blocking)
-    const gitStore = useGitStatusStore.getState();
-    for (const p of projects) {
-      gitStore.fetchForProject(p.id);
-    }
+        // Load threads for all projects so Running/Recent sections work immediately
+        const threadStore = useThreadStore.getState();
+        await Promise.all(
+          projects.map((p) => threadStore.loadThreadsForProject(p.id))
+        );
+        set({ initialized: true });
+
+        // Fetch git statuses for all projects (best-effort, non-blocking)
+        const gitStore = useGitStatusStore.getState();
+        for (const p of projects) {
+          gitStore.fetchForProject(p.id);
+        }
+      } finally {
+        _loadProjectsPromise = null;
+      }
+    })();
+
+    return _loadProjectsPromise;
   },
 
   toggleProject: (projectId: string) => {

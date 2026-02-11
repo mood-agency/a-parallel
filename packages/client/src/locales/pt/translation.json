@@ -109,7 +109,8 @@
     "generateFailed": "Erro ao gerar mensagem de commit: {{message}}",
     "stageFailed": "Erro ao preparar: {{message}}",
     "unstageFailed": "Erro ao remover preparação: {{message}}",
-    "revertFailed": "Erro ao reverter: {{message}}"
+    "revertFailed": "Erro ao reverter: {{message}}",
+    "nothingToPush": "Nenhum commit para enviar"
   },
   "newThread": {
     "title": "Nova Thread",
@@ -124,7 +125,9 @@
     "autoFromPrompt": "Gerado automaticamente a partir do prompt",
     "create": "Iniciar Thread",
     "creating": "Criando...",
-    "cancel": "Cancelar"
+    "cancel": "Cancelar",
+    "searchBranches": "Buscar branches...",
+    "noBranchesMatch": "Nenhuma branch encontrada"
   },
   "git": {
     "staged": "Preparados",
@@ -212,7 +215,9 @@
     "authHint": "Este servidor requer autenticacao OAuth.",
     "authenticate": "Autenticar",
     "authenticating": "Autenticando...",
-    "authFailed": "A autenticacao falhou. Tente novamente."
+    "authFailed": "A autenticacao falhou. Tente novamente.",
+    "manualToken": "Token Manual",
+    "tokenPlaceholder": "Cole seu token aqui"
   },
   "tools": {
     "readFile": "Ler Arquivo",

@@ -109,7 +109,8 @@
     "generateFailed": "Failed to generate commit message: {{message}}",
     "stageFailed": "Stage failed: {{message}}",
     "unstageFailed": "Unstage failed: {{message}}",
-    "revertFailed": "Revert failed: {{message}}"
+    "revertFailed": "Revert failed: {{message}}",
+    "nothingToPush": "No commits to push"
   },
   "newThread": {
     "title": "New Thread",
@@ -124,7 +125,9 @@
     "autoFromPrompt": "Auto-generated from prompt",
     "create": "Start Thread",
     "creating": "Creating...",
-    "cancel": "Cancel"
+    "cancel": "Cancel",
+    "searchBranches": "Search branches...",
+    "noBranchesMatch": "No branches match"
   },
   "git": {
     "staged": "Staged",
@@ -212,7 +215,9 @@
     "authHint": "This server requires OAuth authentication.",
     "authenticate": "Authenticate",
     "authenticating": "Authenticating...",
-    "authFailed": "Authentication failed. Please try again."
+    "authFailed": "Authentication failed. Please try again.",
+    "manualToken": "Manual Token",
+    "tokenPlaceholder": "Paste your bearer token here"
   },
   "tools": {
     "readFile": "Read File",
@@ -378,7 +383,9 @@
     "askBeforeEdits": "Ask Before Edits",
     "addImage": "Add image",
     "stopAgent": "Stop agent",
-    "loadingSkills": "Loading skills..."
+    "loadingSkills": "Loading skills...",
+    "searchWorktrees": "Search worktrees...",
+    "noWorktreesMatch": "No worktrees match"
   },
   "gitStatus": {
     "dirty": "Uncommitted changes",
