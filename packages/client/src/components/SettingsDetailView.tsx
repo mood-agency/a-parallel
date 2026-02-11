@@ -92,7 +92,7 @@ function SegmentedControl<T extends string>({
 
 /* ── General settings content ── */
 function GeneralSettings() {
-  const { theme, defaultEditor, defaultThreadMode, defaultPrompt, allowedTools, setTheme, setDefaultEditor, setDefaultThreadMode, setDefaultPrompt, toggleTool, setAllowedTools } = useSettingsStore();
+  const { theme, defaultEditor, defaultThreadMode, allowedTools, setTheme, setDefaultEditor, setDefaultThreadMode, toggleTool, setAllowedTools } = useSettingsStore();
   const { t, i18n } = useTranslation();
 
   return (
@@ -178,23 +178,6 @@ function GeneralSettings() {
             ]}
           />
         </SettingRow>
-      </div>
-
-      {/* Default prompt */}
-      <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider px-1 pb-2 mt-6">
-        {t('settings.prompt')}
-      </h3>
-      <div className="rounded-lg border border-border/50 overflow-hidden">
-        <div className="px-4 py-3.5">
-          <p className="text-sm font-medium text-foreground">{t('settings.defaultPrompt')}</p>
-          <p className="text-xs text-muted-foreground mt-0.5 mb-2">{t('settings.defaultPromptDesc')}</p>
-          <textarea
-            className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm placeholder:text-muted-foreground min-h-[80px] resize-y transition-[border-color,box-shadow] duration-150 focus:outline-none focus:ring-1 focus:ring-ring"
-            placeholder={t('settings.defaultPromptPlaceholder')}
-            value={defaultPrompt}
-            onChange={(e) => setDefaultPrompt(e.target.value)}
-          />
-        </div>
       </div>
 
       {/* Permissions */}

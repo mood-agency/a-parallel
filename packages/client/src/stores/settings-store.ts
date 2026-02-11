@@ -37,12 +37,10 @@ interface SettingsState {
   theme: Theme;
   defaultEditor: Editor;
   defaultThreadMode: ThreadMode;
-  defaultPrompt: string;
   allowedTools: string[];
   setTheme: (theme: Theme) => void;
   setDefaultEditor: (editor: Editor) => void;
   setDefaultThreadMode: (mode: ThreadMode) => void;
-  setDefaultPrompt: (prompt: string) => void;
   setAllowedTools: (tools: string[]) => void;
   toggleTool: (toolName: string) => void;
 }
@@ -63,7 +61,6 @@ export const useSettingsStore = create<SettingsState>()(
       theme: 'dark',
       defaultEditor: 'cursor',
       defaultThreadMode: 'worktree',
-      defaultPrompt: '',
       allowedTools: [...ALL_STANDARD_TOOLS],
       setTheme: (theme) => {
         applyTheme(theme);
@@ -71,7 +68,6 @@ export const useSettingsStore = create<SettingsState>()(
       },
       setDefaultEditor: (editor) => set({ defaultEditor: editor }),
       setDefaultThreadMode: (mode) => set({ defaultThreadMode: mode }),
-      setDefaultPrompt: (prompt) => set({ defaultPrompt: prompt }),
       setAllowedTools: (tools) => set({ allowedTools: tools }),
       toggleTool: (toolName) => set((state) => ({
         allowedTools: state.allowedTools.includes(toolName)

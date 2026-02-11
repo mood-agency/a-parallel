@@ -170,10 +170,6 @@
     "threads": "Threads",
     "defaultThreadMode": "Modo de thread padrão",
     "defaultThreadModeDesc": "Escolha se novas threads rodam localmente ou em um git worktree",
-    "prompt": "Prompt",
-    "defaultPrompt": "Prompt padrão",
-    "defaultPromptDesc": "Preenche o campo de prompt ao criar uma nova thread",
-    "defaultPromptPlaceholder": "Digite um prompt padrão...",
     "permissions": "Permissões",
     "toolPermissions": "Permissões de Ferramentas",
     "toolPermissionsDesc": "Escolha quais ferramentas os agentes podem usar automaticamente. Ferramentas desmarcadas exigirão aprovação.",
@@ -467,6 +463,12 @@
       "cloning": "Clonando {{repo}}...",
       "success": "Repositório clonado e projeto criado!"
     }
+  },
+  "todoPanel": {
+    "title": "Tarefas",
+    "minimize": "Minimizar",
+    "expand": "Expandir",
+    "dismiss": "Fechar"
   },
   "users": {
     "title": "Usuários",

@@ -1,8 +1,8 @@
-import { useState, useRef, useEffect, useCallback, memo } from 'react';
+import { useState, useRef, useEffect, useCallback, useMemo, memo } from 'react';
 import { useTranslation } from 'react-i18next';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
-import { motion } from 'motion/react';
+import { motion, AnimatePresence } from 'motion/react';
 import { useAppStore } from '@/stores/app-store';
 import { cn } from '@/lib/utils';
 import { Loader2, Clock, Copy, Check, Send, CheckCircle2, XCircle, ArrowDown, ShieldQuestion } from 'lucide-react';
@@ -16,6 +16,8 @@ import { ScrollArea } from '@/components/ui/scroll-area';
 import { ProjectHeader } from './thread/ProjectHeader';
 import { NewThreadInput } from './thread/NewThreadInput';
 import { AgentResultCard, AgentInterruptedCard } from './thread/AgentStatusCards';
+import { TodoPanel } from './thread/TodoPanel';
+import { useTodoSnapshots } from '@/hooks/use-todo-panel';
 
 // Regex to match file paths like /foo/bar.ts, C:\foo\bar.ts, or file_path:line_number patterns
 const FILE_PATH_RE = /(?:[A-Za-z]:[\\\/]|\/)[^\s:*?"<>|,()]+(?::\d+)?/g;
@@ -256,6 +258,31 @@ export function ThreadView() {
   const [lightboxOpen, setLightboxOpen] = useState(false);
   const [lightboxImages, setLightboxImages] = useState<{ src: string; alt: string }[]>([]);
   const [lightboxIndex, setLightboxIndex] = useState(0);
+  const [todoPanelDismissed, setTodoPanelDismissed] = useState(false);
+  const [currentSnapshotIdx, setCurrentSnapshotIdx] = useState(-1);
+  const snapshots = useTodoSnapshots();
+
+  // Map tool call IDs to snapshot indices for data-attribute lookup
+  const snapshotMap = useMemo(() => {
+    const map = new Map<string, number>();
+    snapshots.forEach((s, i) => map.set(s.toolCallId, i));
+    return map;
+  }, [snapshots]);
+
+  // Reset dismissed state and snapshot index when switching threads
+  useEffect(() => {
+    setTodoPanelDismissed(false);
+    setCurrentSnapshotIdx(-1);
+  }, [activeThread?.id]);
+
+  // Derive displayed snapshot:
+  // - If scroll handler has detected a position (>= 0), use that
+  // - Otherwise (initial load / no scroll yet), show latest snapshot
+  const currentSnapshot = snapshots.length === 0
+    ? null
+    : currentSnapshotIdx >= 0 && currentSnapshotIdx < snapshots.length
+      ? snapshots[currentSnapshotIdx]
+      : snapshots[snapshots.length - 1];
 
   const openLightbox = useCallback((images: { src: string; alt: string }[], index: number) => {
     setLightboxImages(images);
@@ -280,6 +307,26 @@ export function ThreadView() {
       const isAtBottom = scrollHeight - scrollTop - clientHeight <= 80;
       userHasScrolledUp.current = !isAtBottom;
       setShowScrollDown(!isAtBottom);
+
+      // Update current TodoWrite snapshot based on scroll position
+      const todoEls = document.querySelectorAll<HTMLElement>('[data-todo-snapshot]');
+      if (todoEls.length === 0) return;
+
+      const viewportRect = viewport.getBoundingClientRect();
+      const threshold = viewportRect.top + viewportRect.height * 0.5;
+      let latestIdx = -1;
+
+      todoEls.forEach((el) => {
+        const rect = el.getBoundingClientRect();
+        if (rect.top <= threshold) {
+          const idx = parseInt(el.dataset.todoSnapshot!, 10);
+          if (idx > latestIdx) latestIdx = idx;
+        }
+      });
+
+      if (latestIdx >= 0) {
+        setCurrentSnapshotIdx(latestIdx);
+      }
     };
 
     viewport.addEventListener('scroll', handleScroll, { passive: true });
@@ -376,8 +423,19 @@ export function ThreadView() {
   const isRunning = activeThread.status === 'running';
 
   return (
-    <div className="flex-1 flex flex-col h-full min-w-0">
+    <div className="flex-1 flex flex-col h-full min-w-0 relative">
       <ProjectHeader />
+
+      {/* Floating TODO Panel */}
+      <AnimatePresence>
+        {currentSnapshot && !todoPanelDismissed && (
+          <TodoPanel
+            todos={currentSnapshot.todos}
+            progress={currentSnapshot.progress}
+            onDismiss={() => setTodoPanelDismissed(true)}
+          />
+        )}
+      </AnimatePresence>
 
       {/* Messages */}
       <ScrollArea className="flex-1 px-4" viewportRef={scrollViewportRef}>
@@ -468,6 +526,7 @@ export function ThreadView() {
                     initial={{ opacity: 0, y: 6 }}
                     animate={{ opacity: 1, y: 0 }}
                     transition={{ duration: 0.25, ease: 'easeOut' }}
+                    {...(snapshotMap.has(tc.id) ? { 'data-todo-snapshot': snapshotMap.get(tc.id) } : {})}
                   >
                     <ToolCallCard
                       name={tc.name}
@@ -479,12 +538,16 @@ export function ThreadView() {
                 );
               }
               if (item.type === 'toolcall-group') {
+                const groupSnapshotIdx = item.name === 'TodoWrite'
+                  ? Math.max(...item.calls.map((c: any) => snapshotMap.get(c.id) ?? -1))
+                  : -1;
                 return (
                   <motion.div
                     key={item.calls[0].id}
                     initial={{ opacity: 0, y: 6 }}
                     animate={{ opacity: 1, y: 0 }}
                     transition={{ duration: 0.25, ease: 'easeOut' }}
+                    {...(groupSnapshotIdx >= 0 ? { 'data-todo-snapshot': groupSnapshotIdx } : {})}
                   >
                     <ToolCallGroup
                       name={item.name}
