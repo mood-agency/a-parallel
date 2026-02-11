@@ -32,6 +32,7 @@ export async function execute(
     env: options.env ? { ...process.env, ...options.env } : undefined,
     stdout: 'pipe',
     stderr: 'pipe',
+    stdin: options.stdin != null ? new Blob([options.stdin]) : undefined,
   });
 
   const timeoutMs = options.timeout ?? 30_000;

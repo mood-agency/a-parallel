@@ -68,6 +68,38 @@ app.post('/oauth/start', async (c) => {
   return c.json({ authUrl });
 });
 
+// Set a manual bearer token for an MCP server
+app.post('/oauth/token', async (c) => {
+  const body = await c.req.json();
+  const { serverName, projectPath, token } = body;
+
+  if (!serverName || !projectPath || !token) {
+    throw BadRequest('serverName, projectPath, and token are required');
+  }
+
+  const servers = await listMcpServers(projectPath);
+  const server = servers.find((s) => s.name === serverName);
+  if (!server) throw BadRequest(`Server "${serverName}" not found`);
+  if (!server.url) throw BadRequest(`Server "${serverName}" has no URL`);
+
+  // Remove and re-add with Authorization header
+  try {
+    await removeMcpServer({ name: serverName, projectPath });
+  } catch {
+    // May not exist
+  }
+
+  await addMcpServer({
+    name: serverName,
+    type: 'http',
+    url: server.url,
+    headers: { Authorization: `Bearer ${token}` },
+    projectPath,
+  });
+
+  return c.json({ ok: true });
+});
+
 // OAuth callback (called by external OAuth provider redirect — exempt from bearer auth)
 app.get('/oauth/callback', async (c) => {
   const code = c.req.query('code');

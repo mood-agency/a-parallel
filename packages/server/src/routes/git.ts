@@ -184,9 +184,10 @@ gitRoutes.post('/:threadId/generate-commit-message', async (c) => {
   const prompt = `You are a commit message generator. Based on the following staged git diff, write a single concise commit message using conventional commits style (e.g. "feat: ...", "fix: ...", "refactor: ..."). Output ONLY the commit message, nothing else. No quotes, no explanation, no markdown.\n\n${diffSummary}`;
 
   const binaryPath = getClaudeBinaryPath();
-  const { stdout } = await execute(binaryPath, ['--print', '-p', prompt], {
+  const { stdout } = await execute(binaryPath, ['--print'], {
     cwd,
     timeout: 60_000,
+    stdin: prompt,
   });
 
   return c.json({ message: stdout.trim() });
