@@ -218,8 +218,8 @@ function buildGroupedRenderItems(messages: any[]): RenderItem[] {
     }
   }
 
-  // Tool calls that should never be grouped (interactive, need individual response)
-  const noGroup = new Set(['AskUserQuestion', 'ExitPlanMode']);
+  // Tool calls that should never be grouped (interactive, need individual response, or need per-item scroll tracking)
+  const noGroup = new Set(['AskUserQuestion', 'ExitPlanMode', 'TodoWrite']);
 
   // Group consecutive same-type tool calls (across message boundaries)
   const grouped: RenderItem[] = [];
@@ -309,6 +309,12 @@ export function ThreadView() {
       setShowScrollDown(!isAtBottom);
 
       // Update current TodoWrite snapshot based on scroll position
+      // When at bottom, always show the latest snapshot
+      if (isAtBottom) {
+        setCurrentSnapshotIdx(-1);
+        return;
+      }
+
       const todoEls = document.querySelectorAll<HTMLElement>('[data-todo-snapshot]');
       if (todoEls.length === 0) return;
 
@@ -331,7 +337,7 @@ export function ThreadView() {
 
     viewport.addEventListener('scroll', handleScroll, { passive: true });
     return () => viewport.removeEventListener('scroll', handleScroll);
-  }, []);
+  }, [activeThread?.id]);
 
   // Scroll to bottom whenever the fingerprint changes (new messages, status changes).
   // Only scrolls if the user is already at the bottom (sticky behavior).

@@ -11,9 +11,7 @@ const DialogClose = DialogPrimitive.Close;
 const DialogOverlay = React.forwardRef<
   React.ComponentRef<typeof DialogPrimitive.Overlay>,
   React.ComponentPropsWithoutRef<typeof DialogPrimitive.Overlay>
->(({ className, ...props }, ref) => {
-  console.log('[DialogOverlay] render');
-  return (
+>(({ className, ...props }, ref) => (
     <DialogPrimitive.Overlay
       ref={ref}
       className={cn(
@@ -22,16 +20,13 @@ const DialogOverlay = React.forwardRef<
       )}
       {...props}
     />
-  );
-});
+));
 DialogOverlay.displayName = DialogPrimitive.Overlay.displayName;
 
 const DialogContent = React.forwardRef<
   React.ComponentRef<typeof DialogPrimitive.Content>,
   React.ComponentPropsWithoutRef<typeof DialogPrimitive.Content>
->(({ className, children, ...props }, ref) => {
-  console.log('[DialogContent] render');
-  return (
+>(({ className, children, ...props }, ref) => (
     <DialogPortal>
       <DialogOverlay />
       <DialogPrimitive.Content
@@ -49,8 +44,7 @@ const DialogContent = React.forwardRef<
         </DialogPrimitive.Close>
       </DialogPrimitive.Content>
     </DialogPortal>
-  );
-});
+));
 DialogContent.displayName = DialogPrimitive.Content.displayName;
 
 const DialogHeader = ({
