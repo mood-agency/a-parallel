@@ -118,7 +118,11 @@
     "stageFailed": "Erro ao preparar: {{message}}",
     "unstageFailed": "Erro ao remover preparação: {{message}}",
     "revertFailed": "Erro ao reverter: {{message}}",
-    "nothingToPush": "Nenhum commit para enviar"
+    "nothingToPush": "Nenhum commit para enviar",
+    "includeUnstaged": "Incluir não preparados",
+    "commitAndPush": "Commit & Push",
+    "commitAndCreatePR": "Commit & Criar PR",
+    "continue": "Continuar"
   },
   "newThread": {
     "title": "Nova Thread",
@@ -270,7 +274,12 @@
     "archived": "Arquivada",
     "globalTitle": "Buscar todas as threads",
     "globalSearchPlaceholder": "Buscar por título, branch, projeto ou status...",
-    "projects": "projetos"
+    "projects": "projetos",
+    "sortLabel": "Ordem",
+    "sortUpdated": "Última atualização",
+    "sortCreated": "Criação",
+    "sortDesc": "Mais recente",
+    "sortAsc": "Mais antigo"
   },
   "archived": {
     "searchPlaceholder": "Buscar threads arquivadas por título, projeto, branch ou status...",

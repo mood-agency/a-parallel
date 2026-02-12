@@ -15,6 +15,8 @@ interface PtySession {
   userId: string;
   /** Unique instance id to distinguish old vs new PTY with the same logical id */
   instanceId: number;
+  /** Set to true when the underlying socket closes — writes must be skipped */
+  dead: boolean;
 }
 
 let nextInstanceId = 1;
@@ -56,8 +58,15 @@ export function spawnPty(
   ptyEmitter.on('error', onPtyError);
 
   const myInstanceId = nextInstanceId++;
-  const session: PtySession = { process: ptyProcess, userId, instanceId: myInstanceId };
+  const session: PtySession = { process: ptyProcess, userId, instanceId: myInstanceId, dead: false };
   activePtys.set(id, session);
+
+  // Track socket closure so we can skip writes to dead PTYs.
+  // Bun throws native socket errors that bypass JS try/catch.
+  const internalSocket = (ptyProcess as any)._socket;
+  if (internalSocket) {
+    internalSocket.on('close', () => { session.dead = true; });
+  }
 
   ptyProcess.onData((data: string) => {
     // Guard: ignore data from a replaced PTY instance
@@ -101,24 +110,21 @@ export function spawnPty(
 
 export function writePty(id: string, data: string): void {
   const session = activePtys.get(id);
-  if (session) {
-    try {
-      session.process.write(data);
-    } catch (err: any) {
-      // Socket may already be closed if the process is exiting
-      console.warn(`[pty-manager] Write to PTY ${id} failed: ${err.message}`);
-    }
+  if (!session || session.dead) return;
+  try {
+    session.process.write(data);
+  } catch {
+    session.dead = true;
   }
 }
 
 export function resizePty(id: string, cols: number, rows: number): void {
   const session = activePtys.get(id);
-  if (session) {
-    try {
-      session.process.resize(cols, rows);
-    } catch (err: any) {
-      console.warn(`[pty-manager] Resize PTY ${id} failed: ${err.message}`);
-    }
+  if (!session || session.dead) return;
+  try {
+    session.process.resize(cols, rows);
+  } catch {
+    session.dead = true;
   }
 }
 

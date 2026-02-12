@@ -1,4 +1,4 @@
-import { eq, and, or, desc, inArray, like, count as drizzleCount } from 'drizzle-orm';
+import { eq, and, or, desc, inArray, like, count as drizzleCount, sql } from 'drizzle-orm';
 import { nanoid } from 'nanoid';
 import { db, schema } from '../db/index.js';
 
@@ -32,7 +32,9 @@ export function listThreads(opts: {
   }
 
   const condition = filters.length > 0 ? and(...filters) : undefined;
-  return db.select().from(schema.threads).where(condition).orderBy(desc(schema.threads.pinned), desc(schema.threads.createdAt)).all();
+  // Sort by pinned first, then by completion time (most recent first), falling back to createdAt
+  const completionTime = sql`COALESCE(${schema.threads.completedAt}, ${schema.threads.createdAt})`;
+  return db.select().from(schema.threads).where(condition).orderBy(desc(schema.threads.pinned), desc(completionTime)).all();
 }
 
 /** List archived threads with pagination and search */
@@ -70,11 +72,13 @@ export function listArchivedThreads(opts: {
     .where(conditions!)
     .all();
 
+  // Sort by completion time (most recent first), falling back to createdAt
+  const completionTime = sql`COALESCE(${schema.threads.completedAt}, ${schema.threads.createdAt})`;
   const threads = db
     .select()
     .from(schema.threads)
     .where(conditions!)
-    .orderBy(desc(schema.threads.createdAt))
+    .orderBy(desc(completionTime))
     .limit(limit)
     .offset(offset)
     .all();

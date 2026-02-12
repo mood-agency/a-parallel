@@ -86,6 +86,7 @@ export function CommitDialog({ open, onOpenChange }: CommitDialogProps) {
   const [commitMsg, setCommitMsg] = useState('');
   const [generatingMsg, setGeneratingMsg] = useState(false);
   const [actionInProgress, setActionInProgress] = useState<'commit' | 'commit-push' | 'commit-pr' | null>(null);
+  const [selectedAction, setSelectedAction] = useState<'commit' | 'commit-push' | 'commit-pr'>('commit');
 
   const stagedFiles = allFiles.filter(f => f.staged);
   const hasMessage = commitMsg.trim().length > 0;
@@ -287,10 +288,10 @@ export function CommitDialog({ open, onOpenChange }: CommitDialogProps) {
         </DialogHeader>
 
         <div className="space-y-4">
-          {/* Include all changes toggle */}
+          {/* Include unstaged toggle */}
           <div className="flex items-center justify-between">
             <label className="text-xs font-medium text-muted-foreground">
-              {t('review.includeUnstaged', 'Commit all changes')}
+              {t('review.includeUnstaged', 'Include unstaged')}
             </label>
             <FileToggle
               checked={includeUnstaged}
@@ -357,74 +358,73 @@ export function CommitDialog({ open, onOpenChange }: CommitDialogProps) {
           )}
 
           {/* Commit Message Section */}
-          <div className="space-y-2">
-            <div className="flex items-center justify-between">
-              <label className="text-xs font-medium text-muted-foreground">
-                {t('review.commitMessage')}
-              </label>
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <Button
-                    variant="ghost"
-                    size="icon-sm"
-                    onClick={handleGenerateCommitMsg}
-                    disabled={allFiles.length === 0 || generatingMsg || !!actionInProgress}
-                  >
-                    <Sparkles className={cn('h-3.5 w-3.5', generatingMsg && 'animate-pulse')} />
-                  </Button>
-                </TooltipTrigger>
-                <TooltipContent side="bottom">
-                  {generatingMsg ? t('review.generatingCommitMsg') : t('review.generateCommitMsg')}
-                </TooltipContent>
-              </Tooltip>
-            </div>
+          <div className="relative">
             <textarea
-              className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm placeholder:text-muted-foreground transition-[border-color,box-shadow] duration-150 focus:outline-none focus:ring-1 focus:ring-ring resize-none"
+              className="w-full rounded-md border border-input bg-background px-3 py-2 pr-9 text-sm placeholder:text-muted-foreground transition-[border-color,box-shadow] duration-150 focus:outline-none focus:ring-1 focus:ring-ring resize-none"
               rows={3}
               placeholder={t('review.commitMessage')}
               value={commitMsg}
               onChange={(e) => setCommitMsg(e.target.value)}
               disabled={allFiles.length === 0 || !!actionInProgress}
             />
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  variant="ghost"
+                  size="icon-sm"
+                  className="absolute top-1.5 right-1.5"
+                  onClick={handleGenerateCommitMsg}
+                  disabled={allFiles.length === 0 || generatingMsg || !!actionInProgress}
+                >
+                  <Sparkles className={cn('h-3.5 w-3.5', generatingMsg && 'animate-pulse')} />
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent side="bottom">
+                {generatingMsg ? t('review.generatingCommitMsg') : t('review.generateCommitMsg')}
+              </TooltipContent>
+            </Tooltip>
           </div>
         </div>
 
-        <div className="flex flex-col gap-2 pt-2">
-          <span className="text-xs font-medium text-muted-foreground">
-            {t('review.nextStep', 'Next step')}
-          </span>
-          <div className="flex flex-col gap-1.5">
-            <Button
-              variant="outline"
-              size="sm"
-              className="justify-start"
-              onClick={handleCommit}
-              disabled={!canCommit}
-            >
-              {actionInProgress === 'commit' ? <Loader2 className="h-3.5 w-3.5 mr-2 animate-spin" /> : <GitCommit className="h-3.5 w-3.5 mr-2" />}
-              {t('review.commit', 'Commit')}
-            </Button>
-            <Button
-              variant="outline"
-              size="sm"
-              className="justify-start"
-              onClick={handleCommitAndPush}
-              disabled={!canCommit}
-            >
-              {actionInProgress === 'commit-push' ? <Loader2 className="h-3.5 w-3.5 mr-2 animate-spin" /> : <Upload className="h-3.5 w-3.5 mr-2" />}
-              {t('review.commitAndPush', 'Commit & Push')}
-            </Button>
-            <Button
-              variant="outline"
-              size="sm"
-              className="justify-start"
-              onClick={handleCommitAndCreatePR}
-              disabled={!canCommit}
-            >
-              {actionInProgress === 'commit-pr' ? <Loader2 className="h-3.5 w-3.5 mr-2 animate-spin" /> : <GitPullRequest className="h-3.5 w-3.5 mr-2" />}
-              {t('review.commitAndCreatePR', 'Commit & Create PR')}
-            </Button>
+        <div className="flex flex-col gap-3 pt-2">
+          <div className="grid grid-cols-3 gap-2">
+            {([
+              { value: 'commit' as const, icon: GitCommit, label: t('review.commit', 'Commit') },
+              { value: 'commit-push' as const, icon: Upload, label: t('review.commitAndPush', 'Commit & Push') },
+              { value: 'commit-pr' as const, icon: GitPullRequest, label: t('review.commitAndCreatePR', 'Commit & Create PR') },
+            ]).map(({ value, icon: Icon, label }) => {
+              const isSelected = selectedAction === value;
+              return (
+                <button
+                  key={value}
+                  type="button"
+                  onClick={() => setSelectedAction(value)}
+                  disabled={!!actionInProgress}
+                  className={cn(
+                    'relative flex flex-col items-center gap-2 rounded-lg border p-3 text-center transition-all',
+                    'hover:bg-accent/50 disabled:opacity-50 disabled:cursor-not-allowed',
+                    isSelected
+                      ? 'border-primary bg-primary/5 text-foreground shadow-sm'
+                      : 'border-border text-muted-foreground'
+                  )}
+                >
+                  <Icon className={cn('h-5 w-5', isSelected && 'text-primary')} />
+                  <span className="text-xs font-medium leading-tight">{label}</span>
+                </button>
+              );
+            })}
           </div>
+          <Button
+            onClick={() => {
+              if (selectedAction === 'commit') handleCommit();
+              else if (selectedAction === 'commit-push') handleCommitAndPush();
+              else handleCommitAndCreatePR();
+            }}
+            disabled={!canCommit}
+          >
+            {actionInProgress ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : null}
+            {t('review.continue', 'Continue')}
+          </Button>
         </div>
       </DialogContent>
     </Dialog>

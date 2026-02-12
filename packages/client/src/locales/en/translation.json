@@ -118,7 +118,11 @@
     "stageFailed": "Stage failed: {{message}}",
     "unstageFailed": "Unstage failed: {{message}}",
     "revertFailed": "Revert failed: {{message}}",
-    "nothingToPush": "No commits to push"
+    "nothingToPush": "No commits to push",
+    "includeUnstaged": "Include unstaged",
+    "commitAndPush": "Commit & Push",
+    "commitAndCreatePR": "Commit & Create PR",
+    "continue": "Continue"
   },
   "newThread": {
     "title": "New Thread",
@@ -270,7 +274,12 @@
     "archived": "Archived",
     "globalTitle": "Search all threads",
     "globalSearchPlaceholder": "Search by title, branch, project, or status...",
-    "projects": "projects"
+    "projects": "projects",
+    "sortLabel": "Sort",
+    "sortUpdated": "Last updated",
+    "sortCreated": "Created",
+    "sortDesc": "Newest first",
+    "sortAsc": "Oldest first"
   },
   "archived": {
     "searchPlaceholder": "Search archived threads by title, project, branch, or status...",

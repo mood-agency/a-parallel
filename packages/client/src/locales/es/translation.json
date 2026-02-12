@@ -118,7 +118,11 @@
     "stageFailed": "Error al preparar: {{message}}",
     "unstageFailed": "Error al quitar preparación: {{message}}",
     "revertFailed": "Error al revertir: {{message}}",
-    "nothingToPush": "No hay commits para enviar"
+    "nothingToPush": "No hay commits para enviar",
+    "includeUnstaged": "Incluir sin preparar",
+    "commitAndPush": "Commit & Push",
+    "commitAndCreatePR": "Commit & Crear PR",
+    "continue": "Continuar"
   },
   "newThread": {
     "title": "Nuevo Hilo",
@@ -270,7 +274,12 @@
     "archived": "Archivado",
     "globalTitle": "Buscar todos los hilos",
     "globalSearchPlaceholder": "Buscar por título, rama, proyecto o estado...",
-    "projects": "proyectos"
+    "projects": "proyectos",
+    "sortLabel": "Orden",
+    "sortUpdated": "Última actualización",
+    "sortCreated": "Creación",
+    "sortDesc": "Más reciente",
+    "sortAsc": "Más antiguo"
   },
   "archived": {
     "searchPlaceholder": "Buscar hilos archivados por título, proyecto, rama o estado...",

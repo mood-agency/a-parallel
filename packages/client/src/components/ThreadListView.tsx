@@ -180,7 +180,7 @@ export function ThreadListView({
                   </div>
                 </div>
                 <span className="text-[10px] text-muted-foreground flex-shrink-0 hidden sm:inline">
-                  {timeAgo(thread.createdAt, t)}
+                  {timeAgo(thread.completedAt ?? thread.createdAt, t)}
                 </span>
                 {renderActions?.(thread)}
               </Wrapper>

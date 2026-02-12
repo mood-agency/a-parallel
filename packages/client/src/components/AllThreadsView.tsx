@@ -5,7 +5,7 @@ import { useAppStore } from '@/stores/app-store';
 import { useGitStatusStore } from '@/stores/git-status-store';
 import { api } from '@/lib/api';
 import { cn } from '@/lib/utils';
-import { ChevronLeft, Archive, Search } from 'lucide-react';
+import { ChevronLeft, Archive, Search, ArrowUp, ArrowDown } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { ThreadListView } from '@/components/ThreadListView';
 import { statusConfig, gitSyncStateConfig, getStatusLabels } from '@/lib/thread-utils';
@@ -14,6 +14,8 @@ import type { Thread, ThreadStatus, GitSyncState } from '@a-parallel/shared';
 const ITEMS_PER_PAGE = 20;
 
 type FilterValue = 'all' | string;
+type SortField = 'updated' | 'created';
+type SortDir = 'desc' | 'asc';
 
 function FilterChip({
   label,
@@ -59,6 +61,8 @@ export function AllThreadsView() {
   const [modeFilter, setModeFilter] = useState<FilterValue>('all');
   const [showArchived, setShowArchived] = useState(false);
   const [archivedThreads, setArchivedThreads] = useState<Thread[]>([]);
+  const [sortField, setSortField] = useState<SortField>('updated');
+  const [sortDir, setSortDir] = useState<SortDir>('desc');
 
   const project = isGlobalSearch ? null : projects.find((p) => p.id === allThreadsProjectId);
   const projectNameById = useMemo(() => {
@@ -142,8 +146,20 @@ export function AllThreadsView() {
       result = result.filter((t) => t.mode === modeFilter);
     }
 
+    // Sort by selected field and direction
+    result = [...result].sort((a, b) => {
+      const dateA = sortField === 'updated'
+        ? (a.completedAt ?? a.createdAt)
+        : a.createdAt;
+      const dateB = sortField === 'updated'
+        ? (b.completedAt ?? b.createdAt)
+        : b.createdAt;
+      const diff = new Date(dateA).getTime() - new Date(dateB).getTime();
+      return sortDir === 'desc' ? -diff : diff;
+    });
+
     return result;
-  }, [allThreads, search, statusFilter, gitFilter, modeFilter, statusByThread, isGlobalSearch, projectNameById]);
+  }, [allThreads, search, statusFilter, gitFilter, modeFilter, statusByThread, isGlobalSearch, projectNameById, sortField, sortDir]);
 
   const currentPage = Math.min(page, Math.max(1, Math.ceil(filtered.length / ITEMS_PER_PAGE)));
   const paginated = filtered.slice(
@@ -285,6 +301,36 @@ export function AllThreadsView() {
               />
             );
           })}
+        </div>
+
+        {/* Sort row */}
+        <div className="flex items-center gap-1.5 flex-wrap">
+          <span className="text-[10px] text-muted-foreground uppercase tracking-wider w-12 flex-shrink-0">
+            {t('allThreads.sortLabel')}
+          </span>
+          <FilterChip
+            label={t('allThreads.sortUpdated')}
+            active={sortField === 'updated'}
+            onClick={() => { setSortField('updated'); setPage(1); }}
+          />
+          <FilterChip
+            label={t('allThreads.sortCreated')}
+            active={sortField === 'created'}
+            onClick={() => { setSortField('created'); setPage(1); }}
+          />
+          <div className="w-px h-4 bg-border mx-1" />
+          <button
+            onClick={() => { setSortDir(d => d === 'desc' ? 'asc' : 'desc'); setPage(1); }}
+            className={cn(
+              'inline-flex items-center gap-1 px-2 py-0.5 text-[11px] rounded-full border transition-colors whitespace-nowrap',
+              'bg-accent text-accent-foreground border-accent-foreground/20'
+            )}
+          >
+            {sortDir === 'desc'
+              ? <><ArrowDown className="h-3 w-3" />{t('allThreads.sortDesc')}</>
+              : <><ArrowUp className="h-3 w-3" />{t('allThreads.sortAsc')}</>
+            }
+          </button>
         </div>
 
         {/* Mode + Archived row */}
