@@ -57,6 +57,7 @@ export const createIdleThreadSchema = z.object({
   title: z.string().min(1, 'title is required'),
   mode: threadModeSchema,
   baseBranch: z.string().optional(),
+  prompt: z.string().optional(),
 });
 
 export const sendMessageSchema = z.object({
@@ -146,6 +147,8 @@ export const automationScheduleSchema = z.string().min(1, 'schedule is required'
   { message: 'Invalid cron expression. Examples: "*/30 * * * *" (every 30 min), "0 9 * * *" (daily at 9am), "0 */6 * * *" (every 6 hours)' }
 );
 
+export const automationModeSchema = z.enum(['default', 'merge']);
+
 export const createAutomationSchema = z.object({
   projectId: z.string().min(1),
   name: z.string().min(1, 'name is required'),
@@ -153,6 +156,7 @@ export const createAutomationSchema = z.object({
   schedule: automationScheduleSchema,
   model: claudeModelSchema.optional().default('sonnet'),
   permissionMode: permissionModeSchema.optional().default('autoEdit'),
+  mode: automationModeSchema.optional().default('default'),
 });
 
 export const updateAutomationSchema = z.object({
@@ -163,6 +167,7 @@ export const updateAutomationSchema = z.object({
   permissionMode: permissionModeSchema.optional(),
   enabled: z.boolean().optional(),
   maxRunHistory: z.number().int().min(1).max(100).optional(),
+  mode: automationModeSchema.optional(),
 });
 
 export const updateRunTriageSchema = z.object({

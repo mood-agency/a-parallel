@@ -56,7 +56,7 @@ threadRoutes.post('/idle', async (c) => {
   const raw = await c.req.json();
   const parsed = validate(createIdleThreadSchema, raw);
   if (parsed.isErr()) return resultToResponse(c, parsed);
-  const { projectId, title, mode, baseBranch } = parsed.value;
+  const { projectId, title, mode, baseBranch, prompt } = parsed.value;
 
   const projectResult = requireProject(projectId);
   if (projectResult.isErr()) return resultToResponse(c, projectResult);
@@ -99,6 +99,7 @@ threadRoutes.post('/idle', async (c) => {
     branch: threadBranch,
     baseBranch: mode === 'worktree' ? resolvedBaseBranch : undefined,
     worktreePath,
+    initialPrompt: prompt,
     cost: 0,
     createdAt: new Date().toISOString(),
   };
@@ -296,6 +297,25 @@ threadRoutes.patch('/:id', async (c) => {
 
   if (Object.keys(updates).length > 0) {
     tm.updateThread(id, updates);
+  }
+
+  // Auto-start agent when idle thread is moved to in_progress
+  if (parsed.value.stage === 'in_progress' && thread.status === 'idle' && thread.initialPrompt) {
+    const project = pm.getProject(thread.projectId);
+    if (project) {
+      const cwd = thread.worktreePath || project.path;
+      // Start agent with the saved initial prompt
+      startAgent(
+        id,
+        thread.initialPrompt,
+        cwd,
+        'sonnet', // default model for idle threads
+        thread.permissionMode || 'autoEdit'
+      ).catch((err) => {
+        console.error(`[idle-start] Failed to auto-start agent for thread ${id}:`, err);
+        tm.updateThread(id, { status: 'failed', completedAt: new Date().toISOString() });
+      });
+    }
   }
 
   const updated = tm.getThread(id);

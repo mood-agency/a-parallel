@@ -243,7 +243,7 @@ function KanbanColumn({ stage, threads, projectInfoById, onDelete, projectId, pr
         <StageIcon className={cn('h-4 w-4', stageClassName)} />
         <span className="font-medium text-sm">{t(stageConfig[stage].labelKey)}</span>
         <span className="text-xs text-muted-foreground">({threads.length})</span>
-        {projects.length > 0 && (
+        {projects.length > 0 && stage !== 'review' && stage !== 'done' && (
           <AddThreadButton projectId={projectId} projects={projects} onSelect={onAddThread} />
         )}
       </div>

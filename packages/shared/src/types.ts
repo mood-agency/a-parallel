@@ -102,6 +102,7 @@ export interface Thread {
   baseBranch?: string;
   worktreePath?: string;
   sessionId?: string;
+  initialPrompt?: string;
   cost: number;
   archived?: boolean;
   pinned?: boolean;
@@ -285,6 +286,14 @@ export interface GitStatusInfo {
 
 export interface WSGitStatusData {
   statuses: GitStatusInfo[];
+}
+
+// ─── Merge Agent ─────────────────────────────────────────
+
+export interface MergeProgress {
+  branch: string;
+  status: 'merging' | 'conflict' | 'resolved' | 'done' | 'failed';
+  message?: string;
 }
 
 // ─── API Request/Response types ──────────────────────────

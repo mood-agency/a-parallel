@@ -150,6 +150,7 @@ export const api = {
     title: string;
     mode: string;
     baseBranch?: string;
+    prompt?: string;
   }) => request<Thread>('/threads/idle', { method: 'POST', body: JSON.stringify(data) }),
   sendMessage: (threadId: string, content: string, opts?: { model?: string; permissionMode?: string; allowedTools?: string[] }, images?: ImageAttachment[]) =>
     request<{ ok: boolean }>(`/threads/${threadId}/message`, {

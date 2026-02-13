@@ -36,6 +36,7 @@ export function NewThreadInput() {
         title: prompt.slice(0, 200),
         mode: threadMode,
         baseBranch: opts.baseBranch,
+        prompt,
       });
 
       if (result.isErr()) {
@@ -46,7 +47,8 @@ export function NewThreadInput() {
 
       await loadThreadsForProject(newThreadProjectId);
       setCreating(false);
-      navigate(`/projects/${newThreadProjectId}/threads/${result.value.id}`);
+      toast.success(t('toast.threadCreated', { title: prompt.slice(0, 200) }));
+      cancelNewThread();
       return;
     }
 
