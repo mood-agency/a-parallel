@@ -255,16 +255,16 @@ export function AppSidebar() {
               project={project}
               threads={(threadsByProject[project.id] ?? []).filter((t) => !t.archived)}
               isExpanded={expandedProjects.has(project.id)}
+              isSelected={selectedProjectId === project.id}
               selectedThreadId={selectedThreadId}
               onToggle={() => {
-                const wasExpanded = expandedProjects.has(project.id);
-                if (!wasExpanded) {
-                  toggleProject(project.id);
+                toggleProject(project.id);
+                const willExpand = !expandedProjects.has(project.id);
+                if (willExpand) {
+                  useGitStatusStore.getState().fetchForProject(project.id);
+                  startNewThread(project.id);
+                  navigate(`/projects/${project.id}`);
                 }
-                // Always open new thread creation screen
-                useGitStatusStore.getState().fetchForProject(project.id);
-                startNewThread(project.id);
-                navigate(`/projects/${project.id}`);
               }}
               onNewThread={() => {
                 startNewThread(project.id);

@@ -23,7 +23,7 @@ import {
 import { PromptInput } from './PromptInput';
 import { ToolCallCard } from './ToolCallCard';
 import { StatusBadge } from './StatusBadge';
-import { MessageContent, CopyButton, WaitingActions } from './ThreadView';
+import { MessageContent, CopyButton, WaitingActions, PlanWaitingActions } from './ThreadView';
 import { AgentResultCard, AgentInterruptedCard } from './thread/AgentStatusCards';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Badge } from '@/components/ui/badge';
@@ -509,7 +509,13 @@ function ChatView({
                 </div>
               )}
 
-              {activeThread.status === 'waiting' && activeThread.waitingReason !== 'question' && (
+              {activeThread.status === 'waiting' && activeThread.waitingReason === 'plan' && (
+                <PlanWaitingActions
+                  onSend={(text) => handleSend(text, { model: '', mode: '' })}
+                />
+              )}
+
+              {activeThread.status === 'waiting' && activeThread.waitingReason !== 'question' && activeThread.waitingReason !== 'plan' && (
                 <WaitingActions
                   onSend={(text) => handleSend(text, { model: '', mode: '' })}
                 />

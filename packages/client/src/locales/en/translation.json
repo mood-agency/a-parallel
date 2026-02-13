@@ -63,6 +63,8 @@
     "threadsRunParallel": "Threads run Claude Code agents in parallel",
     "agentWorking": "Agent is working...",
     "waitingForResponse": "Waiting for your response...",
+    "planWaitingForResponse": "Accept or reject the plan",
+    "rejectPlan": "Reject plan",
     "taskCompleted": "Task completed",
     "taskFailed": "Task failed",
     "taskInterrupted": "Task interrupted",
@@ -267,7 +269,9 @@
     "input": "Input",
     "output": "Output",
     "waitingForOutput": "Waiting for output...",
-    "openInVSCode": "Open in VS Code: {{path}}"
+    "openInVSCode": "Open in VS Code: {{path}}",
+    "other": "Other",
+    "otherPlaceholder": "Write your answer..."
   },
   "allThreads": {
     "title": "All threads",

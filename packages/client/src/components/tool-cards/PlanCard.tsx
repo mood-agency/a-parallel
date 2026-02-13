@@ -1,21 +1,13 @@
-import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
-import { FileCode2, Check } from 'lucide-react';
+import { FileCode2 } from 'lucide-react';
 
-export function PlanCard({ parsed, output, onRespond, hideLabel }: { parsed: Record<string, unknown>; output?: string; onRespond?: (answer: string) => void; hideLabel?: boolean }) {
+export function PlanCard({ parsed, output, hideLabel }: { parsed: Record<string, unknown>; output?: string; hideLabel?: boolean }) {
   const { t } = useTranslation();
   const plan = parsed.plan as string | undefined;
-  const [accepted, setAccepted] = useState(!!output);
 
   if (!plan) return null;
-
-  const handleAccept = () => {
-    if (accepted || !onRespond) return;
-    onRespond('Plan accepted');
-    setAccepted(true);
-  };
 
   return (
     <div className="text-xs max-w-full overflow-hidden">
@@ -46,19 +38,6 @@ export function PlanCard({ parsed, output, onRespond, hideLabel }: { parsed: Rec
           </ReactMarkdown>
         </div>
       </div>
-
-      {/* Accept button */}
-      {onRespond && !accepted && (
-        <div className="border-t border-border/40 px-3 py-2 flex justify-end">
-          <button
-            onClick={handleAccept}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-sm font-medium bg-muted-foreground/20 text-foreground/80 hover:bg-muted-foreground/30 transition-colors"
-          >
-            <Check className="h-3 w-3" />
-            {t('tools.acceptPlan')}
-          </button>
-        </div>
-      )}
     </div>
   );
 }

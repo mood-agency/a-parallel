@@ -63,6 +63,8 @@
     "threadsRunParallel": "Los hilos ejecutan agentes Claude Code en paralelo",
     "agentWorking": "El agente está trabajando...",
     "waitingForResponse": "Esperando tu respuesta...",
+    "planWaitingForResponse": "Acepta o rechaza el plan",
+    "rejectPlan": "Rechazar plan",
     "taskCompleted": "Tarea completada",
     "taskFailed": "Tarea fallida",
     "taskInterrupted": "Tarea interrumpida",
@@ -267,7 +269,9 @@
     "input": "Entrada",
     "output": "Salida",
     "waitingForOutput": "Esperando salida...",
-    "openInVSCode": "Abrir en VS Code: {{path}}"
+    "openInVSCode": "Abrir en VS Code: {{path}}",
+    "other": "Otra",
+    "otherPlaceholder": "Escribe tu respuesta..."
   },
   "allThreads": {
     "title": "Todos los hilos",

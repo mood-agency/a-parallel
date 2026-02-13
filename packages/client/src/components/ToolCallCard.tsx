@@ -41,7 +41,7 @@ export const ToolCallCard = memo(function ToolCallCard({ name, input, output, on
   }, [output, expanded]);
 
   // Specialized cards
-  if (isPlan) return <PlanCard parsed={parsed} output={output} onRespond={onRespond} hideLabel={hideLabel} />;
+  if (isPlan) return <PlanCard parsed={parsed} output={output} hideLabel={hideLabel} />;
   if (name === 'Bash') return <BashCard parsed={parsed} output={output} hideLabel={hideLabel} />;
   if (name === 'Read') return <ReadFileCard parsed={parsed} output={output} hideLabel={hideLabel} />;
   if (name === 'Write') return <WriteFileCard parsed={parsed} hideLabel={hideLabel} />;

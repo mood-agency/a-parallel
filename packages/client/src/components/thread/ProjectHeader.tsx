@@ -4,7 +4,7 @@ import { useAppStore } from '@/stores/app-store';
 import { useTerminalStore } from '@/stores/terminal-store';
 import { editorLabels, type Editor } from '@/stores/settings-store';
 import { usePreviewWindow } from '@/hooks/use-preview-window';
-import { GitCommit, GitCompare, Globe, Terminal, ExternalLink } from 'lucide-react';
+import { GitCommit, GitCompare, Globe, Terminal, ExternalLink, Pin, PinOff } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { api } from '@/lib/api';
 import { toast } from 'sonner';
@@ -62,6 +62,7 @@ export const ProjectHeader = memo(function ProjectHeader() {
   const projects = useAppStore(s => s.projects);
   const setReviewPaneOpen = useAppStore(s => s.setReviewPaneOpen);
   const reviewPaneOpen = useAppStore(s => s.reviewPaneOpen);
+  const pinThread = useAppStore(s => s.pinThread);
   const { openPreview, isTauri } = usePreviewWindow();
   const toggleTerminalPanel = useTerminalStore(s => s.togglePanel);
   const terminalPanelVisible = useTerminalStore(s => s.panelVisible);
@@ -162,6 +163,23 @@ export const ProjectHeader = memo(function ProjectHeader() {
               ))}
             </DropdownMenuContent>
           </DropdownMenu>
+          {activeThread && (
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  variant="ghost"
+                  size="icon-sm"
+                  onClick={() => pinThread(activeThread.id, activeThread.projectId, !activeThread.pinned)}
+                  className={activeThread.pinned ? 'text-primary' : 'text-muted-foreground'}
+                >
+                  {activeThread.pinned ? <PinOff className="h-4 w-4" /> : <Pin className="h-4 w-4" />}
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent>
+                {activeThread.pinned ? t('sidebar.unpin', 'Unpin') : t('sidebar.pin', 'Pin')}
+              </TooltipContent>
+            </Tooltip>
+          )}
           <CommitButton />
           <Tooltip>
             <TooltipTrigger asChild>

@@ -1,8 +1,11 @@
-import { useState } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
-import { MessageCircleQuestion, Check, Send } from 'lucide-react';
+import { MessageCircleQuestion, Check, Send, PenLine } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { getQuestions } from './utils';
+
+// Special index to represent "Other" option
+const OTHER_INDEX = -1;
 
 export function AskQuestionCard({ parsed, onRespond, hideLabel }: { parsed: Record<string, unknown>; onRespond?: (answer: string) => void; hideLabel?: boolean }) {
   const { t } = useTranslation();
@@ -12,6 +15,8 @@ export function AskQuestionCard({ parsed, onRespond, hideLabel }: { parsed: Reco
   const [activeTab, setActiveTab] = useState(0);
   const [selections, setSelections] = useState<Map<number, Set<number>>>(() => new Map());
   const [submitted, setSubmitted] = useState(false);
+  const [otherTexts, setOtherTexts] = useState<Map<number, string>>(() => new Map());
+  const otherInputRef = useRef<HTMLTextAreaElement>(null);
 
   const toggleOption = (qIndex: number, optIndex: number, multiSelect: boolean) => {
     if (submitted) return;
@@ -30,6 +35,14 @@ export function AskQuestionCard({ parsed, onRespond, hideLabel }: { parsed: Reco
     });
   };
 
+  // Focus the textarea when "Other" is selected
+  useEffect(() => {
+    const activeSelections = selections.get(activeTab);
+    if (activeSelections?.has(OTHER_INDEX) && otherInputRef.current) {
+      otherInputRef.current.focus();
+    }
+  }, [selections, activeTab]);
+
   const handleSubmit = () => {
     if (submitted || !onRespond) return;
     const parts: string[] = [];
@@ -37,6 +50,10 @@ export function AskQuestionCard({ parsed, onRespond, hideLabel }: { parsed: Reco
       const selected = selections.get(qi);
       if (selected && selected.size > 0) {
         const answers = Array.from(selected).map((i) => {
+          if (i === OTHER_INDEX) {
+            const text = otherTexts.get(qi)?.trim();
+            return text ? `${t('tools.other')} — ${text}` : '';
+          }
           const opt = q.options[i];
           return opt ? `${opt.label} — ${opt.description}` : '';
         }).filter(Boolean);
@@ -51,7 +68,21 @@ export function AskQuestionCard({ parsed, onRespond, hideLabel }: { parsed: Reco
 
   const activeQ = questions[activeTab];
   const activeSelections = selections.get(activeTab) || new Set<number>();
-  const allAnswered = questions.every((_, i) => (selections.get(i)?.size ?? 0) > 0);
+  const isOtherSelected = activeSelections.has(OTHER_INDEX);
+  const otherText = otherTexts.get(activeTab) || '';
+  // +1 for the "Other" option always present
+  const maxOptions = questions.length > 1
+    ? Math.max(...questions.map((q) => q.options.length + 1))
+    : 0;
+  const allAnswered = questions.every((_, i) => {
+    const sel = selections.get(i);
+    if (!sel || sel.size === 0) return false;
+    // If "Other" is the only selection, require text
+    if (sel.has(OTHER_INDEX) && sel.size === 1) {
+      return (otherTexts.get(i)?.trim().length ?? 0) > 0;
+    }
+    return true;
+  });
 
   return (
     <div className="text-sm max-w-full overflow-hidden">
@@ -100,8 +131,11 @@ export function AskQuestionCard({ parsed, onRespond, hideLabel }: { parsed: Reco
         <div className="px-3 py-2 space-y-2 max-h-80 overflow-y-auto">
           <p className="text-xs text-foreground leading-relaxed">{activeQ.question}</p>
 
-          {/* Options */}
-          <div className="space-y-1">
+          {/* Options — use min-height from the tallest question to prevent layout shift */}
+          <div
+            className="space-y-1"
+            style={maxOptions > 0 ? { minHeight: `${maxOptions * 36}px` } : undefined}
+          >
             {activeQ.options.map((opt, oi) => {
               const isSelected = activeSelections.has(oi);
               return (
@@ -135,6 +169,56 @@ export function AskQuestionCard({ parsed, onRespond, hideLabel }: { parsed: Reco
                 </button>
               );
             })}
+
+            {/* Other option */}
+            <button
+              onClick={() => toggleOption(activeTab, OTHER_INDEX, activeQ.multiSelect)}
+              disabled={submitted}
+              className={cn(
+                'flex items-start gap-2 w-full text-left rounded-md px-2.5 py-1.5 transition-colors border',
+                isOtherSelected
+                  ? 'border-primary/50 bg-primary/10'
+                  : 'border-border/40 bg-background/50 hover:border-border hover:bg-accent/30',
+                submitted && 'opacity-70 cursor-default'
+              )}
+            >
+              <div className={cn(
+                'mt-0.5 flex-shrink-0 h-3.5 w-3.5 rounded-full border-2 flex items-center justify-center',
+                activeQ.multiSelect && 'rounded-sm',
+                isOtherSelected
+                  ? 'border-primary bg-primary'
+                  : 'border-muted-foreground/40'
+              )}>
+                {isOtherSelected && (
+                  <Check className="h-2 w-2 text-primary-foreground" />
+                )}
+              </div>
+              <div className="min-w-0 flex items-center gap-1.5">
+                <PenLine className="h-3 w-3 flex-shrink-0 text-muted-foreground" />
+                <span className="text-xs font-medium text-foreground">{t('tools.other')}</span>
+              </div>
+            </button>
+
+            {/* Other text input */}
+            {isOtherSelected && !submitted && (
+              <textarea
+                ref={otherInputRef}
+                value={otherText}
+                onChange={(e) => setOtherTexts((prev) => {
+                  const next = new Map(prev);
+                  next.set(activeTab, e.target.value);
+                  return next;
+                })}
+                placeholder={t('tools.otherPlaceholder')}
+                className="w-full rounded-md border border-border/40 bg-background/50 px-2.5 py-1.5 text-xs text-foreground placeholder:text-muted-foreground/60 focus:outline-none focus:border-primary/50 focus:ring-1 focus:ring-primary/20 resize-none min-h-[60px]"
+                rows={2}
+              />
+            )}
+            {isOtherSelected && submitted && otherText.trim() && (
+              <div className="rounded-md border border-border/40 bg-background/50 px-2.5 py-1.5 text-xs text-muted-foreground opacity-70">
+                {otherText}
+              </div>
+            )}
           </div>
 
           {/* Submit button */}

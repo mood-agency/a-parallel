@@ -30,6 +30,7 @@ interface ProjectItemProps {
   project: Project;
   threads: Thread[];
   isExpanded: boolean;
+  isSelected: boolean;
   selectedThreadId: string | null;
   onToggle: () => void;
   onNewThread: () => void;
@@ -46,6 +47,7 @@ export function ProjectItem({
   project,
   threads,
   isExpanded,
+  isSelected,
   selectedThreadId,
   onToggle,
   onNewThread,
@@ -100,6 +102,7 @@ export function ProjectItem({
         ref={dragRef}
         className={cn(
           "flex items-center rounded-md hover:bg-accent/50 transition-colors select-none",
+          isSelected && "bg-accent text-accent-foreground",
           isDragging && "opacity-50",
           isDropTarget && "ring-2 ring-ring"
         )}
