@@ -36,12 +36,6 @@ export class AgentStateTracker {
   /** Pending permission requests per thread */
   readonly pendingPermissionRequest = new Map<string, { toolName: string; toolUseId: string }>();
 
-  /** ID of the last tool use for AskUserQuestion */
-  readonly lastToolUseId = new Map<string, string>();
-
-  /** Pending can_use_tool requests waiting for user answer */
-  readonly pendingCanUseTool = new Map<string, { requestId: string; process: IClaudeProcess; input: any }>();
-
   /**
    * Clear stale state when starting a new agent run.
    * processedToolUseIds and cliToDbMsgId are intentionally preserved
@@ -50,7 +44,9 @@ export class AgentStateTracker {
   clearRunState(threadId: string): void {
     this.currentAssistantMsgId.delete(threadId);
     this.resultReceived.delete(threadId);
-    this.manuallyStopped.delete(threadId);
+    // NOTE: manuallyStopped is intentionally NOT cleared here.
+    // It must survive until the old process's async exit handler consumes it.
+    // The exit handler itself clears it after checking.
     this.pendingUserInput.delete(threadId);
   }
 
@@ -64,7 +60,5 @@ export class AgentStateTracker {
     this.cliToDbMsgId.delete(threadId);
     this.pendingUserInput.delete(threadId);
     this.pendingPermissionRequest.delete(threadId);
-    this.lastToolUseId.delete(threadId);
-    this.pendingCanUseTool.delete(threadId);
   }
 }

@@ -7,7 +7,7 @@ import { sanitizePath } from '../utils/path-validation.js';
 import { requireThread, requireThreadCwd, requireProject } from '../utils/route-helpers.js';
 import { resultToResponse } from '../utils/result-response.js';
 import { badRequest, internal } from '@a-parallel/shared/errors';
-import { ClaudeProcess, type CLIMessage } from '../services/claude-process.js';
+import { query } from '@anthropic-ai/claude-agent-sdk';
 import { err } from 'neverthrow';
 import { getAuthMode } from '../lib/auth-mode.js';
 import { getGitIdentity, getGithubToken } from '../services/profile-service.js';
@@ -257,77 +257,49 @@ No quotes, no markdown, no extra explanation.
 
 ${diffSummary}`;
 
-  // Use ClaudeProcess (same NDJSON stream-json protocol as agent-runner)
-  const claudeProc = new ClaudeProcess({
-    prompt,
-    cwd,
-    maxTurns: 1,
-    permissionMode: 'plan', // read-only, no tools needed
-  });
+  // Use SDK query() for one-shot commit message generation
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 60_000);
 
-  const output = await new Promise<string>((resolve, reject) => {
-    const timeout = setTimeout(() => {
-      claudeProc.kill();
-      reject(new Error('Timed out waiting for commit message generation'));
-    }, 60_000);
-
-    let resultText = '';
-
-    claudeProc.on('message', (msg: CLIMessage) => {
-      // Collect text from assistant messages
-      if (msg.type === 'assistant') {
-        const text = msg.message.content
-          .filter((b): b is { type: 'text'; text: string } => 'text' in b && !!b.text)
-          .map((b) => b.text)
-          .join('\n');
-        if (text) resultText = text;
-      }
-      // On result, resolve with the collected text
-      if (msg.type === 'result') {
-        clearTimeout(timeout);
-        resolve(msg.result || resultText);
-      }
-    });
-
-    // Auto-approve any control requests (permissions)
-    claudeProc.on('control_request', (msg: any) => {
-      const subtype = msg.request?.subtype;
-      if (subtype === 'hook_callback' || subtype === 'can_use_tool') {
-        claudeProc.sendControlResponse({
-          type: 'control_response',
-          response: {
-            subtype: 'success',
-            request_id: msg.request_id,
-            response: { behavior: 'allow', updatedInput: msg.request?.input },
-          },
-        });
-      }
-    });
-
-    claudeProc.on('error', (e: Error) => {
-      clearTimeout(timeout);
-      reject(e);
-    });
-
-    claudeProc.on('exit', (code: number | null) => {
-      clearTimeout(timeout);
-      if (resultText) {
-        resolve(resultText);
-      } else {
-        reject(new Error(`Claude process exited with code ${code} without producing output`));
-      }
-    });
-
+  const output = await (async (): Promise<string | null> => {
     try {
-      claudeProc.start();
+      let resultText = '';
+
+      const gen = query({
+        prompt,
+        options: {
+          cwd,
+          maxTurns: 1,
+          permissionMode: 'plan',
+          abortController: controller,
+          systemPrompt: { type: 'preset', preset: 'claude_code' },
+          tools: { type: 'preset', preset: 'claude_code' },
+        },
+      });
+
+      for await (const msg of gen) {
+        if (msg.type === 'assistant') {
+          const content = (msg as any).message?.content;
+          if (!content) continue;
+          const text = content
+            .filter((b: any) => b.type === 'text' && b.text)
+            .map((b: any) => b.text)
+            .join('\n');
+          if (text) resultText = text;
+        }
+        if (msg.type === 'result') {
+          return (msg as any).result || resultText;
+        }
+      }
+
+      return resultText || null;
     } catch (e: any) {
+      console.error('[generate-commit-message] SDK query error:', e.message);
+      return null;
+    } finally {
       clearTimeout(timeout);
-      reject(e);
     }
-  }).catch((e) => {
-    console.error('[generate-commit-message] ClaudeProcess error:', e.message);
-    return null;
-  });
+  })();
 
   if (!output) {
     return resultToResponse(c, err(internal('Failed to generate commit message')));

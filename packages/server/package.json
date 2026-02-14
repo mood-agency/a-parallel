@@ -12,6 +12,7 @@
   },
   "dependencies": {
     "@a-parallel/shared": "*",
+    "@anthropic-ai/claude-agent-sdk": "^0.2.42",
     "better-auth": "^1.4.18",
     "croner": "^10.0.1",
     "drizzle-orm": "^0.45.1",

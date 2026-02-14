@@ -1,20 +1,16 @@
 import { wsBroker } from './ws-broker.js';
 import * as tm from './thread-manager.js';
 import type { WSEvent, ClaudeModel, PermissionMode } from '@a-parallel/shared';
-import {
-  ClaudeProcess,
-  type CLIMessage,
-  type ClaudeProcessOptions,
-} from './claude-process.js';
+import { SDKClaudeProcess } from './sdk-claude-process.js';
+import type { CLIMessage, ClaudeProcessOptions } from './claude-types.js';
 import type {
   IThreadManager,
   IWSBroker,
-  IClaudeProcess,
   IClaudeProcessFactory,
 } from './interfaces.js';
 import { AgentStateTracker } from './agent-state.js';
 import { AgentMessageHandler } from './agent-message-handler.js';
-import { AgentControlHandler } from './agent-control-handler.js';
+
 
 const PERMISSION_MAP: Record<PermissionMode, string> = {
   plan: 'plan',
@@ -38,7 +34,6 @@ const DEFAULT_ALLOWED_TOOLS = [
 export class AgentRunner {
   private state: AgentStateTracker;
   private messageHandler: AgentMessageHandler;
-  private controlHandler: AgentControlHandler;
 
   constructor(
     private threadManager: IThreadManager,
@@ -47,7 +42,6 @@ export class AgentRunner {
   ) {
     this.state = new AgentStateTracker();
     this.messageHandler = new AgentMessageHandler(this.state, threadManager, wsBroker);
-    this.controlHandler = new AgentControlHandler(this.state, threadManager, wsBroker);
   }
 
   private emitWS(threadId: string, type: WSEvent['type'], data: unknown): void {
@@ -75,13 +69,9 @@ export class AgentRunner {
   ): Promise<void> {
     console.log(`[agent] start thread=${threadId} model=${model} cwd=${cwd}`);
 
-    // Check if we're resuming an existing active session
+    // Kill existing process if still running (SDK uses kill + session resume)
     const existing = this.state.activeAgents.get(threadId);
     if (existing && !existing.exited) {
-      const resumed = this.tryResumeWithUserInput(threadId, prompt, model, permissionMode, images);
-      if (resumed) return;
-
-      // Explicitly STOP if we are restarting and it's not a resume flow
       console.log(`[agent] stopping existing agent for thread=${threadId} before restart`);
       this.state.manuallyStopped.add(threadId);
       try { await existing.kill(); } catch { /* best-effort */ }
@@ -149,10 +139,6 @@ export class AgentRunner {
     // Wire up event handlers
     claudeProcess.on('message', (msg: CLIMessage) => {
       this.messageHandler.handle(threadId, msg);
-    });
-
-    claudeProcess.on('control_request', (msg: any) => {
-      this.controlHandler.handle(threadId, msg, claudeProcess);
     });
 
     claudeProcess.on('error', (err: Error) => {
@@ -250,69 +236,6 @@ export class AgentRunner {
     console.log('[agent] All agents stopped.');
   }
 
-  // ── Private helpers ────────────────────────────────────────────
-
-  /**
-   * Try to resume an active session by injecting the user's answer
-   * into the pending can_use_tool request.
-   * Returns true if resume was successful and no restart is needed.
-   */
-  private tryResumeWithUserInput(
-    threadId: string,
-    prompt: string,
-    model: ClaudeModel,
-    permissionMode: PermissionMode,
-    images?: any[],
-  ): boolean {
-    const waitingReason = this.state.pendingUserInput.get(threadId);
-    const hasPendingCanUseTool = this.state.pendingCanUseTool.has(threadId);
-
-    if (!(waitingReason === 'question' || waitingReason === 'permission' || waitingReason === 'plan' || hasPendingCanUseTool)) {
-      return false;
-    }
-
-    console.log(`[agent] Resuming existing thread=${threadId} with user input`);
-
-    // Save user message to DB
-    this.threadManager.insertMessage({
-      threadId,
-      role: 'user',
-      content: prompt,
-      images: images ? JSON.stringify(images) : null,
-      model,
-      permissionMode,
-    });
-
-    // Respond to the stored can_use_tool request with the user's answer
-    const pending = this.state.pendingCanUseTool.get(threadId);
-    if (pending) {
-      console.log(`[agent] Responding to can_use_tool with user answer for thread=${threadId}`);
-
-      const updatedInput = {
-        ...pending.input,
-        result: prompt,
-      };
-
-      const response = {
-        type: 'control_response',
-        response: {
-          subtype: 'success',
-          request_id: pending.requestId,
-          response: { behavior: 'allow', updatedInput }
-        }
-      };
-      pending.process.sendControlResponse(response);
-
-      this.state.pendingUserInput.delete(threadId);
-      this.state.lastToolUseId.delete(threadId);
-      this.state.pendingCanUseTool.delete(threadId);
-      this.emitWS(threadId, 'agent:status', { status: 'running' });
-      return true;
-    }
-
-    console.warn(`[agent] Could not find toolUseId for resume, falling back to restart`);
-    return false;
-  }
 }
 
 // ── Default singleton (backward-compatible exports) ─────────────
@@ -320,7 +243,7 @@ export class AgentRunner {
 const defaultRunner = new AgentRunner(
   tm,
   wsBroker,
-  { create: (opts: ClaudeProcessOptions) => new ClaudeProcess(opts) },
+  { create: (opts: ClaudeProcessOptions) => new SDKClaudeProcess(opts) },
 );
 
 export const startAgent = defaultRunner.startAgent.bind(defaultRunner);

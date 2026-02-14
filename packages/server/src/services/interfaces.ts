@@ -4,7 +4,7 @@
  */
 
 import type { WSEvent } from '@a-parallel/shared';
-import type { CLIMessage, ClaudeProcessOptions } from './claude-process.js';
+import type { CLIMessage, ClaudeProcessOptions } from './claude-types.js';
 
 // ── Thread Manager subset used by agent-runner ──────────────────
 
@@ -44,8 +44,6 @@ export interface IClaudeProcess {
   on(event: 'message', listener: (msg: CLIMessage) => void): this;
   on(event: 'error', listener: (err: Error) => void): this;
   on(event: 'exit', listener: (code: number | null) => void): this;
-  on(event: 'control_request', listener: (msg: any) => void): this; // TODO: Use specific type
-  sendControlResponse(response: any): void;
   start(): void;
   kill(): Promise<void>;
   readonly exited: boolean;

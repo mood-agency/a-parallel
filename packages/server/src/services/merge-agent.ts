@@ -9,7 +9,7 @@
 import { EventEmitter } from 'events';
 import { existsSync } from 'fs';
 import { resolve } from 'path';
-import { ClaudeProcess, type CLIMessage, type CLIResultMessage, type CLIAssistantMessage } from './claude-process.js';
+import { query, AbortError } from '@anthropic-ai/claude-agent-sdk';
 import { git, getCurrentBranch, getStatusSummary, deriveGitSyncState, getDefaultBranch } from '../utils/git-v2.js';
 import { listWorktrees, type WorktreeInfo } from './worktree-manager.js';
 import type { ClaudeModel, GitSyncState } from '@a-parallel/shared';
@@ -248,28 +248,35 @@ CRITICAL RULES:
   3. Exit. Do NOT ask the user for input.`;
   }
 
-  private runClaudeProcess(prompt: string, branch: string): Promise<MergeResult> {
-    return new Promise((resolve, reject) => {
-      const proc = new ClaudeProcess({
+  private async runClaudeProcess(prompt: string, branch: string): Promise<MergeResult> {
+    let resultText = '';
+    let hadConflicts = false;
+    let costUsd = 0;
+
+    try {
+      const gen = query({
         prompt,
-        cwd: this.projectPath,
-        model: MODEL_MAP[this.model],
-        maxTurns: this.maxTurnsPerMerge,
-        permissionMode: 'autoEdit',
-        allowedTools: MERGE_ALLOWED_TOOLS,
+        options: {
+          model: MODEL_MAP[this.model],
+          cwd: this.projectPath,
+          maxTurns: this.maxTurnsPerMerge,
+          permissionMode: 'bypassPermissions',
+          allowDangerouslySkipPermissions: true,
+          allowedTools: MERGE_ALLOWED_TOOLS,
+          systemPrompt: { type: 'preset', preset: 'claude_code' },
+          tools: { type: 'preset', preset: 'claude_code' },
+          settingSources: ['project'],
+        },
       });
 
-      let resultText = '';
-      let hadConflicts = false;
-      let costUsd = 0;
-      let finished = false;
-
-      proc.on('message', (msg: CLIMessage) => {
+      for await (const msg of gen) {
         if (msg.type === 'assistant') {
-          const assistantMsg = msg as CLIAssistantMessage;
-          const textParts = assistantMsg.message.content
-            .filter((c): c is { type: 'text'; text: string } => c.type === 'text')
-            .map((c) => c.text);
+          const content = (msg as any).message?.content;
+          if (!content) continue;
+
+          const textParts = content
+            .filter((c: any) => c.type === 'text' && c.text)
+            .map((c: any) => c.text);
 
           const text = textParts.join('\n');
           if (text) {
@@ -277,8 +284,7 @@ CRITICAL RULES:
             this.emit('merge:progress', { branch, message: text });
           }
 
-          // Detect conflict markers in tool calls (file reads/edits)
-          for (const block of assistantMsg.message.content) {
+          for (const block of content) {
             if (block.type === 'tool_use' && (block.name === 'Read' || block.name === 'Edit')) {
               hadConflicts = true;
             }
@@ -286,66 +292,36 @@ CRITICAL RULES:
         }
 
         if (msg.type === 'result') {
-          const resultMsg = msg as CLIResultMessage;
-          costUsd = resultMsg.total_cost_usd ?? 0;
-          if (resultMsg.result) {
-            resultText = resultMsg.result;
+          const r = msg as any;
+          costUsd = r.total_cost_usd ?? 0;
+          if (r.result) {
+            resultText = r.result;
           }
         }
-      });
+      }
+    } catch (err: any) {
+      if (err instanceof AbortError) {
+        return { branch, success: false, hadConflicts, error: 'Aborted', costUsd };
+      }
+      await this.abortMergeIfNeeded();
+      return { branch, success: false, hadConflicts, error: err.message || String(err), costUsd };
+    }
 
-      // Auto-approve all tool uses (headless mode)
-      proc.on('control_request', (msg: any) => {
-        if (msg.request?.subtype === 'can_use_tool') {
-          proc.sendControlResponse({
-            type: 'control_response',
-            request_id: msg.request_id,
-            response: { behavior: 'allow' },
-          });
-        } else if (msg.request?.subtype === 'initialize') {
-          // Respond to initialize handshake
-          proc.sendControlResponse({
-            type: 'control_response',
-            request_id: msg.request_id,
-            response: { acknowledged: true },
-          });
-        }
-      });
+    const success = resultText.includes('MERGE_OK') || !resultText.includes('MERGE_FAILED');
+    const failed = resultText.includes('MERGE_FAILED');
 
-      proc.on('error', (err: Error) => {
-        if (!finished) {
-          finished = true;
-          // Safety: try to abort merge
-          this.abortMergeIfNeeded().finally(() => {
-            resolve({ branch, success: false, hadConflicts, error: err.message, costUsd });
-          });
-        }
-      });
+    if (failed) {
+      const failMatch = resultText.match(/MERGE_FAILED:\s*(.+)/);
+      return {
+        branch,
+        success: false,
+        hadConflicts: true,
+        error: failMatch?.[1] || 'Merge failed — ambiguous conflict',
+        costUsd,
+      };
+    }
 
-      proc.on('exit', (code: number | null) => {
-        if (!finished) {
-          finished = true;
-          const success = resultText.includes('MERGE_OK') || (code === 0 && !resultText.includes('MERGE_FAILED'));
-          const failed = resultText.includes('MERGE_FAILED');
-
-          if (failed) {
-            // Extract failure reason from MERGE_FAILED output
-            const failMatch = resultText.match(/MERGE_FAILED:\s*(.+)/);
-            resolve({
-              branch,
-              success: false,
-              hadConflicts: true,
-              error: failMatch?.[1] || 'Merge failed — ambiguous conflict',
-              costUsd,
-            });
-          } else {
-            resolve({ branch, success, hadConflicts, costUsd });
-          }
-        }
-      });
-
-      proc.start();
-    });
+    return { branch, success, hadConflicts, costUsd };
   }
 
   private async abortMergeIfNeeded(): Promise<void> {

@@ -1,5 +1,5 @@
 import type { IThreadManager, IWSBroker } from './interfaces.js';
-import type { CLIMessage } from './claude-process.js';
+import type { CLIMessage } from './claude-types.js';
 import type { WSEvent } from '@a-parallel/shared';
 import type { AgentStateTracker } from './agent-state.js';
 import * as pm from './project-manager.js';
@@ -161,7 +161,6 @@ export class AgentMessageHandler {
         // Track if this tool call means Claude is waiting for user input
         if (block.name === 'AskUserQuestion') {
           this.state.pendingUserInput.set(threadId, 'question');
-          this.state.lastToolUseId.set(threadId, block.id);
           this.threadManager.updateThread(threadId, { status: 'waiting' });
           this.emitWS(threadId, 'agent:status', { status: 'waiting', waitingReason: 'question' });
         } else if (block.name === 'ExitPlanMode') {

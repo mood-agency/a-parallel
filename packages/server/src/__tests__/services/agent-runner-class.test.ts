@@ -3,7 +3,7 @@ import { EventEmitter } from 'events';
 import { AgentRunner } from '../../services/agent-runner.js';
 import type { IThreadManager, IWSBroker, IClaudeProcess, IClaudeProcessFactory } from '../../services/interfaces.js';
 import type { WSEvent } from '@a-parallel/shared';
-import type { CLIMessage, CLIAssistantMessage, CLIResultMessage, CLISystemMessage, CLIUserMessage } from '../../services/claude-process.js';
+import type { CLIMessage, CLIAssistantMessage, CLIResultMessage, CLISystemMessage, CLIUserMessage } from '../../services/claude-types.js';
 
 // ── Mock helpers ────────────────────────────────────────────────
 

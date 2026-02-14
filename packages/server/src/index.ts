@@ -73,20 +73,32 @@ app.get('/api/health', (c) => {
   return c.json({ status: 'ok', timestamp: new Date().toISOString() });
 });
 
-// Setup status endpoint — checks Claude CLI availability
-app.get('/api/setup/status', (c) => {
+// Setup status endpoint — checks agent SDK + optional Claude CLI availability
+app.get('/api/setup/status', async (c) => {
+  // SDK is always available (npm dependency), verify it can be imported
+  let sdkAvailable = false;
+  try {
+    await import('@anthropic-ai/claude-agent-sdk');
+    sdkAvailable = true;
+  } catch {}
+
+  // Claude CLI is still needed for MCP server management (claude mcp list/add/remove)
   resetBinaryCache();
-  const result = checkClaudeBinaryAvailability();
+  const cliResult = checkClaudeBinaryAvailability();
   let version: string | null = null;
-  if (result.available && result.path) {
-    try { version = validateClaudeBinary(result.path); } catch {}
+  if (cliResult.available && cliResult.path) {
+    try { version = validateClaudeBinary(cliResult.path); } catch {}
   }
+
   return c.json({
     claudeCli: {
-      available: result.available,
-      path: result.path ?? null,
-      error: result.error ?? null,
+      available: cliResult.available,
+      path: cliResult.path ?? null,
+      error: cliResult.error ?? null,
       version,
+    },
+    agentSdk: {
+      available: sdkAvailable,
     },
   });
 });
@@ -148,15 +160,21 @@ if (authMode === 'local') {
 
 console.log(`[server] Auth mode: ${authMode}`);
 
-// Check Claude CLI availability at startup
+// Check agent SDK availability at startup
+try {
+  await import('@anthropic-ai/claude-agent-sdk');
+  console.log('[server] Agent SDK: available');
+} catch {
+  console.warn('[server] WARNING: @anthropic-ai/claude-agent-sdk could not be loaded');
+  console.warn('[server] Agent features will not work. Run: npm install @anthropic-ai/claude-agent-sdk');
+}
+
+// Check Claude CLI availability (still needed for MCP server management)
 const claudeBinaryCheck = checkClaudeBinaryAvailability();
-if (!claudeBinaryCheck.available) {
-  console.warn('[server] WARNING: Claude CLI is not installed or not found in PATH');
-  console.warn(`[server] ${claudeBinaryCheck.error}`);
-  console.warn('[server] Agent features will not work until Claude CLI is installed');
-  console.warn('[server] Install from: https://docs.anthropic.com/en/docs/agents/overview');
-} else {
+if (claudeBinaryCheck.available) {
   console.log(`[server] Claude CLI: ${claudeBinaryCheck.path}`);
+} else {
+  console.log('[server] Claude CLI: not found (MCP management unavailable)');
 }
 
 const server = Bun.serve({
