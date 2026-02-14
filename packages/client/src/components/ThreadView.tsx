@@ -689,7 +689,7 @@ export function ThreadView() {
                     className={cn(
                       'relative group text-sm max-w-[80%]',
                       msg.role === 'user'
-                        ? 'ml-auto rounded-lg px-3 py-2 bg-primary text-primary-foreground'
+                        ? 'ml-auto rounded-lg px-3 py-2 bg-muted text-foreground'
                         : 'text-foreground'
                     )}
                   >
@@ -723,12 +723,12 @@ export function ThreadView() {
                         {(msg.model || msg.permissionMode) && (
                           <div className="flex gap-1 mt-1.5">
                             {msg.model && (
-                              <Badge variant="outline" className="text-[10px] px-1.5 py-0 h-4 font-medium bg-primary-foreground/10 text-primary-foreground/70 border-primary-foreground/20">
+                              <Badge variant="outline" className="text-[10px] px-1.5 py-0 h-4 font-medium bg-foreground/5 text-muted-foreground border-foreground/10">
                                 {t(`thread.model.${msg.model}`)}
                               </Badge>
                             )}
                             {msg.permissionMode && (
-                              <Badge variant="outline" className="text-[10px] px-1.5 py-0 h-4 font-medium bg-primary-foreground/10 text-primary-foreground/70 border-primary-foreground/20">
+                              <Badge variant="outline" className="text-[10px] px-1.5 py-0 h-4 font-medium bg-foreground/5 text-muted-foreground border-foreground/10">
                                 {t(`prompt.${msg.permissionMode}`)}
                               </Badge>
                             )}

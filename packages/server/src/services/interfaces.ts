@@ -16,6 +16,8 @@ export interface IThreadManager {
     role: string;
     content: string;
     images?: string | null;
+    model?: string | null;
+    permissionMode?: string | null;
   }): string;
   updateMessage(id: string, content: string): void;
   insertToolCall(data: {

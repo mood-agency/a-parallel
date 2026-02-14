@@ -102,7 +102,6 @@ export function ProjectItem({
         ref={dragRef}
         className={cn(
           "flex items-center rounded-md hover:bg-accent/50 transition-colors select-none",
-          isSelected && "bg-accent text-accent-foreground",
           isDragging && "opacity-50",
           isDropTarget && "ring-2 ring-ring"
         )}
@@ -113,12 +112,7 @@ export function ProjectItem({
           "flex-1 flex items-center gap-1.5 px-2 py-1 text-xs text-left text-muted-foreground hover:text-foreground min-w-0 transition-colors",
           isDragging ? "cursor-grabbing" : "cursor-pointer"
         )}>
-          {project.color ? (
-            <div
-              className="h-3.5 w-3.5 rounded-sm flex-shrink-0"
-              style={{ backgroundColor: project.color }}
-            />
-          ) : isExpanded ? (
+          {isExpanded ? (
             <FolderOpen className="h-3.5 w-3.5 flex-shrink-0" />
           ) : (
             <Folder className="h-3.5 w-3.5 flex-shrink-0" />

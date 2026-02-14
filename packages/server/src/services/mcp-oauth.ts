@@ -9,6 +9,7 @@ import { randomBytes, createHash } from 'crypto';
 import { db, schema } from '../db/index.js';
 import { eq, and } from 'drizzle-orm';
 import { addMcpServer, removeMcpServer } from './mcp-service.js';
+import { encrypt } from '../lib/crypto.js';
 
 // ── Types ─────────────────────────────────────────────────────
 
@@ -303,14 +304,14 @@ export async function handleOAuthCallback(
         serverName: pending.serverName,
         projectPath: pending.projectPath,
         serverUrl: pending.serverUrl,
-        accessToken: tokens.access_token,
-        refreshToken: tokens.refresh_token || null,
+        accessToken: encrypt(tokens.access_token),
+        refreshToken: tokens.refresh_token ? encrypt(tokens.refresh_token) : null,
         tokenType: tokens.token_type || 'Bearer',
         expiresAt: expiresAt || null,
         scope: tokens.scope || null,
         tokenEndpoint: pending.tokenEndpoint,
         clientId: pending.clientId,
-        clientSecret: pending.clientSecret || null,
+        clientSecret: pending.clientSecret ? encrypt(pending.clientSecret) : null,
         createdAt: now,
         updatedAt: now,
       })

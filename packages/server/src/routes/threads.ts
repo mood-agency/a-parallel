@@ -2,7 +2,7 @@ import { Hono } from 'hono';
 import * as tm from '../services/thread-manager.js';
 import * as pm from '../services/project-manager.js';
 import * as wm from '../services/worktree-manager.js';
-import { startAgent, stopAgent, isAgentRunning } from '../services/agent-runner.js';
+import { startAgent, stopAgent, isAgentRunning, cleanupThreadState } from '../services/agent-runner.js';
 import { nanoid } from 'nanoid';
 import { createThreadSchema, createIdleThreadSchema, sendMessageSchema, updateThreadSchema, approveToolSchema, validate } from '../validation/schemas.js';
 import { requireThread, requireThreadWithMessages, requireProject } from '../utils/route-helpers.js';
@@ -441,6 +441,7 @@ threadRoutes.delete('/:id', async (c) => {
       }
     }
 
+    cleanupThreadState(id);
     tm.deleteThread(id);
   }
 
