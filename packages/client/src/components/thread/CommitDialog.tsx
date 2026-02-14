@@ -81,7 +81,7 @@ export function CommitDialog({ open, onOpenChange }: CommitDialogProps) {
   const threadId = activeThread?.id;
 
   const [allFiles, setAllFiles] = useState<FileDiff[]>([]);
-  const [selectedFiles, setSelectedFiles] = useState<Set<string>>(new Set());
+  const [selectedFiles, setSelectedFiles] = useState(() => new Set<string>());
   const [includeUnstaged, setIncludeUnstaged] = useState(true);
   const [commitTitle, setCommitTitle] = useState('');
   const [commitBody, setCommitBody] = useState('');
@@ -387,13 +387,21 @@ export function CommitDialog({ open, onOpenChange }: CommitDialogProps) {
 
           {/* Commit Title and Body Section */}
           <div className="space-y-3">
+            <input
+              type="text"
+              className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm placeholder:text-muted-foreground transition-[border-color,box-shadow] duration-150 focus:outline-none focus:ring-1 focus:ring-ring"
+              placeholder={t('review.commitTitle')}
+              value={commitTitle}
+              onChange={(e) => setCommitTitle(e.target.value)}
+              disabled={allFiles.length === 0 || !!actionInProgress}
+            />
             <div className="relative">
-              <input
-                type="text"
-                className="w-full rounded-md border border-input bg-background px-3 py-2 pr-9 text-sm placeholder:text-muted-foreground transition-[border-color,box-shadow] duration-150 focus:outline-none focus:ring-1 focus:ring-ring"
-                placeholder={t('review.commitTitle')}
-                value={commitTitle}
-                onChange={(e) => setCommitTitle(e.target.value)}
+              <textarea
+                className="w-full rounded-md border border-input bg-background px-3 py-2 pb-9 text-sm placeholder:text-muted-foreground transition-[border-color,box-shadow] duration-150 focus:outline-none focus:ring-1 focus:ring-ring resize-none"
+                rows={5}
+                placeholder={t('review.commitBody')}
+                value={commitBody}
+                onChange={(e) => setCommitBody(e.target.value)}
                 disabled={allFiles.length === 0 || !!actionInProgress}
               />
               <Tooltip>
@@ -401,26 +409,18 @@ export function CommitDialog({ open, onOpenChange }: CommitDialogProps) {
                   <Button
                     variant="ghost"
                     size="icon-sm"
-                    className="absolute top-1.5 right-1.5"
+                    className="absolute bottom-2 left-2 bg-background hover:bg-accent"
                     onClick={handleGenerateCommitMsg}
                     disabled={allFiles.length === 0 || generatingMsg || !!actionInProgress}
                   >
                     <Sparkles className={cn('h-3.5 w-3.5', generatingMsg && 'animate-pulse')} />
                   </Button>
                 </TooltipTrigger>
-                <TooltipContent side="bottom">
+                <TooltipContent side="top">
                   {generatingMsg ? t('review.generatingCommitMsg') : t('review.generateCommitMsg')}
                 </TooltipContent>
               </Tooltip>
             </div>
-            <textarea
-              className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm placeholder:text-muted-foreground transition-[border-color,box-shadow] duration-150 focus:outline-none focus:ring-1 focus:ring-ring resize-none"
-              rows={3}
-              placeholder={t('review.commitBody')}
-              value={commitBody}
-              onChange={(e) => setCommitBody(e.target.value)}
-              disabled={allFiles.length === 0 || !!actionInProgress}
-            />
           </div>
         </div>
 

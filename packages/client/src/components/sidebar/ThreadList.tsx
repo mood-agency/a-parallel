@@ -8,9 +8,9 @@ import { timeAgo } from '@/lib/thread-utils';
 import { ThreadItem } from './ThreadItem';
 import type { Thread, ThreadStatus } from '@a-parallel/shared';
 
-const RUNNING_STATUSES: ThreadStatus[] = ['running', 'waiting'];
-const FINISHED_STATUSES: ThreadStatus[] = ['completed', 'failed', 'stopped', 'interrupted'];
-const VISIBLE_STATUSES = [...RUNNING_STATUSES, ...FINISHED_STATUSES];
+const RUNNING_STATUSES = new Set<ThreadStatus>(['running', 'waiting']);
+const FINISHED_STATUSES = new Set<ThreadStatus>(['completed', 'failed', 'stopped', 'interrupted']);
+const VISIBLE_STATUSES = new Set<ThreadStatus>([...RUNNING_STATUSES, ...FINISHED_STATUSES]);
 
 interface EnrichedThread extends Thread {
   projectName: string;
@@ -36,7 +36,7 @@ export function ThreadList({ onArchiveThread, onDeleteThread }: ThreadListProps)
 
     for (const [projectId, projectThreads] of Object.entries(threadsByProject)) {
       for (const thread of projectThreads) {
-        if (VISIBLE_STATUSES.includes(thread.status) && !thread.archived) {
+        if (VISIBLE_STATUSES.has(thread.status) && !thread.archived) {
           const project = projectMap.get(projectId);
           result.push({
             ...thread,
@@ -49,8 +49,8 @@ export function ThreadList({ onArchiveThread, onDeleteThread }: ThreadListProps)
 
     // Sort: running/waiting first, then by date descending
     result.sort((a, b) => {
-      const aRunning = RUNNING_STATUSES.includes(a.status) ? 1 : 0;
-      const bRunning = RUNNING_STATUSES.includes(b.status) ? 1 : 0;
+      const aRunning = RUNNING_STATUSES.has(a.status) ? 1 : 0;
+      const bRunning = RUNNING_STATUSES.has(b.status) ? 1 : 0;
       if (aRunning !== bRunning) return bRunning - aRunning;
       const dateA = a.completedAt ?? a.createdAt;
       const dateB = b.completedAt ?? b.createdAt;
@@ -58,8 +58,8 @@ export function ThreadList({ onArchiveThread, onDeleteThread }: ThreadListProps)
     });
 
     // Limit finished threads to 5, keep all running
-    const running = result.filter(t => RUNNING_STATUSES.includes(t.status));
-    const finished = result.filter(t => !RUNNING_STATUSES.includes(t.status)).slice(0, 5);
+    const running = result.filter(t => RUNNING_STATUSES.has(t.status));
+    const finished = result.filter(t => !RUNNING_STATUSES.has(t.status)).slice(0, 5);
     return [...running, ...finished];
   }, [threadsByProject, projects]);
 
@@ -68,7 +68,7 @@ export function ThreadList({ onArchiveThread, onDeleteThread }: ThreadListProps)
   return (
     <div className="space-y-0.5 min-w-0">
       {threads.map((thread) => {
-        const isRunning = RUNNING_STATUSES.includes(thread.status);
+        const isRunning = RUNNING_STATUSES.has(thread.status);
         return (
           <ThreadItem
             key={thread.id}

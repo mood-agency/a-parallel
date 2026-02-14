@@ -13,20 +13,31 @@ const COLORS: Record<string, string> = {
   archived: '#8b5cf6',
 };
 
+// Hoisted tooltip styles to avoid re-creating objects on every render (rerender-memo-with-default-value)
+const TOOLTIP_CONTENT_STYLE: React.CSSProperties = {
+  backgroundColor: 'hsl(var(--popover))',
+  border: '1px solid hsl(var(--border))',
+  borderRadius: '6px',
+  fontSize: '12px',
+  color: 'hsl(var(--popover-foreground))',
+};
+const TOOLTIP_ITEM_STYLE: React.CSSProperties = { color: 'hsl(var(--popover-foreground))' };
+const TOOLTIP_LABEL_STYLE: React.CSSProperties = { color: 'hsl(var(--popover-foreground))' };
+
+const LABEL_KEYS: Record<string, string> = {
+  backlog: 'analytics.backlog',
+  in_progress: 'analytics.inProgress',
+  review: 'analytics.review',
+  done: 'analytics.done',
+  archived: 'analytics.archived',
+};
+
 export function StageDistributionChart({ data }: Props) {
   const { t } = useTranslation();
 
-  const labelKeys: Record<string, string> = {
-    backlog: 'analytics.backlog',
-    in_progress: 'analytics.inProgress',
-    review: 'analytics.review',
-    done: 'analytics.done',
-    archived: 'analytics.archived',
-  };
-
   const chartData = Object.entries(data)
     .map(([stage, value]) => ({
-      name: t(labelKeys[stage] ?? stage),
+      name: t(LABEL_KEYS[stage] ?? stage),
       value,
       stage,
     }))
@@ -64,15 +75,9 @@ export function StageDistributionChart({ data }: Props) {
             ))}
           </Pie>
           <Tooltip
-            contentStyle={{
-              backgroundColor: 'hsl(var(--popover))',
-              border: '1px solid hsl(var(--border))',
-              borderRadius: '6px',
-              fontSize: '12px',
-              color: 'hsl(var(--popover-foreground))',
-            }}
-            itemStyle={{ color: 'hsl(var(--popover-foreground))' }}
-            labelStyle={{ color: 'hsl(var(--popover-foreground))' }}
+            contentStyle={TOOLTIP_CONTENT_STYLE}
+            itemStyle={TOOLTIP_ITEM_STYLE}
+            labelStyle={TOOLTIP_LABEL_STYLE}
           />
         </PieChart>
       </ResponsiveContainer>

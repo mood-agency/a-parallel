@@ -1,7 +1,8 @@
 # TODO
 
 ## Tareas Pendientes
-- [ ] Skills
+- [x] Skills
+- [ ] Hacer intro de configuracion
 - [ ] Preview
 - [ ] Log de depuracion
 

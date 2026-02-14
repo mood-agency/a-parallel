@@ -1,7 +1,8 @@
 import { useState, useCallback, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
-import { useAppStore } from '@/stores/app-store';
+import { useProjectStore } from '@/stores/project-store';
+import { useThreadStore } from '@/stores/thread-store';
 import { useUIStore } from '@/stores/ui-store';
 import { useAuthStore } from '@/stores/auth-store';
 import { useGitStatusStore } from '@/stores/git-status-store';
@@ -38,23 +39,26 @@ import { monitorForElements } from '@atlaskit/pragmatic-drag-and-drop/element/ad
 export function AppSidebar() {
   const navigate = useNavigate();
   const { t } = useTranslation();
-  const projects = useAppStore(s => s.projects);
-  const threadsByProject = useAppStore(s => s.threadsByProject);
-  const selectedThreadId = useAppStore(s => s.selectedThreadId);
-  const selectedProjectId = useAppStore(s => s.selectedProjectId);
-  const expandedProjects = useAppStore(s => s.expandedProjects);
-  const toggleProject = useAppStore(s => s.toggleProject);
-  const loadProjects = useAppStore(s => s.loadProjects);
-  const startNewThread = useAppStore(s => s.startNewThread);
-  const archiveThread = useAppStore(s => s.archiveThread);
-  const pinThread = useAppStore(s => s.pinThread);
-  const deleteThread = useAppStore(s => s.deleteThread);
-  const renameProject = useAppStore(s => s.renameProject);
-  const deleteProject = useAppStore(s => s.deleteProject);
-  const reorderProjects = useAppStore(s => s.reorderProjects);
-  const settingsOpen = useAppStore(s => s.settingsOpen);
-  const showAllThreads = useAppStore(s => s.showAllThreads);
-  const setAddProjectOpen = useAppStore(s => s.setAddProjectOpen);
+  // project-store
+  const projects = useProjectStore(s => s.projects);
+  const selectedProjectId = useProjectStore(s => s.selectedProjectId);
+  const expandedProjects = useProjectStore(s => s.expandedProjects);
+  const toggleProject = useProjectStore(s => s.toggleProject);
+  const loadProjects = useProjectStore(s => s.loadProjects);
+  const renameProject = useProjectStore(s => s.renameProject);
+  const deleteProject = useProjectStore(s => s.deleteProject);
+  const reorderProjects = useProjectStore(s => s.reorderProjects);
+  // thread-store
+  const threadsByProject = useThreadStore(s => s.threadsByProject);
+  const selectedThreadId = useThreadStore(s => s.selectedThreadId);
+  const archiveThread = useThreadStore(s => s.archiveThread);
+  const pinThread = useThreadStore(s => s.pinThread);
+  const deleteThread = useThreadStore(s => s.deleteThread);
+  // ui-store
+  const settingsOpen = useUIStore(s => s.settingsOpen);
+  const startNewThread = useUIStore(s => s.startNewThread);
+  const showAllThreads = useUIStore(s => s.showAllThreads);
+  const setAddProjectOpen = useUIStore(s => s.setAddProjectOpen);
   const showGlobalSearch = useUIStore(s => s.showGlobalSearch);
   const authMode = useAuthStore(s => s.mode);
   const authUser = useAuthStore(s => s.user);
@@ -205,7 +209,7 @@ export function AppSidebar() {
         <div className="px-2">
           <AutomationInboxButton />
         </div>
-        <div className="flex items-center justify-between px-4 pt-2 pb-1 h-8">
+        <div className="flex items-center justify-between px-4 pt-4 pb-2">
           <h2 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">{t('sidebar.threadsTitle')}</h2>
         </div>
         <div className="overflow-y-auto min-h-0 px-2 pb-2">
@@ -221,7 +225,7 @@ export function AppSidebar() {
       </div>
 
       {/* Projects header (fixed, outside scroll) */}
-      <div className="flex items-center justify-between px-4 pt-2 pb-1 h-8 shrink-0">
+      <div className="flex items-center justify-between px-4 pt-4 pb-2 shrink-0">
         <h2 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">{t('sidebar.projects')}</h2>
         <Tooltip>
           <TooltipTrigger asChild>
@@ -277,7 +281,7 @@ export function AppSidebar() {
                 setDeleteProjectConfirm({ projectId: project.id, name: project.name });
               }}
               onSelectThread={(threadId) => {
-                const store = useAppStore.getState();
+                const store = useThreadStore.getState();
                 // If already on this thread's URL but activeThread didn't load, re-select directly
                 if (store.selectedThreadId === threadId && (!store.activeThread || store.activeThread.id !== threadId)) {
                   store.selectThread(threadId);

@@ -15,33 +15,30 @@ type CircuitState = 'closed' | 'open' | 'half-open';
 interface CircuitBreakerStore {
   state: CircuitState;
   failureCount: number;
-  dialogVisible: boolean;
   _cooldownTimer: ReturnType<typeof setTimeout> | null;
 
   recordFailure: () => void;
   recordSuccess: () => void;
   retryNow: () => Promise<void>;
-  dismissDialog: () => void;
 }
 
 export const useCircuitBreakerStore = create<CircuitBreakerStore>((set, get) => ({
   state: 'closed',
   failureCount: 0,
-  dialogVisible: false,
   _cooldownTimer: null,
 
   recordFailure: () => {
     const { state, failureCount, _cooldownTimer } = get();
     if (state === 'half-open') {
       // Probe failed — go back to open
-      set({ state: 'open', dialogVisible: true });
+      set({ state: 'open' });
       startCooldown(get, set);
       return;
     }
     const next = failureCount + 1;
     if (next >= FAILURE_THRESHOLD && state === 'closed') {
       if (_cooldownTimer) clearTimeout(_cooldownTimer);
-      set({ state: 'open', failureCount: next, dialogVisible: true, _cooldownTimer: null });
+      set({ state: 'open', failureCount: next, _cooldownTimer: null });
       startCooldown(get, set);
     } else {
       set({ failureCount: next });
@@ -51,7 +48,7 @@ export const useCircuitBreakerStore = create<CircuitBreakerStore>((set, get) => 
   recordSuccess: () => {
     const { _cooldownTimer } = get();
     if (_cooldownTimer) clearTimeout(_cooldownTimer);
-    set({ state: 'closed', failureCount: 0, dialogVisible: false, _cooldownTimer: null });
+    set({ state: 'closed', failureCount: 0, _cooldownTimer: null });
   },
 
   retryNow: async () => {
@@ -71,10 +68,6 @@ export const useCircuitBreakerStore = create<CircuitBreakerStore>((set, get) => 
     } catch {
       get().recordFailure();
     }
-  },
-
-  dismissDialog: () => {
-    set({ dialogVisible: false });
   },
 }));
 

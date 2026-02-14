@@ -230,7 +230,7 @@ export const useThreadStore = create<ThreadState>((set, get) => ({
     const { threadsByProject, activeThread } = get();
     const projectThreads = threadsByProject[projectId] ?? [];
     const oldThread = projectThreads.find((t) => t.id === threadId);
-    const oldStage = oldThread?.stage;
+    const oldStage = oldThread?.stage ?? 'backlog';
 
     set({
       threadsByProject: {
@@ -323,7 +323,7 @@ export const useThreadStore = create<ThreadState>((set, get) => ({
     const { threadsByProject, activeThread } = get();
     const projectThreads = threadsByProject[projectId] ?? [];
     const oldThread = projectThreads.find((t) => t.id === threadId);
-    const oldStage = oldThread?.stage;
+    const oldStage = oldThread?.stage ?? 'backlog';
 
     set({
       threadsByProject: {

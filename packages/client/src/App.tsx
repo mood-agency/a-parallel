@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { lazy, Suspense, useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useWS } from '@/hooks/use-ws';
 import { useRouteSync } from '@/hooks/use-route-sync';
@@ -8,18 +8,20 @@ import { setAppNavigate } from '@/stores/thread-store';
 import { useTerminalStore } from '@/stores/terminal-store';
 import { AppSidebar } from '@/components/Sidebar';
 import { ThreadView } from '@/components/ThreadView';
-import { AllThreadsView } from '@/components/AllThreadsView';
-import { ReviewPane } from '@/components/ReviewPane';
-import { TerminalPanel } from '@/components/TerminalPanel';
-import { SettingsDetailView } from '@/components/SettingsDetailView';
-import { AutomationInboxView } from '@/components/AutomationInboxView';
-import { AddProjectView } from '@/components/AddProjectView';
-import { AnalyticsView } from '@/components/AnalyticsView';
 import { SidebarProvider, SidebarInset, Sidebar, SidebarContent } from '@/components/ui/sidebar';
 import { Toaster } from 'sonner';
 import { TOAST_DURATION } from '@/lib/utils';
-import { CommandPalette } from '@/components/CommandPalette';
-import { CircuitBreakerDialog } from '@/components/CircuitBreakerDialog';
+
+// Lazy-load conditional views (bundle-conditional / bundle-dynamic-imports)
+const AllThreadsView = lazy(() => import('@/components/AllThreadsView').then(m => ({ default: m.AllThreadsView })));
+const ReviewPane = lazy(() => import('@/components/ReviewPane').then(m => ({ default: m.ReviewPane })));
+const TerminalPanel = lazy(() => import('@/components/TerminalPanel').then(m => ({ default: m.TerminalPanel })));
+const SettingsDetailView = lazy(() => import('@/components/SettingsDetailView').then(m => ({ default: m.SettingsDetailView })));
+const AutomationInboxView = lazy(() => import('@/components/AutomationInboxView').then(m => ({ default: m.AutomationInboxView })));
+const AddProjectView = lazy(() => import('@/components/AddProjectView').then(m => ({ default: m.AddProjectView })));
+const AnalyticsView = lazy(() => import('@/components/AnalyticsView').then(m => ({ default: m.AnalyticsView })));
+const CommandPalette = lazy(() => import('@/components/CommandPalette').then(m => ({ default: m.CommandPalette })));
+const CircuitBreakerDialog = lazy(() => import('@/components/CircuitBreakerDialog').then(m => ({ default: m.CircuitBreakerDialog })));
 
 export function App() {
   const loadProjects = useProjectStore(s => s.loadProjects);
@@ -115,10 +117,12 @@ export function App() {
       <SidebarInset className="flex flex-col overflow-hidden">
         {/* Main content + terminal */}
         <div className="flex-1 flex overflow-hidden min-h-0">
-          {settingsOpen ? <SettingsDetailView /> : analyticsOpen ? <AnalyticsView /> : automationInboxOpen ? <AutomationInboxView /> : addProjectOpen ? <AddProjectView /> : allThreadsProjectId ? <AllThreadsView /> : <ThreadView />}
+          <Suspense>
+            {settingsOpen ? <SettingsDetailView /> : analyticsOpen ? <AnalyticsView /> : automationInboxOpen ? <AutomationInboxView /> : addProjectOpen ? <AddProjectView /> : allThreadsProjectId ? <AllThreadsView /> : <ThreadView />}
+          </Suspense>
         </div>
 
-        <TerminalPanel />
+        <Suspense><TerminalPanel /></Suspense>
       </SidebarInset>
 
       {/* Right sidebar for review pane */}
@@ -135,14 +139,14 @@ export function App() {
       >
         <Sidebar side="right" collapsible="offcanvas">
           <SidebarContent className="p-0 gap-0">
-            <ReviewPane />
+            <Suspense><ReviewPane /></Suspense>
           </SidebarContent>
         </Sidebar>
       </SidebarProvider>
 
       <Toaster position="bottom-right" theme="dark" duration={TOAST_DURATION} />
-      <CircuitBreakerDialog />
-      {commandPaletteOpen && <CommandPalette open={commandPaletteOpen} onOpenChange={setCommandPaletteOpen} />}
+      <Suspense><CircuitBreakerDialog /></Suspense>
+      {commandPaletteOpen && <Suspense><CommandPalette open={commandPaletteOpen} onOpenChange={setCommandPaletteOpen} /></Suspense>}
     </SidebarProvider>
   );
 }

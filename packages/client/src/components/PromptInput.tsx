@@ -552,16 +552,18 @@ export function PromptInput({
     }
   }, [loadFiles]);
 
-  // Select a file from the mention menu
+  // Select a file from the mention menu (rerender-functional-setstate)
   const selectMentionFile = useCallback((filePath: string) => {
-    const before = prompt.slice(0, mentionStartPosRef.current);
-    const afterCursor = prompt.slice(mentionStartPosRef.current + mentionFilter.length + 1); // +1 for @
-    const newPrompt = `${before}@${filePath} ${afterCursor}`;
-    setPrompt(newPrompt);
+    const startPos = mentionStartPosRef.current;
+    setPrompt(prev => {
+      const before = prev.slice(0, startPos);
+      const afterCursor = prev.slice(startPos + mentionFilter.length + 1); // +1 for @
+      return `${before}@${filePath} ${afterCursor}`;
+    });
     setSelectedFiles(prev => prev.includes(filePath) ? prev : [...prev, filePath]);
     setShowMentionMenu(false);
     textareaRef.current?.focus();
-  }, [prompt, mentionFilter]);
+  }, [mentionFilter]);
 
   // Scroll mention menu selection into view
   useEffect(() => {

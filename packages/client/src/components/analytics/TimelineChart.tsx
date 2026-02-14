@@ -25,6 +25,15 @@ interface Props {
   groupBy?: 'day' | 'week' | 'month' | 'year';
 }
 
+// Hoisted tooltip styles (rerender-memo-with-default-value)
+const TOOLTIP_CONTENT_STYLE: React.CSSProperties = {
+  backgroundColor: 'hsl(var(--popover))',
+  border: '1px solid hsl(var(--border))',
+  borderRadius: '6px',
+  fontSize: '12px',
+  color: 'hsl(var(--foreground))',
+};
+
 export function TimelineChart({ created, completed, movedToReview, movedToDone, movedToArchived, groupBy = 'day' }: Props) {
   const { t } = useTranslation();
 
@@ -126,13 +135,7 @@ export function TimelineChart({ created, completed, movedToReview, movedToDone, 
           allowDecimals={false}
         />
         <Tooltip
-          contentStyle={{
-            backgroundColor: 'hsl(var(--popover))',
-            border: '1px solid hsl(var(--border))',
-            borderRadius: '6px',
-            fontSize: '12px',
-            color: 'hsl(var(--foreground))',
-          }}
+          contentStyle={TOOLTIP_CONTENT_STYLE}
           labelFormatter={formatDate}
         />
         <Legend

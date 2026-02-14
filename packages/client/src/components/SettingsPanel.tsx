@@ -93,7 +93,7 @@ export function SettingsPanel() {
       </SidebarHeader>
 
       {/* Menu list */}
-      <SidebarContent>
+      <SidebarContent className="px-2 pb-2">
         <SidebarMenu>
           {items.map((item) => {
             const Icon = item.icon;
