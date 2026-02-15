@@ -421,7 +421,7 @@ export function getStatusSummary(
 
       const branchResult = await getCurrentBranch(worktreeCwd);
       if (branchResult.isErr()) {
-        return { dirtyFileCount, unpushedCommitCount: 0, hasRemoteBranch: false, isMergedIntoBase: false };
+        return { dirtyFileCount, unpushedCommitCount: 0, hasRemoteBranch: false, isMergedIntoBase: false, linesAdded: 0, linesDeleted: 0 };
       }
       const branch = branchResult.value;
 

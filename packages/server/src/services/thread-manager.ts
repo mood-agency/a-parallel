@@ -48,7 +48,14 @@ export function listThreads(opts: {
   const condition = filters.length > 0 ? and(...filters) : undefined;
   // Sort by pinned first, then by completion time (most recent first), falling back to createdAt
   const completionTime = sql`COALESCE(${schema.threads.completedAt}, ${schema.threads.createdAt})`;
-  return db.select().from(schema.threads).where(condition).orderBy(desc(schema.threads.pinned), desc(completionTime)).all();
+  const threads = db.select().from(schema.threads).where(condition).orderBy(desc(schema.threads.pinned), desc(completionTime)).all();
+
+  // Enrich with comment counts
+  if (threads.length > 0) {
+    const counts = getCommentCounts(threads.map(t => t.id));
+    return threads.map(t => ({ ...t, commentCount: counts.get(t.id) ?? 0 }));
+  }
+  return threads;
 }
 
 /** List archived threads with pagination and search */
@@ -297,4 +304,49 @@ export function findToolCall(messageId: string, name: string, input: string) {
 /** Get a single tool call by ID */
 export function getToolCall(id: string) {
   return db.select().from(schema.toolCalls).where(eq(schema.toolCalls.id, id)).get();
+}
+
+// ── Comment CRUD ──────────────────────────────────────────────────
+
+/** List comments for a thread, ordered by creation time */
+export function listComments(threadId: string) {
+  return db.select()
+    .from(schema.threadComments)
+    .where(eq(schema.threadComments.threadId, threadId))
+    .orderBy(asc(schema.threadComments.createdAt))
+    .all();
+}
+
+/** Insert a comment, returns the created record */
+export function insertComment(data: {
+  threadId: string;
+  userId: string;
+  source: string;
+  content: string;
+}) {
+  const id = nanoid();
+  const createdAt = new Date().toISOString();
+  db.insert(schema.threadComments)
+    .values({ id, threadId: data.threadId, userId: data.userId, source: data.source, content: data.content, createdAt })
+    .run();
+  return { id, ...data, createdAt };
+}
+
+/** Delete a comment by ID */
+export function deleteComment(commentId: string) {
+  db.delete(schema.threadComments).where(eq(schema.threadComments.id, commentId)).run();
+}
+
+/** Get comment counts for a list of thread IDs */
+export function getCommentCounts(threadIds: string[]): Map<string, number> {
+  if (threadIds.length === 0) return new Map();
+  const rows = db.select({
+    threadId: schema.threadComments.threadId,
+    count: drizzleCount(),
+  })
+    .from(schema.threadComments)
+    .where(inArray(schema.threadComments.threadId, threadIds))
+    .groupBy(schema.threadComments.threadId)
+    .all();
+  return new Map(rows.map(r => [r.threadId, r.count]));
 }

@@ -16,7 +16,9 @@
     "bin",
     "packages/server/dist",
     "packages/client/dist",
-    "packages/shared/src"
+    "packages/shared/src",
+    "packages/core/src",
+    "packages/agent/src"
   ],
   "engines": {
     "bun": ">=1.0.0"

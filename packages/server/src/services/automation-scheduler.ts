@@ -1,11 +1,10 @@
 import { Cron } from 'croner';
 import { nanoid } from 'nanoid';
-import type { ClaudeModel, PermissionMode } from '@a-parallel/shared';
+import type { AgentModel, AgentProvider, PermissionMode } from '@a-parallel/shared';
 import * as am from './automation-manager.js';
 import * as tm from './thread-manager.js';
 import * as pm from './project-manager.js';
 import { startAgent } from './agent-runner.js';
-import { MergeAgent } from './merge-agent.js';
 import { wsBroker } from './ws-broker.js';
 
 // Tools that automations are NOT allowed to use (read-only execution)
@@ -37,12 +36,6 @@ export async function triggerAutomationRun(automation: {
   const project = pm.getProject(automation.projectId);
   if (!project) {
     console.warn(`[automation-scheduler] Project ${automation.projectId} not found for automation ${automation.id}`);
-    return;
-  }
-
-  // ── Merge mode: use MergeAgent instead of regular agent ──
-  if (automation.mode === 'merge') {
-    await triggerMergeRun(automation, project);
     return;
   }
 
@@ -97,10 +90,12 @@ export async function triggerAutomationRun(automation: {
     threadId,
     automation.prompt,
     project.path,
-    automation.model as ClaudeModel,
+    automation.model as AgentModel,
     automation.permissionMode as PermissionMode,
     undefined, // images
     AUTOMATION_DISALLOWED_TOOLS,
+    undefined, // allowedTools
+    (automation as any).provider as AgentProvider || 'claude',
   ).catch((err) => {
     console.error(`[automation-scheduler] Agent error for automation ${automation.id}:`, err);
     am.updateRun(runId, {
@@ -110,79 +105,6 @@ export async function triggerAutomationRun(automation: {
   });
 
   console.log(`[automation-scheduler] Triggered run ${runId} for automation "${automation.name}"`);
-}
-
-// ── Merge automation helper ──────────────────────────────────────
-
-async function triggerMergeRun(
-  automation: { id: string; projectId: string; name: string; model: string; baseBranch: string | null },
-  project: { path: string; userId?: string },
-): Promise<void> {
-  const runId = nanoid();
-  const now = new Date().toISOString();
-
-  // Create a lightweight run record (no thread — merge agent runs independently)
-  am.createRun({
-    id: runId,
-    automationId: automation.id,
-    threadId: `merge-${runId}`, // Placeholder — merge agent doesn't create threads
-    status: 'running',
-    triageStatus: 'pending',
-    startedAt: now,
-  });
-
-  am.updateAutomation(automation.id, { lastRunAt: now });
-
-  console.log(`[automation-scheduler] Triggered merge run ${runId} for "${automation.name}"`);
-
-  try {
-    const agent = new MergeAgent({
-      projectPath: project.path,
-      targetBranch: automation.baseBranch || undefined,
-      model: automation.model as ClaudeModel,
-    });
-
-    agent.on('merge:branch-done', (result: any) => {
-      const status = result.success ? 'merged' : 'conflict';
-      console.log(`[automation-scheduler:merge] ${result.branch}: ${status}`);
-    });
-
-    const result = await agent.run();
-
-    const succeeded = result.results.filter((r) => r.success).length;
-    const failed = result.results.filter((r) => !r.success).length;
-    const summary = result.results.length === 0
-      ? 'No branches ready to merge'
-      : `Merged ${succeeded}/${result.results.length} branches into ${result.targetBranch}` +
-        (failed > 0 ? ` (${failed} failed)` : '') +
-        ` — $${result.totalCostUsd.toFixed(4)}`;
-
-    am.updateRun(runId, {
-      status: failed > 0 ? 'failed' : 'completed',
-      hasFindings: result.results.length > 0 ? 1 : 0,
-      summary,
-      completedAt: new Date().toISOString(),
-    });
-
-    // Emit completion event
-    const completeEvent = {
-      type: 'automation:run_completed' as const,
-      threadId: `merge-${runId}`,
-      data: { automationId: automation.id, runId, hasFindings: result.results.length > 0, summary },
-    };
-    if (project.userId && project.userId !== '__local__') {
-      wsBroker.emitToUser(project.userId, completeEvent);
-    } else {
-      wsBroker.emit(completeEvent);
-    }
-  } catch (error: any) {
-    console.error(`[automation-scheduler:merge] Error for automation ${automation.id}:`, error);
-    am.updateRun(runId, {
-      status: 'failed',
-      summary: `Merge agent error: ${error.message}`,
-      completedAt: new Date().toISOString(),
-    });
-  }
 }
 
 // ── Cron job management ──────────────────────────────────────────

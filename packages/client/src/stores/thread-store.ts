@@ -5,7 +5,7 @@
  */
 
 import { create } from 'zustand';
-import type { Thread, MessageRole, ThreadStatus, ThreadStage, WaitingReason, ClaudeModel, PermissionMode } from '@a-parallel/shared';
+import type { Thread, MessageRole, ThreadStatus, ThreadStage, WaitingReason, AgentModel, PermissionMode } from '@a-parallel/shared';
 import { api } from '@/lib/api';
 import { useUIStore } from './ui-store';
 import { useProjectStore } from './project-store';
@@ -57,7 +57,7 @@ export interface ThreadState {
   pinThread: (threadId: string, projectId: string, pinned: boolean) => Promise<void>;
   updateThreadStage: (threadId: string, projectId: string, stage: ThreadStage) => Promise<void>;
   deleteThread: (threadId: string, projectId: string) => Promise<void>;
-  appendOptimisticMessage: (threadId: string, content: string, images?: any[], model?: ClaudeModel, permissionMode?: PermissionMode) => void;
+  appendOptimisticMessage: (threadId: string, content: string, images?: any[], model?: AgentModel, permissionMode?: PermissionMode) => void;
   refreshActiveThread: () => Promise<void>;
   refreshAllLoadedThreads: () => Promise<void>;
   clearProjectThreads: (projectId: string) => void;

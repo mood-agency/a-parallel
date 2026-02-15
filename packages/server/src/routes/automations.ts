@@ -1,4 +1,5 @@
 import { Hono } from 'hono';
+import type { HonoEnv } from '../types/hono-env.js';
 import * as am from '../services/automation-manager.js';
 import * as pm from '../services/project-manager.js';
 import {
@@ -9,7 +10,7 @@ import {
 } from '../validation/schemas.js';
 import { resultToResponse } from '../utils/result-response.js';
 
-export const automationRoutes = new Hono();
+export const automationRoutes = new Hono<HonoEnv>();
 
 // GET /api/automations/inbox?projectId=xxx&triageStatus=xxx — must be before /:id to avoid conflict
 automationRoutes.get('/inbox', (c) => {

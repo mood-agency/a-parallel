@@ -2,8 +2,8 @@ import { resolve, dirname, basename, normalize } from 'path';
 import { mkdir } from 'fs/promises';
 import { existsSync } from 'fs';
 import { ok, err, ResultAsync } from 'neverthrow';
-import { git } from '../utils/git-v2.js';
-import { execute } from '../utils/process.js';
+import { git } from './git.js';
+import { execute } from './process.js';
 import { badRequest, internal, type DomainError } from '@a-parallel/shared/errors';
 
 const WORKTREE_DIR_NAME = '.a-parallel-worktrees';

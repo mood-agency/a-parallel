@@ -7,7 +7,7 @@ import {
   dropTargetForElements,
   monitorForElements,
 } from '@atlaskit/pragmatic-drag-and-drop/element/adapter';
-import { Plus, Search, Trash2 } from 'lucide-react';
+import { MessageSquare, Plus, Search, Trash2 } from 'lucide-react';
 import {
   Tooltip,
   TooltipContent,
@@ -129,6 +129,12 @@ function KanbanCard({ thread, projectInfo, onDelete, search, ghost }: { thread: 
           )}
         </div>
         <div className="flex items-center gap-2 shrink-0 text-xs text-muted-foreground">
+          {(thread.commentCount ?? 0) > 0 && (
+            <span className="flex items-center gap-0.5">
+              <MessageSquare className="h-3 w-3" />
+              {thread.commentCount}
+            </span>
+          )}
           <span>{timeAgo(thread.completedAt || thread.createdAt, t)}</span>
           {thread.cost > 0 && <span>${thread.cost.toFixed(3)}</span>}
         </div>

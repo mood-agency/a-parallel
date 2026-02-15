@@ -11,6 +11,7 @@
     "test": "bun test"
   },
   "dependencies": {
+    "@a-parallel/core": "*",
     "@a-parallel/shared": "*",
     "@anthropic-ai/claude-agent-sdk": "^0.2.42",
     "better-auth": "^1.4.18",

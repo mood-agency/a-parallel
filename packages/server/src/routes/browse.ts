@@ -2,8 +2,7 @@ import { Hono } from 'hono';
 import { readdirSync } from 'fs';
 import { join, parse as parsePath, resolve, normalize } from 'path';
 import { homedir, platform } from 'os';
-import { getRemoteUrl, extractRepoName, initRepo } from '../utils/git-v2.js';
-import { execute } from '../utils/process.js';
+import { getRemoteUrl, extractRepoName, initRepo, execute } from '@a-parallel/core/git';
 import * as pm from '../services/project-manager.js';
 import { resultToResponse } from '../utils/result-response.js';
 
@@ -18,7 +17,7 @@ function isPathAllowed(targetPath: string): boolean {
   const home = normalize(resolve(homedir()));
   if (normalizedTarget.startsWith(home)) return true;
 
-  const projects = pm.listProjects();
+  const projects = pm.listProjects('__local__');
   for (const project of projects) {
     const projectPath = normalize(resolve(project.path));
     if (normalizedTarget.startsWith(projectPath)) return true;

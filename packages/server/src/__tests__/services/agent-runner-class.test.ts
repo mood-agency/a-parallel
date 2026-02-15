@@ -1,9 +1,9 @@
 import { describe, test, expect, beforeEach, mock } from 'bun:test';
 import { EventEmitter } from 'events';
 import { AgentRunner } from '../../services/agent-runner.js';
-import type { IThreadManager, IWSBroker, IClaudeProcess, IClaudeProcessFactory } from '../../services/interfaces.js';
+import type { IClaudeProcess, IClaudeProcessFactory, CLIMessage, CLIAssistantMessage, CLIResultMessage, CLISystemMessage, CLIUserMessage } from '@a-parallel/core/agents';
+import type { IThreadManager, IWSBroker } from '../../services/server-interfaces.js';
 import type { WSEvent } from '@a-parallel/shared';
-import type { CLIMessage, CLIAssistantMessage, CLIResultMessage, CLISystemMessage, CLIUserMessage } from '../../services/claude-types.js';
 
 // ── Mock helpers ────────────────────────────────────────────────
 

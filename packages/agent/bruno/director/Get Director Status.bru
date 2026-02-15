@@ -1,0 +1,23 @@
+meta {
+  name: Get Director Status
+  type: http
+  seq: 2
+}
+
+get {
+  url: {{baseUrl}}/director/status
+  body: none
+  auth: none
+}
+
+docs {
+  ## Get Director Status
+
+  Estado actual del Director y la merge queue.
+
+  Muestra:
+  - Si hay un ciclo corriendo
+  - Último ciclo ejecutado
+  - Resumen del manifest (ready, pending_merge, merge_history)
+  - Cola de merge con prioridades y elegibilidad
+}

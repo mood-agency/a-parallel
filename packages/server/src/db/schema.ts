@@ -18,6 +18,7 @@ export const threads = sqliteTable('threads', {
   userId: text('user_id').notNull().default('__local__'),
   title: text('title').notNull(),
   mode: text('mode').notNull(), // 'local' | 'worktree'
+  provider: text('provider').notNull().default('claude'), // 'claude' | 'codex'
   permissionMode: text('permission_mode').notNull().default('autoEdit'), // 'plan' | 'autoEdit' | 'confirmEdit'
   status: text('status').notNull().default('pending'), // 'pending' | 'running' | 'waiting' | 'completed' | 'failed' | 'stopped' | 'interrupted'
   branch: text('branch'),
@@ -79,6 +80,7 @@ export const automations = sqliteTable('automations', {
   name: text('name').notNull(),
   prompt: text('prompt').notNull(),
   schedule: text('schedule').notNull(),
+  provider: text('provider').notNull().default('claude'), // 'claude' | 'codex'
   model: text('model').notNull().default('sonnet'),
   mode: text('mode').notNull().default('worktree'),
   permissionMode: text('permission_mode').notNull().default('autoEdit'),
@@ -125,6 +127,17 @@ export const stageHistory = sqliteTable('stage_history', {
   fromStage: text('from_stage'), // null for initial entry
   toStage: text('to_stage').notNull(),
   changedAt: text('changed_at').notNull(),
+});
+
+export const threadComments = sqliteTable('thread_comments', {
+  id: text('id').primaryKey(),
+  threadId: text('thread_id')
+    .notNull()
+    .references(() => threads.id, { onDelete: 'cascade' }),
+  userId: text('user_id').notNull(),
+  source: text('source').notNull().default('user'), // 'user' | 'system' | 'agent'
+  content: text('content').notNull(),
+  createdAt: text('created_at').notNull(),
 });
 
 export const mcpOauthTokens = sqliteTable('mcp_oauth_tokens', {

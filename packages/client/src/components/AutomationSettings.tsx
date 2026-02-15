@@ -32,7 +32,7 @@ import {
   Timer,
   History,
 } from 'lucide-react';
-import type { Automation, AutomationRun, ClaudeModel, PermissionMode, AutomationSchedule } from '@a-parallel/shared';
+import type { Automation, AutomationRun, AgentModel, PermissionMode, AutomationSchedule } from '@a-parallel/shared';
 
 const inputClass =
   'w-full rounded-md border border-input bg-background px-2.5 py-1.5 text-sm focus:outline-none focus:ring-1 focus:ring-ring';
@@ -54,7 +54,7 @@ function getScheduleLabel(cron: string): string {
   return preset?.label ?? cron;
 }
 
-const MODEL_OPTIONS: { value: ClaudeModel; label: string }[] = [
+const MODEL_OPTIONS: { value: AgentModel; label: string }[] = [
   { value: 'haiku', label: 'Haiku' },
   { value: 'sonnet', label: 'Sonnet' },
   { value: 'opus', label: 'Opus' },
@@ -94,7 +94,7 @@ interface FormState {
   name: string;
   prompt: string;
   schedule: AutomationSchedule;
-  model: ClaudeModel;
+  model: AgentModel;
   permissionMode: PermissionMode;
 }
 

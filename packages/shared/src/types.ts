@@ -86,7 +86,11 @@ export type ThreadStatus = 'idle' | 'pending' | 'running' | 'waiting' | 'complet
 export type ThreadStage = 'backlog' | 'in_progress' | 'review' | 'done' | 'archived';
 export type WaitingReason = 'question' | 'plan' | 'permission';
 
+export type AgentProvider = 'claude' | 'codex';
+
 export type ClaudeModel = 'sonnet' | 'opus' | 'haiku';
+export type CodexModel = 'o3' | 'o4-mini' | 'codex-mini';
+export type AgentModel = ClaudeModel | CodexModel;
 export type PermissionMode = 'plan' | 'autoEdit' | 'confirmEdit';
 
 export interface Thread {
@@ -97,8 +101,9 @@ export interface Thread {
   mode: ThreadMode;
   status: ThreadStatus;
   stage: ThreadStage;
+  provider: AgentProvider;
   permissionMode: PermissionMode;
-  model: ClaudeModel;
+  model: AgentModel;
   branch?: string;
   baseBranch?: string;
   worktreePath?: string;
@@ -108,8 +113,22 @@ export interface Thread {
   archived?: boolean;
   pinned?: boolean;
   automationId?: string;
+  commentCount?: number;
   createdAt: string;
   completedAt?: string;
+}
+
+// ─── Thread Comments ────────────────────────────────────
+
+export type CommentSource = 'user' | 'system' | 'agent';
+
+export interface ThreadComment {
+  id: string;
+  threadId: string;
+  userId: string;
+  source: CommentSource;
+  content: string;
+  createdAt: string;
 }
 
 // ─── Messages ────────────────────────────────────────────
@@ -133,7 +152,7 @@ export interface Message {
   images?: ImageAttachment[];
   timestamp: string;
   /** Model used when this user message was sent */
-  model?: ClaudeModel;
+  model?: AgentModel;
   /** Permission mode used when this user message was sent */
   permissionMode?: PermissionMode;
 }
@@ -313,7 +332,8 @@ export type ToolPermission = 'allow' | 'ask' | 'deny';
 export interface CreateThreadRequest {
   title: string;
   mode: ThreadMode;
-  model?: ClaudeModel;
+  provider?: AgentProvider;
+  model?: AgentModel;
   permissionMode?: PermissionMode;
   baseBranch?: string;
   prompt: string;
@@ -323,7 +343,8 @@ export interface CreateThreadRequest {
 
 export interface SendMessageRequest {
   content: string;
-  model?: ClaudeModel;
+  provider?: AgentProvider;
+  model?: AgentModel;
   permissionMode?: PermissionMode;
   images?: ImageAttachment[];
   allowedTools?: string[];
@@ -449,7 +470,8 @@ export interface Automation {
   name: string;
   prompt: string;
   schedule: AutomationSchedule;
-  model: ClaudeModel;
+  provider: AgentProvider;
+  model: AgentModel;
   mode: ThreadMode;
   permissionMode: PermissionMode;
   baseBranch?: string;
@@ -477,7 +499,8 @@ export interface CreateAutomationRequest {
   name: string;
   prompt: string;
   schedule: AutomationSchedule;
-  model?: ClaudeModel;
+  provider?: AgentProvider;
+  model?: AgentModel;
   mode?: ThreadMode;
   permissionMode?: PermissionMode;
   baseBranch?: string;
@@ -487,7 +510,8 @@ export interface UpdateAutomationRequest {
   name?: string;
   prompt?: string;
   schedule?: AutomationSchedule;
-  model?: ClaudeModel;
+  provider?: AgentProvider;
+  model?: AgentModel;
   mode?: ThreadMode;
   permissionMode?: PermissionMode;
   baseBranch?: string;

@@ -27,9 +27,15 @@ import { githubRoutes } from './routes/github.js';
 import { analyticsRoutes } from './routes/analytics.js';
 import { wsBroker } from './services/ws-broker.js';
 import { startScheduler, stopScheduler } from './services/automation-scheduler.js';
-import { stopAllAgents } from './services/agent-runner.js';
+import { startAgent, stopAllAgents } from './services/agent-runner.js';
 import * as ptyManager from './services/pty-manager.js';
 import { checkClaudeBinaryAvailability, resetBinaryCache, validateClaudeBinary } from './utils/claude-binary.js';
+import { getAvailableProviders, resetProviderCache, logProviderStatus } from './utils/provider-detection.js';
+import { registerAllHandlers } from './services/handlers/handler-registry.js';
+import type { HandlerServiceContext } from './services/handlers/types.js';
+import * as tm from './services/thread-manager.js';
+import * as pm from './services/project-manager.js';
+import { getProviderModels } from '@a-parallel/shared/models';
 
 // Resolve client dist directory (works both in dev and when installed via npm)
 const clientDistDir = resolve(
@@ -73,32 +79,39 @@ app.get('/api/health', (c) => {
   return c.json({ status: 'ok', timestamp: new Date().toISOString() });
 });
 
-// Setup status endpoint — checks agent SDK + optional Claude CLI availability
+// Setup status endpoint — multi-provider detection
 app.get('/api/setup/status', async (c) => {
-  // SDK is always available (npm dependency), verify it can be imported
-  let sdkAvailable = false;
-  try {
-    await import('@anthropic-ai/claude-agent-sdk');
-    sdkAvailable = true;
-  } catch {}
-
-  // Claude CLI is still needed for MCP server management (claude mcp list/add/remove)
+  resetProviderCache();
   resetBinaryCache();
-  const cliResult = checkClaudeBinaryAvailability();
-  let version: string | null = null;
-  if (cliResult.available && cliResult.path) {
-    try { version = validateClaudeBinary(cliResult.path); } catch {}
+  const providers = await getAvailableProviders();
+
+  // Build provider info for the response
+  const providerInfo: Record<string, any> = {};
+  for (const [name, info] of providers) {
+    providerInfo[name] = {
+      available: info.available,
+      sdkAvailable: info.sdkAvailable,
+      cliAvailable: info.cliAvailable,
+      cliPath: info.cliPath ?? null,
+      cliVersion: info.cliVersion ?? null,
+      error: info.error ?? null,
+      models: info.available ? getProviderModels(name as any) : [],
+    };
   }
 
+  // Legacy fields for backward compatibility
+  const claude = providers.get('claude');
   return c.json({
+    providers: providerInfo,
+    // Legacy fields
     claudeCli: {
-      available: cliResult.available,
-      path: cliResult.path ?? null,
-      error: cliResult.error ?? null,
-      version,
+      available: claude?.cliAvailable ?? false,
+      path: claude?.cliPath ?? null,
+      error: !claude?.cliAvailable ? (claude?.error ?? 'Not available') : null,
+      version: claude?.cliVersion ?? null,
     },
     agentSdk: {
-      available: sdkAvailable,
+      available: claude?.sdkAvailable ?? false,
     },
   });
 });
@@ -150,6 +163,19 @@ autoMigrate();
 markStaleThreadsInterrupted();
 startScheduler();
 
+// Build handler service context from existing singletons
+const handlerCtx: HandlerServiceContext = {
+  getThread: tm.getThread,
+  updateThread: tm.updateThread,
+  insertComment: tm.insertComment,
+  getProject: pm.getProject,
+  emitToUser: (userId, event) => wsBroker.emitToUser(userId, event),
+  broadcast: (event) => wsBroker.emit(event),
+  startAgent,
+  log: (msg) => console.log(`[handler] ${msg}`),
+};
+registerAllHandlers(handlerCtx);
+
 if (authMode === 'local') {
   getAuthToken(); // Ensure auth token file exists before accepting connections
 } else {
@@ -160,22 +186,8 @@ if (authMode === 'local') {
 
 console.log(`[server] Auth mode: ${authMode}`);
 
-// Check agent SDK availability at startup
-try {
-  await import('@anthropic-ai/claude-agent-sdk');
-  console.log('[server] Agent SDK: available');
-} catch {
-  console.warn('[server] WARNING: @anthropic-ai/claude-agent-sdk could not be loaded');
-  console.warn('[server] Agent features will not work. Run: npm install @anthropic-ai/claude-agent-sdk');
-}
-
-// Check Claude CLI availability (still needed for MCP server management)
-const claudeBinaryCheck = checkClaudeBinaryAvailability();
-if (claudeBinaryCheck.available) {
-  console.log(`[server] Claude CLI: ${claudeBinaryCheck.path}`);
-} else {
-  console.log('[server] Claude CLI: not found (MCP management unavailable)');
-}
+// Detect available providers at startup
+await logProviderStatus();
 
 const server = Bun.serve({
   port,

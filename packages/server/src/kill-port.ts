@@ -47,3 +47,5 @@ async function killPort(port: number): Promise<void> {
 }
 
 await killPort(port);
+
+export {};

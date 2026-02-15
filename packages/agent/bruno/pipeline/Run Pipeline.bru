@@ -1,0 +1,47 @@
+meta {
+  name: Run Pipeline
+  type: http
+  seq: 1
+}
+
+post {
+  url: {{baseUrl}}/pipeline/run
+  body: json
+  auth: none
+}
+
+body:json {
+  {
+    "branch": "feature/my-branch",
+    "worktree_path": "{{worktreePath}}",
+    "config": {
+      "tier": "small",
+      "agents": ["tests", "types"]
+    }
+  }
+}
+
+vars:post-response {
+  requestId: res.body.request_id
+}
+
+docs {
+  ## Run Pipeline
+
+  Envía una rama al pipeline para evaluación de calidad.
+
+  **Flujo:**
+  1. Clasifica el tier del cambio (small/medium/large)
+  2. Levanta containers si hay compose.yml (Paso 0)
+  3. Crea rama `pipeline/{branch}`
+  4. Ejecuta agentes de calidad en paralelo
+  5. Auto-corrige si es necesario
+
+  **Tiers:**
+  - `small` — 2 agentes: tests, style
+  - `medium` — 5 agentes: tests, security, architecture, style, types
+  - `large` — 8 agentes: todos
+
+  **Respuesta:** 202 Accepted con `request_id` para tracking.
+  Si ya hay un pipeline corriendo para esa rama: 200 OK con el ID existente.
+}

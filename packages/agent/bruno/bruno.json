@@ -1,0 +1,6 @@
+{
+  "version": "1",
+  "name": "Pipeline Service",
+  "type": "collection",
+  "ignore": ["node_modules", "dist"]
+}

@@ -1,0 +1,27 @@
+meta {
+  name: Get Pipeline Status
+  type: http
+  seq: 3
+}
+
+get {
+  url: {{baseUrl}}/pipeline/{{requestId}}
+  body: none
+  auth: none
+}
+
+docs {
+  ## Get Pipeline Status
+
+  Consulta el estado actual de un pipeline.
+
+  **Estados posibles:**
+  - `accepted` — Request recibido
+  - `running` — Agentes ejecutándose
+  - `correcting` — Auto-corrección en progreso
+  - `approved` — Todos los checks pasaron
+  - `failed` — Agotó intentos de auto-corrección
+  - `error` — Error de sistema
+
+  Usa el `requestId` del response de "Run Pipeline".
+}

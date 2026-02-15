@@ -5,7 +5,7 @@
 
 import { ResultAsync } from 'neverthrow';
 import { getClaudeBinaryPath } from '../utils/claude-binary.js';
-import { execute, ProcessExecutionError } from '../utils/process.js';
+import { execute, ProcessExecutionError } from '@a-parallel/core/git';
 import { processError, internal, type DomainError } from '@a-parallel/shared/errors';
 import type { McpServer, McpServerType } from '@a-parallel/shared';
 

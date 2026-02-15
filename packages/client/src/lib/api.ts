@@ -210,6 +210,17 @@ export const api = {
       method: 'PATCH',
       body: JSON.stringify({ stage }),
     }),
+
+  // Thread comments
+  getThreadComments: (threadId: string) =>
+    request<import('@a-parallel/shared').ThreadComment[]>(`/threads/${threadId}/comments`),
+  createThreadComment: (threadId: string, content: string) =>
+    request<import('@a-parallel/shared').ThreadComment>(`/threads/${threadId}/comments`, {
+      method: 'POST',
+      body: JSON.stringify({ content }),
+    }),
+  deleteThreadComment: (threadId: string, commentId: string) =>
+    request(`/threads/${threadId}/comments/${commentId}`, { method: 'DELETE' }),
   listArchivedThreads: (params?: { page?: number; limit?: number; search?: string }) => {
     const p = new URLSearchParams();
     if (params?.page) p.set('page', String(params.page));

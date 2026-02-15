@@ -7,7 +7,7 @@
 import { readFileSync, readdirSync, existsSync, rmSync, unlinkSync } from 'fs';
 import { join } from 'path';
 import { homedir } from 'os';
-import { execute } from '../utils/process.js';
+import { execute } from '@a-parallel/core/git';
 import type { Skill } from '@a-parallel/shared';
 
 const AGENTS_DIR = join(homedir(), '.agents');

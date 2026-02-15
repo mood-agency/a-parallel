@@ -1,0 +1,40 @@
+meta {
+  name: Run Pipeline (Full)
+  type: http
+  seq: 2
+}
+
+post {
+  url: {{baseUrl}}/pipeline/run
+  body: json
+  auth: none
+}
+
+body:json {
+  {
+    "branch": "feature/my-branch",
+    "worktree_path": "{{worktreePath}}",
+    "base_branch": "main",
+    "config": {
+      "tier": "large",
+      "agents": ["tests", "security", "architecture", "performance", "style", "types", "docs", "integration"],
+      "model": "claude-sonnet-4-5-20250929",
+      "maxTurns": 200
+    },
+    "metadata": {
+      "triggered_by": "bruno",
+      "task_id": "TEST-001"
+    }
+  }
+}
+
+vars:post-response {
+  requestId: res.body.request_id
+}
+
+docs {
+  ## Run Pipeline (Full Config)
+
+  Pipeline con todas las opciones configuradas.
+  Ejecuta los 8 agentes en tier large con modelo y metadata custom.
+}

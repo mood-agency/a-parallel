@@ -9,7 +9,7 @@
 import { EventEmitter } from 'events';
 import { query, AbortError } from '@anthropic-ai/claude-agent-sdk';
 import type { SDKMessage, HookCallback } from '@anthropic-ai/claude-agent-sdk';
-import type { CLIMessage, ClaudeProcessOptions } from './claude-types.js';
+import type { CLIMessage, ClaudeProcessOptions } from './types.js';
 
 export class SDKClaudeProcess extends EventEmitter {
   private abortController = new AbortController();
@@ -71,6 +71,19 @@ export class SDKClaudeProcess extends EventEmitter {
       sdkOptions.permissionMode = this.options.permissionMode;
     }
 
+    // Pass MCP servers (e.g., CDP browser tools) if provided
+    if (this.options.mcpServers) {
+      sdkOptions.mcpServers = this.options.mcpServers;
+      // Auto-allow all tools from MCP servers
+      const mcpWildcards = Object.keys(this.options.mcpServers).map(
+        (name) => `mcp__${name}__*`
+      );
+      sdkOptions.allowedTools = [
+        ...(sdkOptions.allowedTools || []),
+        ...mcpWildcards,
+      ];
+    }
+
     const gen = query({ prompt: promptInput, options: sdkOptions });
 
     try {
@@ -97,22 +110,27 @@ export class SDKClaudeProcess extends EventEmitter {
   // ── Prompt building ─────────────────────────────────────────────
 
   private buildPromptInput(): string | AsyncIterable<any> {
-    if (!this.options.images?.length) {
+    // In-process MCP servers (createSdkMcpServer) require streaming input mode
+    const needsStreaming = !!this.options.images?.length || !!this.options.mcpServers;
+    if (!needsStreaming) {
       return this.options.prompt;
     }
-    return this.createImagePrompt();
+    return this.createStreamingPrompt();
   }
 
-  private async *createImagePrompt(): AsyncGenerator<any, void, unknown> {
+  private async *createStreamingPrompt(): AsyncGenerator<any, void, unknown> {
+    const content: any[] = [
+      { type: 'text', text: this.options.prompt },
+    ];
+    if (this.options.images?.length) {
+      content.push(...this.options.images);
+    }
     yield {
       type: 'user',
       session_id: '',
       message: {
         role: 'user',
-        content: [
-          { type: 'text', text: this.options.prompt },
-          ...this.options.images!,
-        ],
+        content,
       },
       parent_tool_use_id: null,
     };

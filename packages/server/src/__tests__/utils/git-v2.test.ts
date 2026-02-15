@@ -11,11 +11,10 @@ import {
   commit,
   getDiff,
   git,
-  gitSafe,
   gitSync,
   gitSafeSync,
-} from '../../utils/git-v2.js';
-import { executeSync } from '../../utils/process.js';
+  executeSync,
+} from '@a-parallel/core/git';
 
 // ── Pure function tests ──────────────────────────────────────────
 
@@ -130,11 +129,6 @@ describe('git integration (temp repo)', () => {
   test('git runs a command successfully', async () => {
     const result = await git(['status', '--short'], TEST_REPO);
     expect(typeof result).toBe('string');
-  });
-
-  test('gitSafe returns null on failure', async () => {
-    const result = await gitSafe(['invalid-command-xyz'], TEST_REPO);
-    expect(result).toBeNull();
   });
 
   test('gitSync runs a command successfully', () => {

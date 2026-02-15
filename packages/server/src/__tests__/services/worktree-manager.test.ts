@@ -1,7 +1,7 @@
 import { describe, test, expect, beforeAll, afterAll } from 'bun:test';
 import { resolve, dirname } from 'path';
 import { mkdirSync, rmSync, existsSync, writeFileSync } from 'fs';
-import { executeSync } from '../../utils/process.js';
+import { executeSync } from '@a-parallel/core/git';
 
 const TEST_REPO = resolve(import.meta.dir, '..', '..', '..', '.test-tmp-worktree-repo');
 const WORKTREE_DIR = resolve(dirname(TEST_REPO), '.a-parallel-worktrees');

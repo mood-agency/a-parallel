@@ -3,9 +3,17 @@ import { nanoid } from 'nanoid';
 import { resolve, isAbsolute } from 'path';
 import { ok, err, type Result } from 'neverthrow';
 import { db, schema } from '../db/index.js';
-import { isGitRepoSync } from '../utils/git-v2.js';
+import { isGitRepoSync } from '@a-parallel/core/git';
 import { badRequest, notFound, conflict, internal, type DomainError } from '@a-parallel/shared/errors';
 import type { Project } from '@a-parallel/shared';
+
+type ProjectRow = typeof schema.projects.$inferSelect;
+
+/** Convert DB row (color: string | null) to Project (color?: string). */
+function toProject(row: ProjectRow): Project {
+  const { color, ...rest } = row;
+  return color != null ? { ...rest, color } : rest;
+}
 
 /**
  * List projects. In local mode (userId='__local__'), returns all projects.
@@ -15,16 +23,17 @@ export function listProjects(userId: string): Project[] {
   if (userId === '__local__') {
     return db.select().from(schema.projects)
       .orderBy(asc(schema.projects.sortOrder), asc(schema.projects.createdAt))
-      .all();
+      .all().map(toProject);
   }
   return db.select().from(schema.projects)
     .where(eq(schema.projects.userId, userId))
     .orderBy(asc(schema.projects.sortOrder), asc(schema.projects.createdAt))
-    .all();
+    .all().map(toProject);
 }
 
 export function getProject(id: string): Project | undefined {
-  return db.select().from(schema.projects).where(eq(schema.projects.id, id)).get();
+  const row = db.select().from(schema.projects).where(eq(schema.projects.id, id)).get();
+  return row ? toProject(row) : undefined;
 }
 
 export function createProject(name: string, rawPath: string, userId: string): Result<Project, DomainError> {
@@ -90,12 +99,12 @@ export function updateProject(id: string, fields: { name?: string; color?: strin
   }
 
   // Build update object with only provided fields
-  const updateData: Partial<Project> = {};
+  const updateData: Record<string, unknown> = {};
   if (fields.name !== undefined) updateData.name = fields.name;
   if (fields.color !== undefined) updateData.color = fields.color;
 
   db.update(schema.projects).set(updateData).where(eq(schema.projects.id, id)).run();
-  return ok({ ...project, ...updateData });
+  return ok(toProject({ ...project, ...updateData } as ProjectRow));
 }
 
 export function deleteProject(id: string): void {

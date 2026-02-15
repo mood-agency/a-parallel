@@ -1,7 +1,8 @@
 import { Hono } from 'hono';
+import type { HonoEnv } from '../types/hono-env.js';
 import * as ps from '../services/profile-service.js';
 
-export const profileRoutes = new Hono();
+export const profileRoutes = new Hono<HonoEnv>();
 
 // GET /api/profile — get current user's git profile
 profileRoutes.get('/', (c) => {

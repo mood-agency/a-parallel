@@ -1,0 +1,20 @@
+meta {
+  name: Stop Pipeline
+  type: http
+  seq: 5
+}
+
+post {
+  url: {{baseUrl}}/pipeline/{{requestId}}/stop
+  body: none
+  auth: none
+}
+
+docs {
+  ## Stop Pipeline
+
+  Detiene un pipeline en ejecución.
+
+  Envía señal de stop al agente Claude y limpia containers/browser.
+  Emite evento `pipeline.stopped`.
+}

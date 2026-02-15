@@ -5,7 +5,10 @@ import { validationErr, type DomainError } from '@a-parallel/shared/errors';
 // ── Enums ────────────────────────────────────────────────────────
 
 export const threadModeSchema = z.enum(['local', 'worktree']);
+export const agentProviderSchema = z.enum(['claude', 'codex']);
 export const claudeModelSchema = z.enum(['sonnet', 'opus', 'haiku']);
+export const codexModelSchema = z.enum(['o3', 'o4-mini', 'codex-mini']);
+export const agentModelSchema = z.union([claudeModelSchema, codexModelSchema]);
 export const permissionModeSchema = z.enum(['plan', 'autoEdit', 'confirmEdit']);
 export const threadStageSchema = z.enum(['backlog', 'in_progress', 'review', 'done']);
 
@@ -50,7 +53,8 @@ export const createThreadSchema = z.object({
   projectId: z.string().min(1),
   title: z.string().optional().default(''),
   mode: threadModeSchema,
-  model: claudeModelSchema.optional().default('sonnet'),
+  provider: agentProviderSchema.optional().default('claude'),
+  model: agentModelSchema.optional().default('sonnet'),
   permissionMode: permissionModeSchema.optional().default('autoEdit'),
   baseBranch: z.string().optional(),
   prompt: z.string().min(1, 'prompt is required'),
@@ -70,7 +74,8 @@ export const createIdleThreadSchema = z.object({
 
 export const sendMessageSchema = z.object({
   content: z.string().min(1, 'content is required'),
-  model: claudeModelSchema.optional(),
+  provider: agentProviderSchema.optional(),
+  model: agentModelSchema.optional(),
   permissionMode: permissionModeSchema.optional(),
   images: z.array(imageAttachmentSchema).optional(),
   allowedTools: z.array(z.string()).optional(),
@@ -100,6 +105,8 @@ export const createPRSchema = z.object({
 export const createCommandSchema = z.object({
   label: z.string().min(1, 'label is required'),
   command: z.string().min(1, 'command is required'),
+  port: z.number().int().optional(),
+  portEnvVar: z.string().optional(),
 });
 
 export const createWorktreeSchema = z.object({
@@ -123,8 +130,8 @@ export const addMcpServerSchema = z.object({
   command: z.string().optional(),
   args: z.array(z.string()).optional(),
   url: z.string().optional(),
-  headers: z.record(z.string()).optional(),
-  env: z.record(z.string()).optional(),
+  headers: z.record(z.string(), z.string()).optional(),
+  env: z.record(z.string(), z.string()).optional(),
   scope: z.enum(['project', 'user']).optional(),
   projectPath: z.string().min(1),
 });
@@ -155,14 +162,15 @@ export const automationScheduleSchema = z.string().min(1, 'schedule is required'
   { message: 'Invalid cron expression. Examples: "*/30 * * * *" (every 30 min), "0 9 * * *" (daily at 9am), "0 */6 * * *" (every 6 hours)' }
 );
 
-export const automationModeSchema = z.enum(['default', 'merge']);
+export const automationModeSchema = z.enum(['default']);
 
 export const createAutomationSchema = z.object({
   projectId: z.string().min(1),
   name: z.string().min(1, 'name is required'),
   prompt: z.string().min(1, 'prompt is required'),
   schedule: automationScheduleSchema,
-  model: claudeModelSchema.optional().default('sonnet'),
+  provider: agentProviderSchema.optional().default('claude'),
+  model: agentModelSchema.optional().default('sonnet'),
   permissionMode: permissionModeSchema.optional().default('autoEdit'),
   mode: automationModeSchema.optional().default('default'),
 });
@@ -171,7 +179,8 @@ export const updateAutomationSchema = z.object({
   name: z.string().min(1).optional(),
   prompt: z.string().min(1).optional(),
   schedule: automationScheduleSchema.optional(),
-  model: claudeModelSchema.optional(),
+  provider: agentProviderSchema.optional(),
+  model: agentModelSchema.optional(),
   permissionMode: permissionModeSchema.optional(),
   enabled: z.boolean().optional(),
   maxRunHistory: z.number().int().min(1).max(100).optional(),

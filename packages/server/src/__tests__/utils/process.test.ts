@@ -4,7 +4,7 @@ import {
   execute,
   executeSync,
   executeWithLogging,
-} from '../../utils/process.js';
+} from '@a-parallel/core/git';
 
 describe('ProcessExecutionError', () => {
   test('sets all properties correctly', () => {

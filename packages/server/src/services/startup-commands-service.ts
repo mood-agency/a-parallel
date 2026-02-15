@@ -43,11 +43,15 @@ export function createCommand(data: {
 export function updateCommand(cmdId: string, data: {
   label: string;
   command: string;
+  port?: number;
+  portEnvVar?: string;
 }) {
   db.update(schema.startupCommands)
     .set({
       label: data.label,
       command: data.command,
+      port: data.port ?? null,
+      portEnvVar: data.portEnvVar ?? null,
     })
     .where(eq(schema.startupCommands.id, cmdId))
     .run();

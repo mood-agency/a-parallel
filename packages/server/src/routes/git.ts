@@ -1,9 +1,7 @@
 import { Hono } from 'hono';
 import * as tm from '../services/thread-manager.js';
-import { getDiff, stageFiles, unstageFiles, revertFiles, commit, push, createPR, mergeBranch, git, getStatusSummary, deriveGitSyncState, type GitIdentityOptions } from '../utils/git-v2.js';
-import * as wm from '../services/worktree-manager.js';
+import { getDiff, stageFiles, unstageFiles, revertFiles, commit, push, createPR, mergeBranch, git, getStatusSummary, deriveGitSyncState, type GitIdentityOptions, removeWorktree, removeBranch, sanitizePath } from '@a-parallel/core/git';
 import { validate, mergeSchema, stageFilesSchema, commitSchema, createPRSchema } from '../validation/schemas.js';
-import { sanitizePath } from '../utils/path-validation.js';
 import { requireThread, requireThreadCwd, requireProject } from '../utils/route-helpers.js';
 import { resultToResponse } from '../utils/result-response.js';
 import { badRequest, internal } from '@a-parallel/shared/errors';
@@ -11,8 +9,9 @@ import { query } from '@anthropic-ai/claude-agent-sdk';
 import { err } from 'neverthrow';
 import { getAuthMode } from '../lib/auth-mode.js';
 import { getGitIdentity, getGithubToken } from '../services/profile-service.js';
+import type { HonoEnv } from '../types/hono-env.js';
 
-export const gitRoutes = new Hono();
+export const gitRoutes = new Hono<HonoEnv>();
 
 /**
  * Resolve per-user git identity for multi-user mode.
@@ -353,8 +352,8 @@ gitRoutes.post('/:threadId/merge', async (c) => {
   }
 
   if (parsed.value.cleanup && thread.worktreePath) {
-    await wm.removeWorktree(project.path, thread.worktreePath).catch(console.warn);
-    await wm.removeBranch(project.path, thread.branch).catch(console.warn);
+    await removeWorktree(project.path, thread.worktreePath).catch(console.warn);
+    await removeBranch(project.path, thread.branch).catch(console.warn);
     tm.updateThread(threadId, { worktreePath: null, branch: null });
   }
 

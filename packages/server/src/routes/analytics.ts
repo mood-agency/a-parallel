@@ -1,8 +1,9 @@
 import { Hono } from 'hono';
+import type { HonoEnv } from '../types/hono-env.js';
 import { eq, and, gte, lt, sql } from 'drizzle-orm';
 import { db, schema } from '../db/index.js';
 
-export const analyticsRoutes = new Hono();
+export const analyticsRoutes = new Hono<HonoEnv>();
 
 type TimeRange = 'day' | 'week' | 'month' | 'all';
 type GroupBy = 'day' | 'week' | 'month' | 'year';
@@ -22,7 +23,7 @@ function tzOffsetToModifier(offsetMinutes: number): string {
 }
 
 /** Returns a SQL expression that buckets a date column by the requested granularity, adjusted to the user's local timezone. */
-function dateBucket(column: ReturnType<typeof sql>, groupBy: GroupBy, tzMod: string) {
+function dateBucket(column: any, groupBy: GroupBy, tzMod: string) {
   switch (groupBy) {
     case 'week':
       return sql`strftime('%Y-W%W', datetime(${column}, ${tzMod}))`;

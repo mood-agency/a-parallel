@@ -1,19 +1,17 @@
 import type { WaitingReason } from '@a-parallel/shared';
-import type { IClaudeProcess } from './interfaces.js';
 
 /**
- * Tracks per-thread in-memory state for running agents.
- * Centralizes all the Maps that agent-runner previously owned.
+ * Tracks per-thread DB-mapping state for running agents.
+ * Lifecycle fields (activeAgents, manuallyStopped) are now owned
+ * by AgentOrchestrator in @a-parallel/core.
  */
 export class AgentStateTracker {
-  /** Active running agent processes */
-  readonly activeAgents = new Map<string, IClaudeProcess>();
-
-  /** Threads that received a result message before exit */
+  /**
+   * Threads that received a result message — used by AgentMessageHandler
+   * to deduplicate result processing. Separate from the orchestrator's
+   * lifecycle-level resultReceived which governs error/exit suppression.
+   */
   readonly resultReceived = new Set<string>();
-
-  /** Threads that were manually stopped */
-  readonly manuallyStopped = new Set<string>();
 
   /** Current assistant message DB ID per thread */
   readonly currentAssistantMsgId = new Map<string, string>();
@@ -44,17 +42,12 @@ export class AgentStateTracker {
   clearRunState(threadId: string): void {
     this.currentAssistantMsgId.delete(threadId);
     this.resultReceived.delete(threadId);
-    // NOTE: manuallyStopped is intentionally NOT cleared here.
-    // It must survive until the old process's async exit handler consumes it.
-    // The exit handler itself clears it after checking.
     this.pendingUserInput.delete(threadId);
   }
 
   /** Completely remove all in-memory state for a thread. */
   cleanupThread(threadId: string): void {
-    this.activeAgents.delete(threadId);
     this.resultReceived.delete(threadId);
-    this.manuallyStopped.delete(threadId);
     this.currentAssistantMsgId.delete(threadId);
     this.processedToolUseIds.delete(threadId);
     this.cliToDbMsgId.delete(threadId);

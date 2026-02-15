@@ -1,9 +1,10 @@
-import type { IThreadManager, IWSBroker } from './interfaces.js';
-import type { CLIMessage } from './claude-types.js';
+import type { IThreadManager, IWSBroker } from './server-interfaces.js';
+import type { CLIMessage } from '@a-parallel/core/agents';
 import type { WSEvent } from '@a-parallel/shared';
 import type { AgentStateTracker } from './agent-state.js';
 import * as pm from './project-manager.js';
-import { getStatusSummary, deriveGitSyncState } from '../utils/git-v2.js';
+import { threadEventBus } from './thread-event-bus.js';
+import { getStatusSummary, deriveGitSyncState } from '@a-parallel/core/git';
 
 /**
  * Decode literal Unicode escape sequences (\uXXXX) that may appear
@@ -252,6 +253,26 @@ export class AgentMessageHandler {
       const threadForStage = this.threadManager.getThread(threadId);
       if (threadForStage && threadForStage.stage === 'in_progress') {
         this.threadManager.updateThread(threadId, { stage: 'review' });
+        const project = pm.getProject(threadForStage.projectId);
+        threadEventBus.emit('thread:stage-changed', {
+          threadId, projectId: threadForStage.projectId, userId: threadForStage.userId,
+          worktreePath: threadForStage.worktreePath ?? null,
+          cwd: threadForStage.worktreePath ?? project?.path ?? '',
+          fromStage: 'in_progress', toStage: 'review',
+        });
+      }
+
+      // Emit agent:completed
+      const t = this.threadManager.getThread(threadId);
+      if (t) {
+        const proj = pm.getProject(t.projectId);
+        threadEventBus.emit('agent:completed', {
+          threadId, projectId: t.projectId, userId: t.userId,
+          worktreePath: t.worktreePath ?? null,
+          cwd: t.worktreePath ?? proj?.path ?? '',
+          status: finalStatus as 'completed' | 'failed' | 'stopped',
+          cost: msg.total_cost_usd ?? 0,
+        });
       }
     }
 

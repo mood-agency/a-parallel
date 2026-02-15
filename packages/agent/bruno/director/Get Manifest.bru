@@ -1,0 +1,22 @@
+meta {
+  name: Get Manifest
+  type: http
+  seq: 3
+}
+
+get {
+  url: {{baseUrl}}/director/manifest
+  body: none
+  auth: none
+}
+
+docs {
+  ## Get Manifest (Raw)
+
+  Retorna el manifest completo para debugging.
+
+  El manifest tiene 3 listas:
+  - `ready[]` — Pipelines aprobados, esperando integración
+  - `pending_merge[]` — PRs creados, esperando aprobación humana
+  - `merge_history[]` — PRs mergeados a main
+}

@@ -4,11 +4,12 @@
  */
 
 import { Hono } from 'hono';
+import type { HonoEnv } from '../types/hono-env.js';
 import { resolve, isAbsolute, join } from 'path';
 import { existsSync } from 'fs';
 import { validate, cloneRepoSchema, githubPollSchema } from '../validation/schemas.js';
 import { resultToResponse } from '../utils/result-response.js';
-import { execute } from '../utils/process.js';
+import { execute } from '@a-parallel/core/git';
 import * as profileService from '../services/profile-service.js';
 import * as pm from '../services/project-manager.js';
 import { badRequest, internal } from '@a-parallel/shared/errors';
@@ -36,7 +37,7 @@ async function githubApiFetch(path: string, token: string, init?: RequestInit): 
   });
 }
 
-export const githubRoutes = new Hono();
+export const githubRoutes = new Hono<HonoEnv>();
 
 // ── GET /status — check GitHub connection ──────────────────
 

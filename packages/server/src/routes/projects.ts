@@ -1,13 +1,14 @@
 import { Hono } from 'hono';
+import type { HonoEnv } from '../types/hono-env.js';
 import * as pm from '../services/project-manager.js';
 import * as sc from '../services/startup-commands-service.js';
-import { listBranches, getDefaultBranch, getCurrentBranch } from '../utils/git-v2.js';
+import { listBranches, getDefaultBranch, getCurrentBranch } from '@a-parallel/core/git';
 import { startCommand, stopCommand, isCommandRunning } from '../services/command-runner.js';
 import { createProjectSchema, renameProjectSchema, updateProjectSchema, reorderProjectsSchema, createCommandSchema, validate } from '../validation/schemas.js';
 import { requireProject } from '../utils/route-helpers.js';
 import { resultToResponse } from '../utils/result-response.js';
 
-export const projectRoutes = new Hono();
+export const projectRoutes = new Hono<HonoEnv>();
 
 // GET /api/projects
 projectRoutes.get('/', (c) => {

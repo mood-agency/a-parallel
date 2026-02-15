@@ -260,6 +260,20 @@ export function autoMigrate() {
     // Column already exists
   }
 
+  // Add provider column to threads for multi-provider support
+  try {
+    db.run(sql`ALTER TABLE threads ADD COLUMN provider TEXT NOT NULL DEFAULT 'claude'`);
+  } catch {
+    // Column already exists
+  }
+
+  // Add provider column to automations for multi-provider support
+  try {
+    db.run(sql`ALTER TABLE automations ADD COLUMN provider TEXT NOT NULL DEFAULT 'claude'`);
+  } catch {
+    // Column already exists
+  }
+
   // Backfill existing threads based on their current status
   db.run(sql`UPDATE threads SET stage = 'in_progress' WHERE status IN ('running', 'waiting') AND stage = 'backlog'`);
   db.run(sql`UPDATE threads SET stage = 'review' WHERE status IN ('completed', 'failed', 'stopped', 'interrupted') AND stage = 'backlog'`);
@@ -276,6 +290,17 @@ export function autoMigrate() {
     FROM threads t
     WHERE NOT EXISTS (
       SELECT 1 FROM stage_history sh WHERE sh.thread_id = t.id
+    )
+  `);
+
+  db.run(sql`
+    CREATE TABLE IF NOT EXISTS thread_comments (
+      id TEXT PRIMARY KEY,
+      thread_id TEXT NOT NULL REFERENCES threads(id) ON DELETE CASCADE,
+      user_id TEXT NOT NULL,
+      source TEXT NOT NULL DEFAULT 'user',
+      content TEXT NOT NULL,
+      created_at TEXT NOT NULL
     )
   `);
 

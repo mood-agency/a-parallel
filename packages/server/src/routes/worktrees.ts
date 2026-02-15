@@ -1,5 +1,5 @@
 import { Hono } from 'hono';
-import * as wm from '../services/worktree-manager.js';
+import { createWorktree, listWorktrees, removeWorktree } from '@a-parallel/core/git';
 import { createWorktreeSchema, deleteWorktreeSchema, validate } from '../validation/schemas.js';
 import { requireProject } from '../utils/route-helpers.js';
 import { resultToResponse } from '../utils/result-response.js';
@@ -16,7 +16,7 @@ worktreeRoutes.get('/', async (c) => {
   const projectResult = requireProject(projectId);
   if (projectResult.isErr()) return resultToResponse(c, projectResult);
 
-  const worktreesResult = await wm.listWorktrees(projectResult.value.path);
+  const worktreesResult = await listWorktrees(projectResult.value.path);
   if (worktreesResult.isErr()) return resultToResponse(c, worktreesResult);
   return c.json(worktreesResult.value);
 });
@@ -31,7 +31,7 @@ worktreeRoutes.post('/', async (c) => {
   const projectResult = requireProject(projectId);
   if (projectResult.isErr()) return resultToResponse(c, projectResult);
 
-  const wtResult = await wm.createWorktree(projectResult.value.path, branchName, baseBranch);
+  const wtResult = await createWorktree(projectResult.value.path, branchName, baseBranch);
   if (wtResult.isErr()) return resultToResponse(c, wtResult);
   return c.json({ path: wtResult.value, branch: branchName }, 201);
 });
@@ -46,6 +46,6 @@ worktreeRoutes.delete('/', async (c) => {
   const projectResult = requireProject(projectId);
   if (projectResult.isErr()) return resultToResponse(c, projectResult);
 
-  await wm.removeWorktree(projectResult.value.path, worktreePath);
+  await removeWorktree(projectResult.value.path, worktreePath);
   return c.json({ ok: true });
 });

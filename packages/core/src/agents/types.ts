@@ -74,4 +74,8 @@ export interface ClaudeProcessOptions {
   sessionId?: string;
   permissionMode?: string;
   images?: any[];
+  /** Provider identifier — used by AgentProcessOptions, passed through here for convenience. */
+  provider?: string;
+  /** MCP servers to pass to the SDK query() call (e.g., CDP browser tools) */
+  mcpServers?: Record<string, any>;
 }

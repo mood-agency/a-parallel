@@ -5,7 +5,7 @@
 - [x] Hacer intro de configuracion
 - [x] Preview
 - [ ] Log de depuracion
-- [ ] Correr agente con pipeline.
+- [x] Correr agente con pipeline.
 - [ ] Vista movil
  
 - [ ] Esta tenindo problemas para salir del plan mode y esta repitiendo las pregutnas
