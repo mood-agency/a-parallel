@@ -19,6 +19,7 @@ import { ProjectHeader } from './thread/ProjectHeader';
 import { NewThreadInput } from './thread/NewThreadInput';
 import { AgentResultCard, AgentInterruptedCard, AgentStoppedCard } from './thread/AgentStatusCards';
 import { TodoPanel } from './thread/TodoPanel';
+import { StickyUserMessage } from './thread/StickyUserMessage';
 import { useTodoSnapshots } from '@/hooks/use-todo-panel';
 
 // Regex to match file paths like /foo/bar.ts, C:\foo\bar.ts, or file_path:line_number patterns
@@ -246,6 +247,17 @@ export function PermissionApprovalCard({
   onDeny: () => void;
 }) {
   const { t } = useTranslation();
+  const [loading, setLoading] = useState<'approve' | 'deny' | null>(null);
+
+  const handleApprove = () => {
+    setLoading('approve');
+    onApprove();
+  };
+
+  const handleDeny = () => {
+    setLoading('deny');
+    onDeny();
+  };
 
   return (
     <div className="rounded-lg border border-status-warning/20 bg-status-warning/5 p-3 space-y-2.5">
@@ -258,17 +270,25 @@ export function PermissionApprovalCard({
       </p>
       <div className="flex gap-2">
         <button
-          onClick={onApprove}
-          className="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium bg-primary text-primary-foreground hover:bg-primary/90 transition-colors"
+          onClick={handleApprove}
+          disabled={!!loading}
+          className={cn(
+            "flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium bg-primary text-primary-foreground hover:bg-primary/90 transition-colors",
+            loading && "opacity-50 pointer-events-none"
+          )}
         >
-          <CheckCircle2 className="h-3.5 w-3.5" />
+          {loading === 'approve' ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <CheckCircle2 className="h-3.5 w-3.5" />}
           {t('thread.approvePermission')}
         </button>
         <button
-          onClick={onDeny}
-          className="flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium border border-border bg-muted text-muted-foreground hover:bg-destructive/10 hover:text-destructive hover:border-destructive/30 transition-colors"
+          onClick={handleDeny}
+          disabled={!!loading}
+          className={cn(
+            "flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium border border-border bg-muted text-muted-foreground hover:bg-destructive/10 hover:text-destructive hover:border-destructive/30 transition-colors",
+            loading && "opacity-50 pointer-events-none"
+          )}
         >
-          <XCircle className="h-3.5 w-3.5" />
+          {loading === 'deny' ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <XCircle className="h-3.5 w-3.5" />}
           {t('thread.denyPermission')}
         </button>
       </div>
@@ -358,6 +378,7 @@ export function ThreadView() {
   const [lightboxIndex, setLightboxIndex] = useState(0);
   const [todoPanelDismissed, setTodoPanelDismissed] = useState(false);
   const [currentSnapshotIdx, setCurrentSnapshotIdx] = useState(-1);
+  const [stickyUserMsgId, setStickyUserMsgId] = useState<string | null>(null);
   const snapshots = useTodoSnapshots();
 
   // Map tool call IDs to snapshot indices for data-attribute lookup
@@ -371,6 +392,7 @@ export function ThreadView() {
   useEffect(() => {
     setTodoPanelDismissed(false);
     setCurrentSnapshotIdx(-1);
+    setStickyUserMsgId(null);
   }, [activeThread?.id]);
 
   // Scroll to bottom when opening or switching threads
@@ -387,6 +409,11 @@ export function ThreadView() {
   const currentSnapshot = currentSnapshotIdx >= 0 && currentSnapshotIdx < snapshots.length
     ? snapshots[currentSnapshotIdx]
     : null;
+
+  const stickyUserMsg = useMemo(() => {
+    if (!stickyUserMsgId || !activeThread?.messages) return null;
+    return activeThread.messages.find(m => m.id === stickyUserMsgId) ?? null;
+  }, [stickyUserMsgId, activeThread?.messages]);
 
   const openLightbox = useCallback((images: { src: string; alt: string }[], index: number) => {
     setLightboxImages(images);
@@ -413,46 +440,56 @@ export function ThreadView() {
       userHasScrolledUp.current = !isAtBottom;
       setShowScrollDown(hasOverflow && !isAtBottom);
 
+      const viewportRect = viewport.getBoundingClientRect();
+
       // Update current TodoWrite snapshot based on scroll position
       const todoEls = document.querySelectorAll<HTMLElement>('[data-todo-snapshot]');
       if (todoEls.length === 0) {
         setCurrentSnapshotIdx(-1);
-        return;
-      }
-
-      // When auto-scrolling at the bottom, always show the latest snapshot
-      if (isAtBottom) {
+      } else if (isAtBottom) {
+        // When auto-scrolling at the bottom, always show the latest snapshot
         let maxIdx = -1;
         todoEls.forEach((el) => {
           const idx = parseInt(el.dataset.todoSnapshot!, 10);
           if (idx > maxIdx) maxIdx = idx;
         });
         setCurrentSnapshotIdx(maxIdx);
-        return;
-      }
+      } else {
+        const threshold = viewportRect.top + viewportRect.height * 0.5;
 
-      const viewportRect = viewport.getBoundingClientRect();
-      const threshold = viewportRect.top + viewportRect.height * 0.5;
-
-      // Range check: only show panel when midpoint is within the TodoWrite range
-      const firstRect = todoEls[0].getBoundingClientRect();
-      const lastRect = todoEls[todoEls.length - 1].getBoundingClientRect();
-      if (threshold < firstRect.top || threshold > lastRect.bottom + 150) {
-        setCurrentSnapshotIdx(-1);
-        return;
-      }
-
-      // Find the latest snapshot whose element is above the viewport midpoint
-      let latestIdx = -1;
-      todoEls.forEach((el) => {
-        const rect = el.getBoundingClientRect();
-        if (rect.top <= threshold) {
-          const idx = parseInt(el.dataset.todoSnapshot!, 10);
-          if (idx > latestIdx) latestIdx = idx;
+        // Range check: only show panel when midpoint is within the TodoWrite range
+        const firstRect = todoEls[0].getBoundingClientRect();
+        const lastRect = todoEls[todoEls.length - 1].getBoundingClientRect();
+        if (threshold < firstRect.top || threshold > lastRect.bottom + 150) {
+          setCurrentSnapshotIdx(-1);
+        } else {
+          // Find the latest snapshot whose element is above the viewport midpoint
+          let latestIdx = -1;
+          todoEls.forEach((el) => {
+            const rect = el.getBoundingClientRect();
+            if (rect.top <= threshold) {
+              const idx = parseInt(el.dataset.todoSnapshot!, 10);
+              if (idx > latestIdx) latestIdx = idx;
+            }
+          });
+          setCurrentSnapshotIdx(latestIdx >= 0 ? latestIdx : -1);
         }
-      });
+      }
 
-      setCurrentSnapshotIdx(latestIdx >= 0 ? latestIdx : -1);
+      // Determine the sticky user message (most recent one scrolled above viewport top)
+      const userMsgEls = document.querySelectorAll<HTMLElement>('[data-user-msg]');
+      if (userMsgEls.length === 0) {
+        setStickyUserMsgId(null);
+      } else {
+        const stickyThreshold = viewportRect.top + 8;
+        let latestAboveId: string | null = null;
+        userMsgEls.forEach((el) => {
+          if (el.getBoundingClientRect().bottom < stickyThreshold) {
+            latestAboveId = el.dataset.userMsg!;
+          }
+        });
+        setStickyUserMsgId(latestAboveId);
+      }
     };
 
     viewport.addEventListener('scroll', handleScroll, { passive: true });
@@ -605,7 +642,24 @@ export function ThreadView() {
       </AnimatePresence>
 
       {/* Messages */}
-      <ScrollArea className="flex-1 px-4" viewportRef={scrollViewportRef}>
+      <div className="flex-1 relative min-h-0">
+      {/* Sticky user message */}
+      <AnimatePresence mode="wait">
+        {stickyUserMsg && (
+          <StickyUserMessage
+            key={stickyUserMsgId}
+            content={stickyUserMsg.content}
+            onScrollTo={() => {
+              const el = scrollViewportRef.current?.querySelector(
+                `[data-user-msg="${stickyUserMsgId}"]`
+              );
+              el?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            }}
+          />
+        )}
+      </AnimatePresence>
+
+      <ScrollArea className="h-full px-4" viewportRef={scrollViewportRef}>
         <div className="mx-auto max-w-3xl min-w-[320px] space-y-4 overflow-hidden py-4">
           {activeThread.initInfo && (
             <div className="rounded-lg border border-border bg-muted/50 px-3 py-2 text-xs text-muted-foreground space-y-1">
@@ -692,6 +746,7 @@ export function ThreadView() {
                         ? 'ml-auto rounded-lg px-3 py-2 bg-muted text-foreground'
                         : 'text-foreground'
                     )}
+                    {...(msg.role === 'user' ? { 'data-user-msg': msg.id } : {})}
                   >
                     {msg.role !== 'user' && (
                       <CopyButton content={msg.content} />
@@ -810,7 +865,7 @@ export function ThreadView() {
             </motion.div>
           )}
 
-          {activeThread.status === 'waiting' && activeThread.waitingReason !== 'question' && activeThread.waitingReason !== 'permission' && activeThread.waitingReason !== 'plan' && (
+          {activeThread.status === 'waiting' && activeThread.waitingReason === 'followup' && (
             <motion.div
               initial={{ opacity: 0, y: 6 }}
               animate={{ opacity: 1, y: 0 }}
@@ -862,6 +917,7 @@ export function ThreadView() {
 
         </div>
       </ScrollArea>
+      </div>
 
       {/* Scroll to bottom button */}
       {showScrollDown && (

@@ -1,8 +1,10 @@
-import { useState } from 'react';
+import { useState, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 import { ChevronRight, FileSearch } from 'lucide-react';
 import { cn } from '@/lib/utils';
-import { toVscodeUri, getFileExtension, getFileName } from './utils';
+import { toVscodeUri, getFileExtension, getFileName, extToShikiLang } from './utils';
+import { parseCatOutput } from '@/lib/parse-cat-output';
+import { CodeViewer } from '@/components/ui/code-viewer';
 
 export function ReadFileCard({ parsed, output, hideLabel }: { parsed: Record<string, unknown>; output?: string; hideLabel?: boolean }) {
   const { t } = useTranslation();
@@ -10,6 +12,11 @@ export function ReadFileCard({ parsed, output, hideLabel }: { parsed: Record<str
   const filePath = parsed.file_path as string | undefined;
   const ext = filePath ? getFileExtension(filePath) : '';
   const fileName = filePath ? getFileName(filePath) : 'unknown';
+
+  const parsedOutput = useMemo(
+    () => (output ? parseCatOutput(output) : null),
+    [output]
+  );
 
   return (
     <div className="text-sm max-w-full overflow-hidden">
@@ -36,7 +43,7 @@ export function ReadFileCard({ parsed, output, hideLabel }: { parsed: Record<str
           </a>
         )}
       </button>
-      {expanded && output && (
+      {expanded && parsedOutput && (
         <div className="border-t border-border/40 overflow-hidden">
           <div className="flex items-center justify-between px-3 py-1 bg-background/50 border-b border-border/30">
             <span className="text-xs font-medium text-muted-foreground">{fileName}</span>
@@ -46,11 +53,11 @@ export function ReadFileCard({ parsed, output, hideLabel }: { parsed: Record<str
               </span>
             )}
           </div>
-          <div className="overflow-x-auto max-h-80 overflow-y-auto">
-            <pre className="px-3 py-2 font-mono text-sm text-foreground/80 leading-relaxed whitespace-pre-wrap break-all">
-              {output}
-            </pre>
-          </div>
+          <CodeViewer
+            code={parsedOutput.code}
+            language={extToShikiLang(ext)}
+            startLine={parsedOutput.startLine}
+          />
         </div>
       )}
     </div>

@@ -167,6 +167,69 @@ export function toVscodeUri(filePath: string): string {
   return `vscode://file${withLeadingSlash}`;
 }
 
+const EXT_TO_SHIKI_LANG: Record<string, string> = {
+  ts: 'typescript',
+  tsx: 'tsx',
+  js: 'javascript',
+  jsx: 'jsx',
+  mjs: 'javascript',
+  cjs: 'javascript',
+  py: 'python',
+  rb: 'ruby',
+  rs: 'rust',
+  go: 'go',
+  java: 'java',
+  kt: 'kotlin',
+  swift: 'swift',
+  c: 'c',
+  cpp: 'cpp',
+  h: 'c',
+  hpp: 'cpp',
+  cs: 'csharp',
+  md: 'markdown',
+  mdx: 'mdx',
+  json: 'json',
+  jsonc: 'jsonc',
+  yaml: 'yaml',
+  yml: 'yaml',
+  toml: 'toml',
+  xml: 'xml',
+  html: 'html',
+  css: 'css',
+  scss: 'scss',
+  less: 'less',
+  sql: 'sql',
+  sh: 'bash',
+  bash: 'bash',
+  zsh: 'bash',
+  ps1: 'powershell',
+  dockerfile: 'dockerfile',
+  makefile: 'makefile',
+  lua: 'lua',
+  php: 'php',
+  vue: 'vue',
+  svelte: 'svelte',
+  graphql: 'graphql',
+  gql: 'graphql',
+  proto: 'proto',
+  ini: 'ini',
+  env: 'dotenv',
+  tf: 'hcl',
+  zig: 'zig',
+  ex: 'elixir',
+  exs: 'elixir',
+  erl: 'erlang',
+  hs: 'haskell',
+  dart: 'dart',
+  r: 'r',
+  scala: 'scala',
+  clj: 'clojure',
+};
+
+export function extToShikiLang(ext: string): string {
+  return EXT_TO_SHIKI_LANG[ext.toLowerCase()] ?? 'text';
+}
+
 export function getFileExtension(filePath: string): string {
   const parts = filePath.split('.');
   return parts.length > 1 ? parts[parts.length - 1] : '';

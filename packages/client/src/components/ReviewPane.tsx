@@ -103,6 +103,8 @@ export function ReviewPane() {
   const [loading, setLoading] = useState(false);
   const [revertConfirm, setRevertConfirm] = useState<{ paths: string[] } | null>(null);
   const [expandedFile, setExpandedFile] = useState<string | null>(null);
+  const [busyPaths, setBusyPaths] = useState<Set<string>>(new Set());
+  const [revertLoading, setRevertLoading] = useState(false);
 
   const threadId = activeThread?.id;
 
@@ -136,32 +138,35 @@ export function ReviewPane() {
 
   const handleStage = async (paths: string[]) => {
     if (!threadId) return;
+    setBusyPaths(prev => new Set([...prev, ...paths]));
     const result = await api.stageFiles(threadId, paths);
     if (result.isErr()) {
       toast.error(t('review.stageFailed', { message: result.error.message }));
-      return;
     }
     await refresh();
+    setBusyPaths(prev => { const next = new Set(prev); paths.forEach(p => next.delete(p)); return next; });
   };
 
   const handleUnstage = async (paths: string[]) => {
     if (!threadId) return;
+    setBusyPaths(prev => new Set([...prev, ...paths]));
     const result = await api.unstageFiles(threadId, paths);
     if (result.isErr()) {
       toast.error(t('review.unstageFailed', { message: result.error.message }));
-      return;
     }
     await refresh();
+    setBusyPaths(prev => { const next = new Set(prev); paths.forEach(p => next.delete(p)); return next; });
   };
 
   const handleRevert = async (paths: string[]) => {
     if (!threadId) return;
+    setRevertLoading(true);
     const result = await api.revertFiles(threadId, paths);
     if (result.isErr()) {
       toast.error(t('review.revertFailed', { message: result.error.message }));
-      return;
     }
     await refresh();
+    setRevertLoading(false);
   };
 
   return (
@@ -236,6 +241,7 @@ export function ReviewPane() {
                         <Button
                           variant="ghost"
                           size="icon-xs"
+                          loading={busyPaths.has(f.path)}
                           onClick={(e) => { e.stopPropagation(); handleUnstage([f.path]); }}
                         >
                           <Minus className="h-3 w-3" />
@@ -249,6 +255,7 @@ export function ReviewPane() {
                         <Button
                           variant="ghost"
                           size="icon-xs"
+                          loading={busyPaths.has(f.path)}
                           onClick={(e) => { e.stopPropagation(); handleStage([f.path]); }}
                         >
                           <Plus className="h-3 w-3" />
@@ -328,11 +335,11 @@ export function ReviewPane() {
                     </div>
                     <div className="flex items-center gap-1 flex-shrink-0">
                       {expandedDiff.staged ? (
-                        <Button variant="outline" size="sm" onClick={() => handleUnstage([expandedDiff.path])}>
+                        <Button variant="outline" size="sm" loading={busyPaths.has(expandedDiff.path)} onClick={() => handleUnstage([expandedDiff.path])}>
                           <Minus className="h-3 w-3 mr-1" /> {t('review.unstage')}
                         </Button>
                       ) : (
-                        <Button variant="outline" size="sm" onClick={() => handleStage([expandedDiff.path])}>
+                        <Button variant="outline" size="sm" loading={busyPaths.has(expandedDiff.path)} onClick={() => handleStage([expandedDiff.path])}>
                           <Plus className="h-3 w-3 mr-1" /> {t('review.stage')}
                         </Button>
                       )}
@@ -379,9 +386,10 @@ export function ReviewPane() {
             <Button variant="outline" size="sm" onClick={() => setRevertConfirm(null)}>
               {t('common.cancel')}
             </Button>
-            <Button variant="destructive" size="sm" onClick={() => {
-              if (revertConfirm) handleRevert(revertConfirm.paths);
-              setRevertConfirm(null);
+            <Button variant="destructive" size="sm" loading={revertLoading} onClick={() => {
+              if (revertConfirm) {
+                handleRevert(revertConfirm.paths).then(() => setRevertConfirm(null));
+              }
             }}>
               {t('review.revert')}
             </Button>

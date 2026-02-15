@@ -341,7 +341,7 @@ export function CommitDialog({ open, onOpenChange }: CommitDialogProps) {
                 </span>
               )}
               {gitStatus && (gitStatus.linesAdded > 0 || gitStatus.linesDeleted > 0) && (
-                <span className="flex items-center gap-1.5 font-mono">
+                <span className="flex items-center gap-1.5 font-mono text-sm">
                   <span className="text-status-success">+{gitStatus.linesAdded}</span>
                   <span className="text-status-error">-{gitStatus.linesDeleted}</span>
                 </span>

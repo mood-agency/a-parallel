@@ -200,20 +200,26 @@ export class AgentMessageHandler {
             output: decodedOutput,
           });
 
+          // Look up the tool call once for both checks below
+          const tc = this.threadManager.getToolCall(toolCallId);
+
+          // Clear pending user input when AskUserQuestion/ExitPlanMode tool result is received
+          // (the SDK processed the user's answer, so the agent is no longer waiting)
+          if (tc?.name === 'AskUserQuestion' || tc?.name === 'ExitPlanMode') {
+            this.state.pendingUserInput.delete(threadId);
+          }
+
           // Detect permission denial pattern
           const permissionDeniedMatch = decodedOutput.match(
             /(?:requested permissions? to use|hasn't been granted|hasn't granted|permission.*denied|not in the allowed tools list)/i
           );
 
-          if (permissionDeniedMatch) {
-            const tc = this.threadManager.getToolCall(toolCallId);
-            if (tc?.name) {
-              console.log(`[agent] permission denied detected: tool=${tc.name} thread=${threadId}`);
-              this.state.pendingPermissionRequest.set(threadId, {
-                toolName: tc.name,
-                toolUseId: block.tool_use_id,
-              });
-            }
+          if (permissionDeniedMatch && tc?.name) {
+            console.log(`[agent] permission denied detected: tool=${tc.name} thread=${threadId}`);
+            this.state.pendingPermissionRequest.set(threadId, {
+              toolName: tc.name,
+              toolUseId: block.tool_use_id,
+            });
           }
         }
       }

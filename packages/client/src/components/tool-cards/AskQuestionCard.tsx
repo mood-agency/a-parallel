@@ -7,14 +7,15 @@ import { getQuestions } from './utils';
 // Special index to represent "Other" option
 const OTHER_INDEX = -1;
 
-export function AskQuestionCard({ parsed, onRespond, hideLabel }: { parsed: Record<string, unknown>; onRespond?: (answer: string) => void; hideLabel?: boolean }) {
+export function AskQuestionCard({ parsed, onRespond, output, hideLabel }: { parsed: Record<string, unknown>; onRespond?: (answer: string) => void; output?: string; hideLabel?: boolean }) {
   const { t } = useTranslation();
   const questions = getQuestions(parsed);
   if (!questions || questions.length === 0) return null;
 
+  const alreadyAnswered = !!output;
   const [activeTab, setActiveTab] = useState(0);
   const [selections, setSelections] = useState<Map<number, Set<number>>>(() => new Map());
-  const [submitted, setSubmitted] = useState(false);
+  const [submitted, setSubmitted] = useState(alreadyAnswered);
   const [otherTexts, setOtherTexts] = useState<Map<number, string>>(() => new Map());
   const otherInputRef = useRef<HTMLTextAreaElement>(null);
 
@@ -128,6 +129,18 @@ export function AskQuestionCard({ parsed, onRespond, hideLabel }: { parsed: Reco
 
       {/* Tabs */}
       <div className="border-t border-border/40">
+        {alreadyAnswered ? (
+          <div className="px-3 py-2">
+            {output!.split('\n').map((line, i) => (
+              <p key={i} className={cn(
+                'text-xs leading-relaxed',
+                line.startsWith('→') ? 'text-primary font-medium' : 'text-muted-foreground'
+              )}>
+                {line}
+              </p>
+            ))}
+          </div>
+        ) : (<>
         {questions.length > 1 && (
           <div className="flex gap-0 border-b border-border/40">
             {questions.map((q, i) => (
@@ -290,6 +303,7 @@ export function AskQuestionCard({ parsed, onRespond, hideLabel }: { parsed: Reco
             </div>
           )}
         </div>
+      </>)}
       </div>
     </div>
   );

@@ -122,8 +122,25 @@ export const threadMachine = setup({
       on: {
         START: 'running',
         RESTART: 'running',
+        COMPLETE: {
+          target: 'completed',
+          actions: ['updateCost', 'setResultInfo'],
+        },
+        FAIL: {
+          target: 'failed',
+          actions: ['updateCost', 'setResultInfo'],
+        },
+        WAIT: {
+          // Self-transition: stay in waiting (e.g., result confirms waiting status)
+          target: 'waiting',
+          actions: ['updateCost'],
+        },
+        STOP: 'stopped',
         SET_STATUS: [
           { target: 'running', guard: ({ event }) => event.status === 'running' },
+          { target: 'completed', guard: ({ event }) => event.status === 'completed' },
+          { target: 'failed', guard: ({ event }) => event.status === 'failed' },
+          { target: 'stopped', guard: ({ event }) => event.status === 'stopped' },
         ],
       },
     },

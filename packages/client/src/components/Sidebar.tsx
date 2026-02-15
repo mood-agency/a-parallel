@@ -85,6 +85,7 @@ export function AppSidebar() {
     projectId: string;
     name: string;
   } | null>(null);
+  const [actionLoading, setActionLoading] = useState(false);
 
   // Drag & drop: monitor for project reordering
   useEffect(() => {
@@ -116,9 +117,11 @@ export function AppSidebar() {
 
   const handleArchiveConfirm = useCallback(async () => {
     if (!archiveConfirm) return;
+    setActionLoading(true);
     const { threadId, projectId } = archiveConfirm;
     const wasSelected = selectedThreadId === threadId;
     await archiveThread(threadId, projectId);
+    setActionLoading(false);
     setArchiveConfirm(null);
     toast.success(t('toast.threadArchived'));
     if (wasSelected) navigate(`/projects/${projectId}`);
@@ -126,9 +129,11 @@ export function AppSidebar() {
 
   const handleDeleteThreadConfirm = useCallback(async () => {
     if (!deleteThreadConfirm) return;
+    setActionLoading(true);
     const { threadId, projectId, title } = deleteThreadConfirm;
     const wasSelected = selectedThreadId === threadId;
     await deleteThread(threadId, projectId);
+    setActionLoading(false);
     setDeleteThreadConfirm(null);
     toast.success(t('toast.threadDeleted', { title }));
     if (wasSelected) navigate(`/projects/${projectId}`);
@@ -141,19 +146,24 @@ export function AppSidebar() {
       toast.error('Project name cannot be empty');
       return;
     }
+    setActionLoading(true);
     try {
       await renameProject(projectId, newName.trim());
       setRenameProjectState(null);
       toast.success(t('toast.projectRenamed', { name: newName.trim() }));
     } catch (error: any) {
       toast.error(error.message || 'Failed to rename project');
+    } finally {
+      setActionLoading(false);
     }
   }, [renameProjectState, renameProject, t]);
 
   const handleDeleteProjectConfirm = useCallback(async () => {
     if (!deleteProjectConfirm) return;
+    setActionLoading(true);
     const { projectId, name } = deleteProjectConfirm;
     await deleteProject(projectId);
+    setActionLoading(false);
     setDeleteProjectConfirm(null);
     toast.success(t('toast.projectDeleted', { name }));
     navigate('/');
@@ -330,8 +340,8 @@ export function AppSidebar() {
         <DialogContent className="max-w-sm">
           <DialogHeader>
             <DialogTitle>{t('dialog.archiveThread')}</DialogTitle>
-            <DialogDescription>
-              {t('dialog.archiveThreadDesc', { title: archiveConfirm?.title })}
+            <DialogDescription className="break-all">
+              {t('dialog.archiveThreadDesc', { title: archiveConfirm?.title && archiveConfirm.title.length > 80 ? archiveConfirm.title.slice(0, 80) + '…' : archiveConfirm?.title })}
             </DialogDescription>
           </DialogHeader>
           {archiveConfirm?.isWorktree && (
@@ -343,7 +353,7 @@ export function AppSidebar() {
             <Button variant="outline" size="sm" onClick={() => setArchiveConfirm(null)}>
               {t('common.cancel')}
             </Button>
-            <Button size="sm" onClick={handleArchiveConfirm}>
+            <Button size="sm" onClick={handleArchiveConfirm} loading={actionLoading}>
               {t('sidebar.archive')}
             </Button>
           </DialogFooter>
@@ -358,8 +368,8 @@ export function AppSidebar() {
         <DialogContent className="max-w-sm">
           <DialogHeader>
             <DialogTitle>{t('dialog.deleteThread')}</DialogTitle>
-            <DialogDescription>
-              {t('dialog.deleteThreadDesc', { title: deleteThreadConfirm?.title })}
+            <DialogDescription className="break-all">
+              {t('dialog.deleteThreadDesc', { title: deleteThreadConfirm?.title && deleteThreadConfirm.title.length > 80 ? deleteThreadConfirm.title.slice(0, 80) + '…' : deleteThreadConfirm?.title })}
             </DialogDescription>
           </DialogHeader>
           {deleteThreadConfirm?.isWorktree && (
@@ -371,7 +381,7 @@ export function AppSidebar() {
             <Button variant="outline" size="sm" onClick={() => setDeleteThreadConfirm(null)}>
               {t('common.cancel')}
             </Button>
-            <Button variant="destructive" size="sm" onClick={handleDeleteThreadConfirm}>
+            <Button variant="destructive" size="sm" onClick={handleDeleteThreadConfirm} loading={actionLoading}>
               {t('common.delete')}
             </Button>
           </DialogFooter>
@@ -411,7 +421,7 @@ export function AppSidebar() {
             <Button variant="outline" size="sm" onClick={() => setRenameProjectState(null)}>
               {t('common.cancel')}
             </Button>
-            <Button size="sm" onClick={handleRenameProjectConfirm}>
+            <Button size="sm" onClick={handleRenameProjectConfirm} loading={actionLoading}>
               {t('common.save')}
             </Button>
           </DialogFooter>
@@ -434,7 +444,7 @@ export function AppSidebar() {
             <Button variant="outline" size="sm" onClick={() => setDeleteProjectConfirm(null)}>
               {t('common.cancel')}
             </Button>
-            <Button variant="destructive" size="sm" onClick={handleDeleteProjectConfirm}>
+            <Button variant="destructive" size="sm" onClick={handleDeleteProjectConfirm} loading={actionLoading}>
               {t('common.delete')}
             </Button>
           </DialogFooter>

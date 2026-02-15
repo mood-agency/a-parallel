@@ -203,6 +203,37 @@
   }
 }
 
+/* Shiki code viewer */
+.code-viewer .shiki {
+  background: transparent !important;
+  padding: 0.5rem 0;
+  margin: 0;
+  overflow: visible;
+}
+
+.code-viewer .shiki code {
+  display: block;
+  font-family: 'Geist Mono Variable', ui-monospace, monospace;
+}
+
+.code-viewer .shiki code .line {
+  display: inline-block;
+  width: 100%;
+  padding-right: 0.75rem;
+}
+
+.code-viewer .shiki code .line::before {
+  counter-increment: line;
+  content: counter(line);
+  display: inline-block;
+  width: 3.5em;
+  text-align: right;
+  padding-right: 1em;
+  color: hsl(var(--muted-foreground) / 0.3);
+  user-select: none;
+  flex-shrink: 0;
+}
+
 @layer utilities {
   .no-scrollbar {
     -ms-overflow-style: none;

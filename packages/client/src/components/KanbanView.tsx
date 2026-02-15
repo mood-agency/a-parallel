@@ -313,6 +313,7 @@ export function KanbanView({ threads, projectId, search }: KanbanViewProps) {
   const [slideUpProjectId, setSlideUpProjectId] = useState<string | undefined>(undefined);
   const [slideUpStage, setSlideUpStage] = useState<ThreadStage>('backlog');
   const [creating, setCreating] = useState(false);
+  const [deleteLoading, setDeleteLoading] = useState(false);
 
   const handleAddThread = useCallback((threadProjectId: string, stage: ThreadStage) => {
     setSlideUpProjectId(threadProjectId);
@@ -331,9 +332,11 @@ export function KanbanView({ threads, projectId, search }: KanbanViewProps) {
 
   const handleDeleteConfirm = useCallback(async () => {
     if (!deleteConfirm) return;
+    setDeleteLoading(true);
     const { threadId, projectId: threadProjectId, title } = deleteConfirm;
     const wasSelected = selectedThreadId === threadId;
     await deleteThread(threadId, threadProjectId);
+    setDeleteLoading(false);
     setDeleteConfirm(null);
     toast.success(t('toast.threadDeleted', { title }));
     if (wasSelected) navigate(`/projects/${threadProjectId}`);
@@ -486,8 +489,8 @@ export function KanbanView({ threads, projectId, search }: KanbanViewProps) {
         <DialogContent className="max-w-sm">
           <DialogHeader>
             <DialogTitle>{t('dialog.deleteThread')}</DialogTitle>
-            <DialogDescription>
-              {t('dialog.deleteThreadDesc', { title: deleteConfirm?.title })}
+            <DialogDescription className="break-all">
+              {t('dialog.deleteThreadDesc', { title: deleteConfirm?.title && deleteConfirm.title.length > 80 ? deleteConfirm.title.slice(0, 80) + '…' : deleteConfirm?.title })}
             </DialogDescription>
           </DialogHeader>
           {deleteConfirm?.isWorktree && (
@@ -499,7 +502,7 @@ export function KanbanView({ threads, projectId, search }: KanbanViewProps) {
             <Button variant="outline" size="sm" onClick={() => setDeleteConfirm(null)}>
               {t('common.cancel')}
             </Button>
-            <Button variant="destructive" size="sm" onClick={handleDeleteConfirm}>
+            <Button variant="destructive" size="sm" onClick={handleDeleteConfirm} loading={deleteLoading}>
               {t('common.delete')}
             </Button>
           </DialogFooter>

@@ -47,7 +47,7 @@ export const ToolCallCard = memo(function ToolCallCard({ name, input, output, on
   if (name === 'Read') return <ReadFileCard parsed={parsed} output={output} hideLabel={hideLabel} />;
   if (name === 'Write') return <WriteFileCard parsed={parsed} hideLabel={hideLabel} />;
   if (name === 'Edit') return <EditFileCard parsed={parsed} hideLabel={hideLabel} />;
-  if (name === 'AskUserQuestion') return <AskQuestionCard parsed={parsed} onRespond={onRespond} hideLabel={hideLabel} />;
+  if (name === 'AskUserQuestion') return <AskQuestionCard parsed={parsed} onRespond={output ? undefined : onRespond} output={output} hideLabel={hideLabel} />;
   if (name === 'ExitPlanMode') return <ExitPlanModeCard onRespond={onRespond} />;
 
   return (
