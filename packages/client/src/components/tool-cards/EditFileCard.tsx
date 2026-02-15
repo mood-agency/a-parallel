@@ -1,8 +1,11 @@
 import { useState, useMemo, Suspense } from 'react';
 import { useTranslation } from 'react-i18next';
-import { ChevronRight, FilePen } from 'lucide-react';
+import { ChevronRight, FilePen, Maximize2 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { toVscodeUri, ReactDiffViewer, DIFF_VIEWER_STYLES } from './utils';
+import { Button } from '@/components/ui/button';
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
+import { ExpandedDiffDialog } from './ExpandedDiffDialog';
 
 export function EditFileCard({ parsed, hideLabel }: { parsed: Record<string, unknown>; hideLabel?: boolean }) {
   const { t } = useTranslation();
@@ -11,6 +14,7 @@ export function EditFileCard({ parsed, hideLabel }: { parsed: Record<string, unk
   const newString = parsed.new_string as string | undefined;
 
   const [expanded, setExpanded] = useState(true);
+  const [showExpandedDiff, setShowExpandedDiff] = useState(false);
 
   const hasDiff = useMemo(() => {
     return filePath && oldString != null && newString != null && oldString !== newString;
@@ -43,7 +47,20 @@ export function EditFileCard({ parsed, hideLabel }: { parsed: Record<string, unk
       </button>
       {expanded && hasDiff && (
         <div className="border-t border-border/40 overflow-hidden">
-          <div className="text-xs max-h-80 overflow-y-auto overflow-x-auto [&_.diff-container]:font-mono [&_.diff-container]:text-sm">
+          <div className="relative text-xs max-h-80 overflow-y-auto overflow-x-auto [&_.diff-container]:font-mono [&_.diff-container]:text-sm">
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  variant="secondary"
+                  size="icon-xs"
+                  onClick={() => setShowExpandedDiff(true)}
+                  className="absolute top-2 right-2 z-10 opacity-70 hover:opacity-100 shadow-md"
+                >
+                  <Maximize2 className="h-3.5 w-3.5" />
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent side="left">{t('review.expand', 'Expand')}</TooltipContent>
+            </Tooltip>
             <Suspense fallback={<div className="p-2 text-xs text-muted-foreground">Loading diff...</div>}>
               <ReactDiffViewer
                 oldValue={oldString || ''}
@@ -58,6 +75,13 @@ export function EditFileCard({ parsed, hideLabel }: { parsed: Record<string, unk
           </div>
         </div>
       )}
+      <ExpandedDiffDialog
+        open={showExpandedDiff}
+        onOpenChange={setShowExpandedDiff}
+        filePath={filePath || ''}
+        oldValue={oldString || ''}
+        newValue={newString || ''}
+      />
     </div>
   );
 }

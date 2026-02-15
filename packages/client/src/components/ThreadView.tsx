@@ -798,6 +798,18 @@ export function ThreadView() {
             </motion.div>
           )}
 
+          {activeThread.status === 'waiting' && activeThread.waitingReason === 'plan' && (
+            <motion.div
+              initial={{ opacity: 0, y: 6 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.25, ease: 'easeOut' }}
+            >
+              <PlanWaitingActions
+                onSend={(text) => handleSend(text, { model: activeThread.model, mode: activeThread.permissionMode })}
+              />
+            </motion.div>
+          )}
+
           {activeThread.status === 'waiting' && activeThread.waitingReason !== 'question' && activeThread.waitingReason !== 'permission' && activeThread.waitingReason !== 'plan' && (
             <motion.div
               initial={{ opacity: 0, y: 6 }}
@@ -810,7 +822,7 @@ export function ThreadView() {
             </motion.div>
           )}
 
-          {activeThread.resultInfo && !isRunning && (
+          {activeThread.resultInfo && !isRunning && activeThread.status !== 'stopped' && activeThread.status !== 'interrupted' && (
             <motion.div
               initial={{ opacity: 0, y: 6 }}
               animate={{ opacity: 1, y: 0 }}

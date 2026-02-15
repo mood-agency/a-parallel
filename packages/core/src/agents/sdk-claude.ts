@@ -8,12 +8,13 @@
 
 import { EventEmitter } from 'events';
 import { query, AbortError } from '@anthropic-ai/claude-agent-sdk';
-import type { SDKMessage, HookCallback } from '@anthropic-ai/claude-agent-sdk';
+import type { SDKMessage, HookCallback, Query } from '@anthropic-ai/claude-agent-sdk';
 import type { CLIMessage, ClaudeProcessOptions } from './types.js';
 
 export class SDKClaudeProcess extends EventEmitter {
   private abortController = new AbortController();
   private _exited = false;
+  private activeQuery: Query | null = null;
 
   constructor(private options: ClaudeProcessOptions) {
     super();
@@ -31,6 +32,9 @@ export class SDKClaudeProcess extends EventEmitter {
 
   async kill(): Promise<void> {
     this.abortController.abort();
+    // close() forcefully ends the query, stopping all in-flight API calls
+    // and preventing further messages from being yielded
+    this.activeQuery?.close();
   }
 
   get exited(): boolean {
@@ -85,6 +89,7 @@ export class SDKClaudeProcess extends EventEmitter {
     }
 
     const gen = query({ prompt: promptInput, options: sdkOptions });
+    this.activeQuery = gen;
 
     try {
       for await (const sdkMsg of gen) {
@@ -102,6 +107,7 @@ export class SDKClaudeProcess extends EventEmitter {
         this.emit('error', err instanceof Error ? err : new Error(String(err)));
       }
     } finally {
+      this.activeQuery = null;
       this._exited = true;
       this.emit('exit', this.abortController.signal.aborted ? null : 0);
     }

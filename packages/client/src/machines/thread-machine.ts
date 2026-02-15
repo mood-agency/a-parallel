@@ -131,8 +131,12 @@ export const threadMachine = setup({
       on: {
         RESTART: 'running',
         START: 'running',
+        STOP: { target: 'stopped', actions: 'clearResultInfo' },
+        INTERRUPT: { target: 'interrupted', actions: 'clearResultInfo' },
         SET_STATUS: [
           { target: 'running', guard: ({ event }) => event.status === 'running' },
+          { target: 'stopped', guard: ({ event }) => event.status === 'stopped' },
+          { target: 'interrupted', guard: ({ event }) => event.status === 'interrupted' },
         ],
       },
     },

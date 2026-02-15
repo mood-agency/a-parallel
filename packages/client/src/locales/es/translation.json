@@ -133,6 +133,8 @@
     "includeUnstaged": "Incluir sin preparar",
     "commitAndPush": "Commit & Push",
     "commitAndCreatePR": "Commit & Crear PR",
+    "commitAndMerge": "Commit & Merge",
+    "commitAndMergeSuccess": "Cambios confirmados y fusionados en {{target}} exitosamente",
     "continue": "Continuar"
   },
   "newThread": {

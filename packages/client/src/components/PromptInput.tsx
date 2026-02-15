@@ -121,7 +121,7 @@ function SearchablePicker({
     <Popover open={open} onOpenChange={(v) => { setOpen(v); if (!v) { setSearch(''); setHighlightIndex(-1); } }}>
       <PopoverTrigger asChild>
         <button
-          className={triggerClassName ?? 'flex items-center gap-1 px-2 py-1 text-sm text-muted-foreground hover:text-foreground transition-colors rounded hover:bg-muted truncate max-w-[300px]'}
+          className={triggerClassName ?? 'flex items-center gap-1 px-2 py-1 text-xs text-muted-foreground hover:text-foreground transition-colors rounded hover:bg-muted truncate max-w-[300px]'}
           title={triggerTitle}
         >
           <GitBranch className="h-3 w-3 shrink-0" />
@@ -286,7 +286,7 @@ function BranchPicker({
       searchPlaceholder={t('newThread.searchBranches', 'Search branches...')}
       noMatchText={t('newThread.noBranchesMatch', 'No branches match')}
       onSelect={(branch) => onChange(branch)}
-      triggerClassName="flex items-center gap-1 px-2 py-1 text-sm text-muted-foreground hover:text-foreground transition-colors rounded hover:bg-muted truncate max-w-[200px]"
+      triggerClassName="flex items-center gap-1 px-2 py-1 text-xs text-muted-foreground hover:text-foreground transition-colors rounded hover:bg-muted truncate max-w-[200px]"
       width="w-64"
     />
   );
@@ -972,7 +972,7 @@ export function PromptInput({
                     onChange={setCwdOverride}
                   />
                 ) : (activeThread?.branch || localCurrentBranch) ? (
-                  <button className="flex items-center gap-1 px-2 py-1 text-sm text-muted-foreground hover:text-foreground transition-colors rounded hover:bg-muted truncate max-w-[300px]" disabled>
+                  <button className="flex items-center gap-1 px-2 py-1 text-xs text-muted-foreground hover:text-foreground transition-colors rounded hover:bg-muted truncate max-w-[300px]" disabled>
                     <GitBranch className="h-3 w-3 shrink-0" />
                     <span className="truncate font-mono">{activeThread?.branch || localCurrentBranch}</span>
                   </button>

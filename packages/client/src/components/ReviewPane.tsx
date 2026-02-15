@@ -30,6 +30,7 @@ import {
   FilePlus,
   FileX,
   PanelRightClose,
+  Maximize2,
 } from 'lucide-react';
 import type { FileDiff } from '@a-parallel/shared';
 
@@ -76,7 +77,7 @@ function parseDiffNew(unifiedDiff: string): string {
   return newLines.join('\n');
 }
 
-const MemoizedDiffView = memo(function MemoizedDiffView({ diff }: { diff: string }) {
+const MemoizedDiffView = memo(function MemoizedDiffView({ diff, splitView = false }: { diff: string; splitView?: boolean }) {
   const oldValue = useMemo(() => parseDiffOld(diff), [diff]);
   const newValue = useMemo(() => parseDiffNew(diff), [diff]);
 
@@ -84,7 +85,7 @@ const MemoizedDiffView = memo(function MemoizedDiffView({ diff }: { diff: string
     <ReactDiffViewer
       oldValue={oldValue}
       newValue={newValue}
-      splitView={false}
+      splitView={splitView}
       useDarkTheme={true}
       hideLineNumbers={false}
       showDiffOnly={true}
@@ -101,6 +102,7 @@ export function ReviewPane() {
   const [selectedFile, setSelectedFile] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [revertConfirm, setRevertConfirm] = useState<{ paths: string[] } | null>(null);
+  const [expandedFile, setExpandedFile] = useState<string | null>(null);
 
   const threadId = activeThread?.id;
 
@@ -279,7 +281,20 @@ export function ReviewPane() {
       <ScrollArea className="flex-1 w-full">
         {selectedDiff ? (
           selectedDiff.diff ? (
-            <div className="text-xs [&_.diff-container]:font-mono [&_.diff-container]:text-sm [&_table]:w-max [&_td:last-child]:w-auto [&_td:last-child]:min-w-0">
+            <div className="relative text-xs [&_.diff-container]:font-mono [&_.diff-container]:text-sm [&_table]:w-max [&_td:last-child]:w-auto [&_td:last-child]:min-w-0">
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button
+                    variant="secondary"
+                    size="icon-xs"
+                    onClick={() => setExpandedFile(selectedDiff.path)}
+                    className="absolute top-2 right-2 z-10 opacity-70 hover:opacity-100 shadow-md"
+                  >
+                    <Maximize2 className="h-3.5 w-3.5" />
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent side="left">{t('review.expand', 'Expand')}</TooltipContent>
+              </Tooltip>
               <Suspense fallback={<div className="p-2 text-xs text-muted-foreground">Loading diff...</div>}>
                 <MemoizedDiffView diff={selectedDiff.diff} />
               </Suspense>
@@ -292,6 +307,61 @@ export function ReviewPane() {
         )}
         <ScrollBar orientation="horizontal" />
       </ScrollArea>
+
+      {/* Expanded diff modal */}
+      <Dialog open={!!expandedFile} onOpenChange={(open) => { if (!open) setExpandedFile(null); }}>
+        <DialogContent className="max-w-[90vw] w-[90vw] h-[85vh] flex flex-col p-0 gap-0">
+          {(() => {
+            const expandedDiff = diffs.find(d => d.path === expandedFile);
+            if (!expandedDiff) return null;
+            const Icon = fileStatusIcons[expandedDiff.status] || FileCode;
+            return (
+              <>
+                <DialogHeader className="px-4 py-3 pr-10 border-b border-border flex-shrink-0">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <div className="flex items-center gap-2 min-w-0 flex-1">
+                      <Icon className="h-4 w-4 flex-shrink-0" />
+                      <DialogTitle className="font-mono text-sm truncate">{expandedDiff.path}</DialogTitle>
+                      <span className={cn('text-xs font-medium flex-shrink-0', expandedDiff.staged ? 'text-status-success' : 'text-status-pending')}>
+                        {expandedDiff.staged ? t('review.staged') : t('review.unstaged')}
+                      </span>
+                    </div>
+                    <div className="flex items-center gap-1 flex-shrink-0">
+                      {expandedDiff.staged ? (
+                        <Button variant="outline" size="sm" onClick={() => handleUnstage([expandedDiff.path])}>
+                          <Minus className="h-3 w-3 mr-1" /> {t('review.unstage')}
+                        </Button>
+                      ) : (
+                        <Button variant="outline" size="sm" onClick={() => handleStage([expandedDiff.path])}>
+                          <Plus className="h-3 w-3 mr-1" /> {t('review.stage')}
+                        </Button>
+                      )}
+                      <Button variant="outline" size="sm" className="text-destructive" onClick={() => { setExpandedFile(null); setRevertConfirm({ paths: [expandedDiff.path] }); }}>
+                        <Undo2 className="h-3 w-3 mr-1" /> {t('review.revert')}
+                      </Button>
+                    </div>
+                  </div>
+                  <DialogDescription className="sr-only">
+                    {t('review.diffFor', { file: expandedDiff.path, defaultValue: `Diff for ${expandedDiff.path}` })}
+                  </DialogDescription>
+                </DialogHeader>
+                <ScrollArea className="flex-1 min-h-0">
+                  {expandedDiff.diff ? (
+                    <div className="[&_.diff-container]:font-mono [&_table]:w-full [&_td]:overflow-hidden [&_td]:text-ellipsis">
+                      <Suspense fallback={<div className="p-4 text-sm text-muted-foreground">Loading diff...</div>}>
+                        <MemoizedDiffView diff={expandedDiff.diff} splitView={true} />
+                      </Suspense>
+                    </div>
+                  ) : (
+                    <p className="text-sm text-muted-foreground p-4">{t('review.binaryOrNoDiff')}</p>
+                  )}
+                  <ScrollBar orientation="horizontal" />
+                </ScrollArea>
+              </>
+            );
+          })()}
+        </DialogContent>
+      </Dialog>
 
       {/* Revert confirmation dialog */}
       <Dialog open={!!revertConfirm} onOpenChange={(open) => { if (!open) setRevertConfirm(null); }}>

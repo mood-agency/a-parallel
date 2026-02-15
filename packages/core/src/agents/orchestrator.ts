@@ -123,6 +123,9 @@ export class AgentOrchestrator extends EventEmitter {
 
       proc.on('message', (msg: CLIMessage) => {
         if (msg.type === 'result') {
+          if (this.manuallyStopped.has(threadId)) {
+            return; // Suppress result messages for manually stopped agents
+          }
           this.resultReceived.add(threadId);
         }
         this.emit('agent:message', threadId, msg);

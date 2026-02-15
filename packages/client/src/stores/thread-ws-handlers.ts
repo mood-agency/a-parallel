@@ -196,6 +196,7 @@ export function handleWSStatus(
           status: newStatus,
           waitingReason: undefined,
           pendingPermission: undefined,
+          ...(newStatus === 'stopped' || newStatus === 'interrupted' ? { resultInfo: undefined } : {}),
           ...(data.stage ? { stage: data.stage as any } : {}),
         };
       }

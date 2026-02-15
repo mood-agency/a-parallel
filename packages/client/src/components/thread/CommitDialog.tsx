@@ -8,6 +8,7 @@ import { cn } from '@/lib/utils';
 import {
   GitBranch,
   GitCommit,
+  GitMerge,
   Sparkles,
   FileCode,
   FilePlus,
@@ -86,8 +87,10 @@ export function CommitDialog({ open, onOpenChange }: CommitDialogProps) {
   const [commitTitle, setCommitTitle] = useState('');
   const [commitBody, setCommitBody] = useState('');
   const [generatingMsg, setGeneratingMsg] = useState(false);
-  const [actionInProgress, setActionInProgress] = useState<'commit' | 'commit-push' | 'commit-pr' | null>(null);
-  const [selectedAction, setSelectedAction] = useState<'commit' | 'commit-push' | 'commit-pr'>('commit');
+  const [actionInProgress, setActionInProgress] = useState<'commit' | 'commit-push' | 'commit-pr' | 'commit-merge' | null>(null);
+  const [selectedAction, setSelectedAction] = useState<'commit' | 'commit-push' | 'commit-pr' | 'commit-merge'>('commit');
+
+  const isWorktree = activeThread?.mode === 'worktree';
 
   const gitStatus = useGitStatusStore(s => threadId ? s.statusByThread[threadId] : undefined);
   const stagedFiles = allFiles.filter(f => f.staged);
@@ -269,6 +272,32 @@ export function CommitDialog({ open, onOpenChange }: CommitDialogProps) {
     setActionInProgress(null);
   };
 
+  const handleCommitAndMerge = async () => {
+    if (!canCommit || !threadId) return;
+    setActionInProgress('commit-merge');
+
+    const commitSuccess = await performCommit();
+    if (!commitSuccess) {
+      setActionInProgress(null);
+      return;
+    }
+
+    const mergeResult = await api.merge(threadId, { cleanup: true });
+    if (mergeResult.isErr()) {
+      toast.error(t('review.mergeFailed', { message: mergeResult.error.message }));
+      setActionInProgress(null);
+      useGitStatusStore.getState().fetchForThread(threadId);
+      onOpenChange(false);
+      return;
+    }
+
+    const target = activeThread?.baseBranch || 'base';
+    toast.success(t('review.commitAndMergeSuccess', { target }));
+    useGitStatusStore.getState().fetchForThread(threadId);
+    onOpenChange(false);
+    setActionInProgress(null);
+  };
+
   const toggleFile = (path: string) => {
     const newSelection = new Set(selectedFiles);
     if (newSelection.has(path)) {
@@ -431,11 +460,12 @@ export function CommitDialog({ open, onOpenChange }: CommitDialogProps) {
         </div>
 
         <div className="flex flex-col gap-3 pt-2">
-          <div className="grid grid-cols-3 gap-2">
+          <div className={cn('grid gap-2', isWorktree ? 'grid-cols-4' : 'grid-cols-3')}>
             {([
               { value: 'commit' as const, icon: GitCommit, label: t('review.commit', 'Commit') },
               { value: 'commit-push' as const, icon: Upload, label: t('review.commitAndPush', 'Commit & Push') },
               { value: 'commit-pr' as const, icon: GitPullRequest, label: t('review.commitAndCreatePR', 'Commit & Create PR') },
+              ...(isWorktree ? [{ value: 'commit-merge' as const, icon: GitMerge, label: t('review.commitAndMerge', 'Commit & Merge') }] : []),
             ]).map(({ value, icon: Icon, label }) => {
               const isSelected = selectedAction === value;
               return (
@@ -462,7 +492,8 @@ export function CommitDialog({ open, onOpenChange }: CommitDialogProps) {
             onClick={() => {
               if (selectedAction === 'commit') handleCommit();
               else if (selectedAction === 'commit-push') handleCommitAndPush();
-              else handleCommitAndCreatePR();
+              else if (selectedAction === 'commit-pr') handleCommitAndCreatePR();
+              else handleCommitAndMerge();
             }}
             disabled={!canCommit}
           >

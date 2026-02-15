@@ -527,7 +527,7 @@ function ChatView({
                 />
               )}
 
-              {activeThread.resultInfo && !isRunning && (
+              {activeThread.resultInfo && !isRunning && activeThread.status !== 'stopped' && activeThread.status !== 'interrupted' && (
                 <AgentResultCard
                   status={activeThread.resultInfo.status}
                   cost={activeThread.resultInfo.cost}

@@ -80,9 +80,9 @@ export function ThreadItem({ thread, projectPath, isSelected, onSelect, subtitle
     >
       <button
         onClick={onSelect}
-        className="flex-1 flex items-center gap-1.5 pl-2 py-1 text-left min-w-0 overflow-hidden"
+        className="flex-1 flex items-start gap-1.5 pl-2 py-1 text-left min-w-0 overflow-hidden"
       >
-        <div className="relative h-3 w-3 flex-shrink-0">
+        <div className="relative h-3 w-3 flex-shrink-0 mt-[3px]">
           {/* Status icon – hidden on hover when pin is available */}
           <span className={cn(
             'absolute inset-0',
@@ -127,7 +127,7 @@ export function ThreadItem({ thread, projectPath, isSelected, onSelect, subtitle
           )}
         </div>
       </button>
-      <div className="flex-shrink-0 pr-1.5 pl-2 py-1.5 grid place-items-center min-w-[2.5rem]">
+      <div className="flex-shrink-0 pr-1.5 pl-2 py-1 grid place-items-start justify-items-center min-w-[2.5rem]">
         <span className={cn(
           'col-start-1 row-start-1 text-xs text-muted-foreground leading-4 h-4 group-hover/thread:hidden',
           openDropdown && 'hidden'

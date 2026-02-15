@@ -142,5 +142,5 @@ export const ToolCallCard = memo(function ToolCallCard({ name, input, output, on
     </div>
   );
 }, (prev, next) => {
-  return prev.name === next.name && prev.input === next.input && prev.output === next.output && prev.hideLabel === next.hideLabel;
+  return prev.name === next.name && prev.input === next.input && prev.output === next.output && prev.hideLabel === next.hideLabel && !!prev.onRespond === !!next.onRespond;
 });
