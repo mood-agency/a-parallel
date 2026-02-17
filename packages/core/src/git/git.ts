@@ -296,15 +296,34 @@ export function createPR(
 /**
  * Merge a feature branch into a target branch.
  * Must be run from the main repo directory (not a worktree).
+ *
+ * When worktreePath is provided, the feature branch is rebased onto
+ * the target branch first (inside the worktree) so that the merge
+ * into the target is always clean. If the rebase hits conflicts it
+ * is aborted and the error is returned without touching the target.
  */
 export function mergeBranch(
   cwd: string,
   featureBranch: string,
   targetBranch: string,
-  identity?: GitIdentityOptions
+  identity?: GitIdentityOptions,
+  worktreePath?: string,
 ): ResultAsync<string, DomainError> {
   return ResultAsync.fromPromise(
     (async () => {
+      // ── 1. Rebase feature branch onto target (inside worktree) ──
+      if (worktreePath) {
+        const rebaseResult = await git(['rebase', targetBranch], worktreePath);
+        if (rebaseResult.isErr()) {
+          await execute('git', ['rebase', '--abort'], { cwd: worktreePath, reject: false });
+          throw badRequest(
+            `Rebase failed — there are conflicts between your branch and ${targetBranch}. ` +
+            `Resolve them in the worktree and try again.`
+          );
+        }
+      }
+
+      // ── 2. Validate main working tree is clean ──
       const statusResult = await git(['status', '--porcelain'], cwd);
       if (statusResult.isErr()) throw statusResult.error;
       if (statusResult.value.trim()) {
@@ -317,6 +336,7 @@ export function mergeBranch(
       if (branchResult.isErr()) throw branchResult.error;
       const originalBranch = branchResult.value;
 
+      // ── 3. Merge into target ──
       try {
         const checkoutResult = await git(['checkout', targetBranch], cwd);
         if (checkoutResult.isErr()) throw checkoutResult.error;

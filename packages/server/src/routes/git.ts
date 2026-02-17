@@ -385,7 +385,7 @@ gitRoutes.post('/:threadId/merge', async (c) => {
   }
 
   const identity = resolveIdentity(userId);
-  const mergeResult = await mergeBranch(project.path, thread.branch, targetBranch, identity);
+  const mergeResult = await mergeBranch(project.path, thread.branch, targetBranch, identity, thread.worktreePath ?? undefined);
   if (mergeResult.isErr()) return resultToResponse(c, mergeResult);
 
   if (parsed.value.push) {
