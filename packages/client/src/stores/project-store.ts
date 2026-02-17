@@ -40,17 +40,18 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
         // Threads load in background and fill in progressively.
         set({ projects, initialized: true });
 
-        // Load threads for all projects in background (non-blocking)
+        // Load threads first, then fetch git statuses once threads are available.
+        // This ensures git status icons are consistent from the start instead of
+        // popping in later when the user clicks a thread.
         const threadStore = useThreadStore.getState();
         Promise.all(
           projects.map((p) => threadStore.loadThreadsForProject(p.id))
-        ).catch(() => {});
-
-        // Fetch git statuses for all projects (best-effort, non-blocking)
-        const gitStore = useGitStatusStore.getState();
-        for (const p of projects) {
-          gitStore.fetchForProject(p.id);
-        }
+        ).then(() => {
+          const gitStore = useGitStatusStore.getState();
+          for (const p of projects) {
+            gitStore.fetchForProject(p.id);
+          }
+        }).catch(() => {});
       } finally {
         _loadProjectsPromise = null;
       }
