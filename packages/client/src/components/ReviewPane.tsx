@@ -11,6 +11,7 @@ import { ReactDiffViewer, DIFF_VIEWER_STYLES } from './tool-cards/utils';
 import { Button } from '@/components/ui/button';
 import { ScrollArea, ScrollBar } from '@/components/ui/scroll-area';
 import { useAutoRefreshDiff } from '@/hooks/use-auto-refresh-diff';
+import { useGitStatusStore } from '@/stores/git-status-store';
 import {
   Dialog,
   DialogContent,
@@ -162,6 +163,12 @@ export function ReviewPane() {
   const [actionInProgress, setActionInProgress] = useState<string | null>(null);
 
   const isWorktree = useThreadStore(s => s.activeThread?.mode === 'worktree');
+  const baseBranch = useThreadStore(s => s.activeThread?.baseBranch);
+  const gitStatus = useGitStatusStore(s => effectiveThreadId ? s.statusByThread[effectiveThreadId] : undefined);
+  const [mergeInProgress, setMergeInProgress] = useState(false);
+
+  // Show standalone merge button when worktree has no dirty files but has unmerged commits
+  const showMergeOnly = isWorktree && summaries.length === 0 && !loading && gitStatus && !gitStatus.isMergedIntoBase;
 
   const fileListRef = useRef<HTMLDivElement>(null);
 
@@ -196,6 +203,8 @@ export function ReviewPane() {
       console.error('Failed to load diff summary:', result.error);
     }
     setLoading(false);
+    // Also refresh git status so we know if there are unmerged commits
+    if (effectiveThreadId) useGitStatusStore.getState().fetchForThread(effectiveThreadId);
   };
 
   // Lazy load diff content for the selected file
@@ -408,6 +417,20 @@ export function ReviewPane() {
       toast.success(t('review.ignoreSuccess'));
       await refresh();
     }
+  };
+
+  const handleMergeOnly = async () => {
+    if (!effectiveThreadId || mergeInProgress) return;
+    setMergeInProgress(true);
+    const mergeResult = await api.merge(effectiveThreadId, { cleanup: true });
+    if (mergeResult.isErr()) {
+      toast.error(t('review.mergeFailed', { message: mergeResult.error.message }));
+    } else {
+      const target = baseBranch || 'base';
+      toast.success(t('review.mergeSuccess', { target, defaultValue: `Merged into ${target} successfully` }));
+    }
+    setMergeInProgress(false);
+    useGitStatusStore.getState().fetchForThread(effectiveThreadId);
   };
 
   const getParentFolders = (filePath: string): string[] => {
@@ -775,6 +798,25 @@ export function ReviewPane() {
               >
                 {actionInProgress ? <Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" /> : null}
                 {t('review.continue', 'Continue')}
+              </Button>
+            </div>
+          )}
+
+          {/* Standalone merge button — shown when no dirty files but worktree has unmerged commits */}
+          {showMergeOnly && (
+            <div className="border-t border-sidebar-border p-3 flex-shrink-0 space-y-2">
+              <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                <GitMerge className="h-3.5 w-3.5" />
+                <span>{t('review.readyToMerge', { target: baseBranch || 'base', defaultValue: `Ready to merge into ${baseBranch || 'base'}` })}</span>
+              </div>
+              <Button
+                className="w-full"
+                size="sm"
+                onClick={handleMergeOnly}
+                disabled={mergeInProgress}
+              >
+                {mergeInProgress ? <Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" /> : <GitMerge className="h-3.5 w-3.5 mr-1.5" />}
+                {t('review.mergeIntoBranch', { target: baseBranch || 'base', defaultValue: `Merge into ${baseBranch || 'base'}` })}
               </Button>
             </div>
           )}
