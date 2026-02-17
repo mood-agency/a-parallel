@@ -290,23 +290,30 @@ export function ReviewPane() {
       ? `${commitTitle.trim()}\n\n${commitBody.trim()}`
       : commitTitle.trim();
 
-    const filesToCommit = Array.from(checkedFiles);
-
-    // Unstage everything first to start clean
-    const currentlyStaged = summaries.filter(f => f.staged).map(f => f.path);
-    if (currentlyStaged.length > 0) {
-      const unstageResult = await api.unstageFiles(effectiveThreadId, currentlyStaged);
+    // Only unstage files that are staged but NOT selected (avoid unstage→restage
+    // cycle which breaks gitignored files that were previously force-staged)
+    const toUnstage = summaries
+      .filter(f => f.staged && !checkedFiles.has(f.path))
+      .map(f => f.path);
+    if (toUnstage.length > 0) {
+      const unstageResult = await api.unstageFiles(effectiveThreadId, toUnstage);
       if (unstageResult.isErr()) {
         toast.error(t('review.unstageFailed', { message: unstageResult.error.message }));
         return false;
       }
     }
 
-    // Stage only checked files
-    const stageResult = await api.stageFiles(effectiveThreadId, filesToCommit);
-    if (stageResult.isErr()) {
-      toast.error(t('review.stageFailed', { message: stageResult.error.message }));
-      return false;
+    // Only stage files that are selected but NOT already staged
+    const toStage = Array.from(checkedFiles).filter(p => {
+      const s = summaries.find(f => f.path === p);
+      return s && !s.staged;
+    });
+    if (toStage.length > 0) {
+      const stageResult = await api.stageFiles(effectiveThreadId, toStage);
+      if (stageResult.isErr()) {
+        toast.error(t('review.stageFailed', { message: stageResult.error.message }));
+        return false;
+      }
     }
 
     const result = await api.commit(effectiveThreadId, commitMsg);
