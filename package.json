@@ -40,7 +40,7 @@
     "tauri:dev": "tauri dev",
     "tauri:build": "tauri build",
     "build:sidecar": "node scripts/build-sidecar.js",
-    "test": "bun run --cwd packages/server test && bun run --cwd packages/client test"
+    "test": "bun run --cwd packages/shared test && bun run --cwd packages/core test && bun run --cwd packages/agent test && bun run --cwd packages/server test && bun run --cwd packages/client test"
   },
   "devDependencies": {
     "@tauri-apps/cli": "^2.10.0",
