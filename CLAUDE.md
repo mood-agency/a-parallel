@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## What This Is
 
-funny is a web UI for orchestrating multiple Claude Code agents in parallel. It uses git worktrees to let each agent work on its own branch simultaneously without conflicts. Think of it as a Codex App clone powered by the Claude Agent SDK.
+funny is a web UI for orchestrating multiple Claude Code agents in parallel. It uses git worktrees to let each agent work on its own branch simultaneously without conflicts. Think of it as a Codex App clone powered by the Claude Agent SDK (`@anthropic-ai/claude-agent-sdk`).
 
 ## Installation & Running
 
@@ -57,7 +57,7 @@ bun run db:studio
 ### Monorepo Structure (Bun workspaces)
 
 - **`packages/shared`** — TypeScript types only (no runtime code). Exports from `src/types.ts`. Contains interfaces for Project, Thread, Message, ToolCall, FileDiff, WebSocket events, and API request/response types.
-- **`packages/server`** — Hono HTTP server with the Claude Agent SDK. Runs on port 3001 via `tsx watch`.
+- **`packages/server`** — Hono HTTP server with the Claude Agent SDK (`@anthropic-ai/claude-agent-sdk`). Runs on port 3001 via `bun --watch`.
 - **`packages/client`** — React 19 + Vite SPA. Runs on port 5173 with a proxy to the server at `/api`.
 
 ### Server Architecture
