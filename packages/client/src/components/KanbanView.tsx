@@ -341,6 +341,7 @@ export function KanbanView({ threads, projectId, search, contentSnippets }: Kanb
     threadId: string;
     title: string;
     newStage: ThreadStage;
+    gitState: string;
   } | null>(null);
   const statusByThread = useGitStatusStore((s) => s.statusByThread);
 
@@ -507,6 +508,7 @@ export function KanbanView({ threads, projectId, search, contentSnippets }: Kanb
             threadId,
             title: thread.title,
             newStage,
+            gitState: gitStatus.state,
           });
           return;
         }
@@ -570,9 +572,9 @@ export function KanbanView({ threads, projectId, search, contentSnippets }: Kanb
       >
         <DialogContent className="max-w-sm">
           <DialogHeader>
-            <DialogTitle>{t('dialog.unmergedChanges')}</DialogTitle>
+            <DialogTitle>{t(mergeWarning?.gitState === 'unpushed' ? 'dialog.unpushedChanges' : 'dialog.unmergedChanges')}</DialogTitle>
             <DialogDescription className="break-all">
-              {t('dialog.unmergedChangesDesc', { title: mergeWarning?.title && mergeWarning.title.length > 80 ? mergeWarning.title.slice(0, 80) + '…' : mergeWarning?.title })}
+              {t(mergeWarning?.gitState === 'unpushed' ? 'dialog.unpushedChangesDesc' : 'dialog.unmergedChangesDesc', { title: mergeWarning?.title && mergeWarning.title.length > 80 ? mergeWarning.title.slice(0, 80) + '…' : mergeWarning?.title })}
             </DialogDescription>
           </DialogHeader>
           <DialogFooter>
