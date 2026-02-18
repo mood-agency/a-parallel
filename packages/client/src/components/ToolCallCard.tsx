@@ -1,6 +1,7 @@
 import { useState, useMemo, memo } from 'react';
 import { useTranslation } from 'react-i18next';
 import { ChevronRight, Wrench, ListTodo, Check } from 'lucide-react';
+import AnsiToHtml from 'ansi-to-html';
 import { cn } from '@/lib/utils';
 import { formatInput, getTodos, getFilePath, getSummary, getToolLabel, toVscodeUri } from './tool-cards/utils';
 import { TodoList } from './tool-cards/TodoList';
@@ -33,10 +34,17 @@ export const ToolCallCard = memo(function ToolCallCard({ name, input, output, on
   const todos = isTodo ? getTodos(parsed) : null;
   const filePath = getFilePath(name, parsed);
 
-  // Truncated output preview for collapsed cards
+  // SECURITY: escapeXML must remain true to prevent XSS via dangerouslySetInnerHTML
+  const ansiConverter = useMemo(() => new AnsiToHtml({ fg: '#a1a1aa', bg: 'transparent', newline: false, escapeXML: true }), []);
+  const htmlOutput = useMemo(() => output ? ansiConverter.toHtml(output) : null, [ansiConverter, output]);
+
+  // Truncated output preview for collapsed cards (strip ANSI for plain-text preview)
   const outputPreview = useMemo(() => {
     if (!output || expanded) return null;
-    const firstLine = output.split('\n').find(l => l.trim())?.trim();
+    // Strip ANSI escape codes for the preview text
+    // eslint-disable-next-line no-control-regex
+    const clean = output.replace(/\x1b\[[0-9;]*m/g, '');
+    const firstLine = clean.split('\n').find(l => l.trim())?.trim();
     if (!firstLine) return null;
     return firstLine.length > 120 ? firstLine.slice(0, 120) + '…' : firstLine;
   }, [output, expanded]);
@@ -122,7 +130,10 @@ export const ToolCallCard = memo(function ToolCallCard({ name, input, output, on
                 <div className="mt-2">
                   <div className="text-xs font-semibold text-muted-foreground uppercase mb-1">{t('tools.output')}</div>
                   <div className="rounded bg-background/80 border border-border/40 px-2.5 py-1.5 overflow-x-auto max-h-60 overflow-y-auto">
-                    <pre className="font-mono text-sm text-muted-foreground leading-relaxed whitespace-pre-wrap break-all">{output}</pre>
+                    <pre
+                      className="font-mono text-sm text-muted-foreground leading-relaxed whitespace-pre-wrap break-all"
+                      dangerouslySetInnerHTML={{ __html: htmlOutput! }}
+                    />
                   </div>
                 </div>
               )}
