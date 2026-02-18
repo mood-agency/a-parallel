@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "bun src/kill-port.ts && bun --watch src/index.ts",
-    "build": "bun build src/index.ts --outdir dist --target bun",
+    "build": "bun run build.ts",
     "db:push": "bunx drizzle-kit push",
     "db:studio": "bunx drizzle-kit studio",
     "test": "bun test"

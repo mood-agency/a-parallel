@@ -1,5 +1,5 @@
 {
-  "name": "funny",
+  "name": "@ironmussa/funny",
   "version": "0.1.0",
   "private": false,
   "description": "Codex App clone powered by Claude Code — parallel agent orchestration with git worktrees",
@@ -7,7 +7,7 @@
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "https://github.com/anthropics/funny.git"
+    "url": "https://github.com/ironmussa/funny.git"
   },
   "bin": {
     "funny": "./bin/funny.js"
@@ -15,10 +15,7 @@
   "files": [
     "bin",
     "packages/server/dist",
-    "packages/client/dist",
-    "packages/shared/src",
-    "packages/core/src",
-    "packages/agent/src"
+    "packages/client/dist"
   ],
   "engines": {
     "bun": ">=1.0.0"
@@ -43,14 +40,18 @@
     "test": "bun run --cwd packages/shared test && bun run --cwd packages/core test && bun run --cwd packages/agent test && bun run --cwd packages/server test && bun run --cwd packages/client test"
   },
   "devDependencies": {
+    "@tauri-apps/api": "^2.10.1",
     "@tauri-apps/cli": "^2.10.0",
-    "concurrently": "^9.2.1"
+    "@tauri-apps/plugin-shell": "^2.3.5",
+    "concurrently": "^9.2.1",
+    "neverthrow": "^8.2.0"
   },
   "dependencies": {
-    "@tauri-apps/api": "^2.10.1",
-    "@tauri-apps/plugin-shell": "^2.3.5",
-    "neverthrow": "^8.2.0",
     "node-pty": "^1.1.0"
+  },
+  "optionalDependencies": {
+    "playwright": "^1.50.0",
+    "@openai/codex-sdk": "^0.101.0"
   },
   "resolutions": {
     "esbuild": ">=0.24.3"

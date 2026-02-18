@@ -23,7 +23,7 @@ funny is a web UI for orchestrating multiple [Claude Code](https://claude.ai/cod
 No installation needed! Run directly with:
 
 ```bash
-bunx funny
+bunx @ironmussa/funny
 ```
 
 The app will start and open at `http://localhost:3001`
@@ -31,14 +31,14 @@ The app will start and open at `http://localhost:3001`
 ### Global Installation
 
 ```bash
-bun install -g funny
+bun install -g @ironmussa/funny
 funny
 ```
 
 ### From Source
 
 ```bash
-git clone https://github.com/anthropics/funny.git
+git clone https://github.com/ironmussa/funny.git
 cd funny
 bun install
 bun run build
@@ -202,7 +202,7 @@ MIT
 
 ## Support
 
-- [GitHub Issues](https://github.com/anthropics/funny/issues)
+- [GitHub Issues](https://github.com/ironmussa/funny/issues)
 - [Claude Code Documentation](https://claude.ai/code)
 
 ## Contributing

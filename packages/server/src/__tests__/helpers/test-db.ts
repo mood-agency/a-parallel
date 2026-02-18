@@ -47,6 +47,8 @@ export function createTestDb() {
       stage TEXT NOT NULL DEFAULT 'backlog',
       initial_prompt TEXT,
       external_request_id TEXT,
+      init_tools TEXT,
+      init_cwd TEXT,
       created_at TEXT NOT NULL,
       completed_at TEXT
     )

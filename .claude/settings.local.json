@@ -17,7 +17,11 @@
       "mcp__chrome-devtools__performance_start_trace"
     ]
   },
+  "enabledMcpjsonServers": [
+    "chrome-devtools"
+  ],
   "disabledMcpjsonServers": [
     "supabase"
-  ]
+  ],
+  "enableAllProjectMcpServers": true
 }
