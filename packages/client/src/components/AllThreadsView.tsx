@@ -106,7 +106,9 @@ export function AllThreadsView() {
   });
 
   // View mode from URL query param ?view=list|board, fallback to localStorage
+  // Activity mode always forces list view
   const [viewMode, setViewMode] = useState<'list' | 'board'>(() => {
+    if (activityMode) return 'list';
     const param = searchParams.get('view');
     if (param === 'list' || param === 'board') return param;
     const saved = localStorage.getItem('threadViewMode');
