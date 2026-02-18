@@ -170,7 +170,7 @@ function SearchablePicker({
                 onFocus={() => setHighlightIndex(i)}
                 onMouseEnter={() => { setHighlightIndex(i); itemRefs.current[i]?.focus(); }}
                 className={cn(
-                  'w-full flex items-center gap-2 rounded px-2 py-1.5 text-left text-sm transition-colors outline-none',
+                  'w-full flex items-center gap-2 rounded px-2 py-1.5 text-left text-xs transition-colors outline-none',
                   i === highlightIndex
                     ? 'bg-accent text-foreground'
                     : item.isSelected
