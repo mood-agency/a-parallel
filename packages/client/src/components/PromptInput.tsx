@@ -245,7 +245,7 @@ function WorktreePicker({
   const currentWorktree = worktrees.find(
     (wt) => wt.path.replace(/\\/g, '/').toLowerCase() === normalizedCurrent
   );
-  const displayLabel = currentWorktree?.branch ?? threadBranch ?? currentPath.split(/[/\\]/).filter(Boolean).pop() ?? '...';
+  const displayLabel = currentWorktree?.branch ?? threadBranch ?? '...';
 
   const items: SearchablePickerItem[] = worktrees.map((wt) => ({
     key: wt.path,
