@@ -1,7 +1,8 @@
 import { memo, useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
-import { useAppStore } from '@/stores/app-store';
+import { useThreadStore } from '@/stores/thread-store';
+import { useProjectStore } from '@/stores/project-store';
 import { useUIStore } from '@/stores/ui-store';
 import { useTerminalStore } from '@/stores/terminal-store';
 import { useGitStatusStore } from '@/stores/git-status-store';
@@ -65,7 +66,7 @@ function threadToMarkdown(messages: MessageWithToolCalls[], includeToolCalls: bo
 
 function CopyThreadButton({ includeToolCalls }: { includeToolCalls: boolean }) {
   const { t } = useTranslation();
-  const activeThread = useAppStore(s => s.activeThread);
+  const activeThread = useThreadStore(s => s.activeThread);
   const [copied, setCopied] = useState(false);
 
   const handleCopy = useCallback(() => {
@@ -209,12 +210,12 @@ function StartupCommandsPopover({ projectId }: { projectId: string }) {
 export const ProjectHeader = memo(function ProjectHeader() {
   const { t } = useTranslation();
   const navigate = useNavigate();
-  const activeThread = useAppStore(s => s.activeThread);
-  const selectedProjectId = useAppStore(s => s.selectedProjectId);
-  const projects = useAppStore(s => s.projects);
-  const setReviewPaneOpen = useAppStore(s => s.setReviewPaneOpen);
-  const reviewPaneOpen = useAppStore(s => s.reviewPaneOpen);
-  const pinThread = useAppStore(s => s.pinThread);
+  const activeThread = useThreadStore(s => s.activeThread);
+  const selectedProjectId = useProjectStore(s => s.selectedProjectId);
+  const projects = useProjectStore(s => s.projects);
+  const setReviewPaneOpen = useUIStore(s => s.setReviewPaneOpen);
+  const reviewPaneOpen = useUIStore(s => s.reviewPaneOpen);
+  const pinThread = useThreadStore(s => s.pinThread);
   const kanbanContext = useUIStore(s => s.kanbanContext);
   const setKanbanContext = useUIStore(s => s.setKanbanContext);
   const { openPreview, isTauri } = usePreviewWindow();

@@ -4,6 +4,7 @@ import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { motion, AnimatePresence, useReducedMotion } from 'motion/react';
 import { useAppStore } from '@/stores/app-store';
+import { useUIStore } from '@/stores/ui-store';
 import { cn } from '@/lib/utils';
 import { Input } from '@/components/ui/input';
 import { Loader2, Clock, Copy, Check, Send, CheckCircle2, XCircle, ArrowDown, ShieldQuestion, FileText, ChevronRight } from 'lucide-react';
@@ -419,12 +420,12 @@ function buildGroupedRenderItems(messages: any[]): RenderItem[] {
 export function ThreadView() {
   const { t } = useTranslation();
   useMinuteTick(); // re-render every 60s so timeAgo stays fresh
-  const activeThread = useAppStore(s => s.activeThread);
-  const selectedThreadId = useAppStore(s => s.selectedThreadId);
-  const selectedProjectId = useAppStore(s => s.selectedProjectId);
-  const newThreadProjectId = useAppStore(s => s.newThreadProjectId);
+  const activeThread = useThreadStore(s => s.activeThread);
+  const selectedThreadId = useThreadStore(s => s.selectedThreadId);
+  const selectedProjectId = useProjectStore(s => s.selectedProjectId);
+  const newThreadProjectId = useUIStore(s => s.newThreadProjectId);
   const hasProjects = useProjectStore(s => s.projects.length > 0);
-  const loadOlderMessages = useAppStore(s => s.loadOlderMessages);
+  const loadOlderMessages = useThreadStore(s => s.loadOlderMessages);
   const hasMore = activeThread?.hasMore ?? false;
   const loadingMore = activeThread?.loadingMore ?? false;
   const [sending, setSending] = useState(false);
