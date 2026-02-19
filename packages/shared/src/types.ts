@@ -106,11 +106,12 @@ export type ThreadStatus = 'idle' | 'pending' | 'running' | 'waiting' | 'complet
 export type ThreadStage = 'backlog' | 'in_progress' | 'review' | 'done' | 'archived';
 export type WaitingReason = 'question' | 'plan' | 'permission';
 
-export type AgentProvider = 'claude' | 'codex' | 'external';
+export type AgentProvider = 'claude' | 'codex' | 'gemini' | 'external';
 
 export type ClaudeModel = 'sonnet' | 'opus' | 'haiku';
 export type CodexModel = 'o3' | 'o4-mini' | 'codex-mini';
-export type AgentModel = ClaudeModel | CodexModel;
+export type GeminiModel = 'gemini-2.5-flash' | 'gemini-2.5-pro' | 'gemini-3-flash' | 'gemini-3.1-pro';
+export type AgentModel = ClaudeModel | CodexModel | GeminiModel;
 export type PermissionMode = 'plan' | 'autoEdit' | 'confirmEdit';
 
 export interface Thread {

@@ -23,6 +23,7 @@
     "zod": "^4.3.6"
   },
   "optionalDependencies": {
+    "@agentclientprotocol/sdk": "^0.14.1",
     "@openai/codex-sdk": "^0.101.0"
   },
   "devDependencies": {

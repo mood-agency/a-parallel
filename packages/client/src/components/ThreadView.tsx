@@ -2,7 +2,7 @@ import { useState, useRef, useEffect, useLayoutEffect, useCallback, useMemo, mem
 import { useTranslation } from 'react-i18next';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
-import { motion, AnimatePresence } from 'motion/react';
+import { motion, AnimatePresence, useReducedMotion } from 'motion/react';
 import { useAppStore } from '@/stores/app-store';
 import { cn } from '@/lib/utils';
 import { Input } from '@/components/ui/input';
@@ -13,6 +13,7 @@ import { useMinuteTick } from '@/hooks/use-minute-tick';
 import { api } from '@/lib/api';
 import { useSettingsStore, deriveToolLists } from '@/stores/settings-store';
 import { useThreadStore } from '@/stores/thread-store';
+import { selectLastMessage, selectFirstMessage } from '@/stores/thread-selectors';
 import { useProjectStore } from '@/stores/project-store';
 import { PromptInput } from './PromptInput';
 import { ToolCallCard } from './ToolCallCard';
@@ -511,7 +512,7 @@ export function ThreadView() {
     setLightboxOpen(true);
   }, []);
 
-  const lastMessage = activeThread?.messages?.[activeThread.messages.length - 1];
+  const lastMessage = selectLastMessage(activeThread);
   const scrollFingerprint = [
     activeThread?.messages?.length,
     lastMessage?.content?.length,
@@ -616,7 +617,7 @@ export function ThreadView() {
 
   // Preserve scroll position when older messages are prepended
   useLayoutEffect(() => {
-    const oldestId = activeThread?.messages?.[0]?.id ?? null;
+    const oldestId = selectFirstMessage(activeThread)?.id ?? null;
     const viewport = scrollViewportRef.current;
 
     if (
@@ -633,7 +634,7 @@ export function ThreadView() {
     if (viewport) {
       prevScrollHeightRef.current = viewport.scrollHeight;
     }
-  }, [activeThread?.messages?.[0]?.id]);
+  }, [selectFirstMessage(activeThread)?.id]);
 
   const scrollToBottom = useCallback(() => {
     const viewport = scrollViewportRef.current;
@@ -689,7 +690,7 @@ export function ThreadView() {
     );
   }
 
-  const handleSend = async (prompt: string, opts: { model: string; mode: string; fileReferences?: { path: string }[] }, images?: any[]) => {
+  const handleSend = async (prompt: string, opts: { provider?: string; model: string; mode: string; fileReferences?: { path: string }[] }, images?: any[]) => {
     if (sending) return;
     setSending(true);
 
@@ -702,7 +703,7 @@ export function ThreadView() {
     );
 
     const { allowedTools, disallowedTools } = deriveToolLists(useSettingsStore.getState().toolPermissions);
-    const result = await api.sendMessage(activeThread.id, prompt, { model: opts.model || undefined, permissionMode: opts.mode || undefined, allowedTools, disallowedTools, fileReferences: opts.fileReferences }, images);
+    const result = await api.sendMessage(activeThread.id, prompt, { provider: opts.provider || undefined, model: opts.model || undefined, permissionMode: opts.mode || undefined, allowedTools, disallowedTools, fileReferences: opts.fileReferences }, images);
     if (result.isErr()) {
       console.error('Send failed:', result.error);
     }
@@ -728,6 +729,7 @@ export function ThreadView() {
     }
   };
 
+  const prefersReducedMotion = useReducedMotion();
   const isRunning = activeThread.status === 'running';
   const isExternal = activeThread.provider === 'external';
   const isIdle = activeThread.status === 'idle';
@@ -795,7 +797,7 @@ export function ThreadView() {
             <div className="flex items-center justify-center py-3">
               <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
               <span className="ml-2 text-xs text-muted-foreground">
-                {t('thread.loadingOlder', 'Loading older messages...')}
+                {t('thread.loadingOlder', 'Loading older messages\u2026')}
               </span>
             </div>
           )}
@@ -817,7 +819,7 @@ export function ThreadView() {
                   return (
                     <motion.div
                       key={tc.id}
-                      initial={knownIdsRef.current.has(tc.id) ? false : { opacity: 0, y: 6 }}
+                      initial={knownIdsRef.current.has(tc.id) || prefersReducedMotion ? false : { opacity: 0, y: 6 }}
                       animate={{ opacity: 1, y: 0 }}
                       transition={{ duration: 0.25, ease: 'easeOut' }}
                       className={(tc.name === 'AskUserQuestion' || tc.name === 'ExitPlanMode' || tc.name === 'TodoWrite') ? 'border border-border rounded-lg' : undefined}
@@ -839,7 +841,7 @@ export function ThreadView() {
                   return (
                     <motion.div
                       key={ti.calls[0].id}
-                      initial={knownIdsRef.current.has(ti.calls[0].id) ? false : { opacity: 0, y: 6 }}
+                      initial={knownIdsRef.current.has(ti.calls[0].id) || prefersReducedMotion ? false : { opacity: 0, y: 6 }}
                       animate={{ opacity: 1, y: 0 }}
                       transition={{ duration: 0.25, ease: 'easeOut' }}
                       className={(ti.name === 'AskUserQuestion' || ti.name === 'ExitPlanMode' || ti.name === 'TodoWrite') ? 'border border-border rounded-lg' : undefined}
@@ -863,7 +865,7 @@ export function ThreadView() {
                 return (
                   <motion.div
                     key={msg.id}
-                    initial={knownIdsRef.current.has(msg.id) ? false : { opacity: 0, y: 8 }}
+                    initial={knownIdsRef.current.has(msg.id) || prefersReducedMotion ? false : { opacity: 0, y: 8 }}
                     animate={{ opacity: 1, y: 0 }}
                     transition={{ duration: 0.3, ease: 'easeOut' }}
                     className={cn(
@@ -886,6 +888,8 @@ export function ThreadView() {
                               key={idx}
                               src={`data:${img.source.media_type};base64,${img.source.data}`}
                               alt={`Attachment ${idx + 1}`}
+                              width={160}
+                              height={160}
                               className="max-h-40 rounded border border-border cursor-pointer hover:opacity-80 transition-opacity"
                               onClick={() => openLightbox(allImages, idx)}
                             />
@@ -965,7 +969,7 @@ export function ThreadView() {
 
           {isRunning && !isExternal && (
             <motion.div
-              initial={{ opacity: 0, y: 8 }}
+              initial={prefersReducedMotion ? false : { opacity: 0, y: 8 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ duration: 0.3, ease: 'easeOut' }}
               className="flex items-center gap-2.5 text-muted-foreground text-sm py-1"
@@ -977,7 +981,7 @@ export function ThreadView() {
 
           {isRunning && isExternal && (
             <motion.div
-              initial={{ opacity: 0, y: 8 }}
+              initial={prefersReducedMotion ? false : { opacity: 0, y: 8 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ duration: 0.3, ease: 'easeOut' }}
               className="flex items-center gap-2.5 text-muted-foreground text-sm py-1"
@@ -987,13 +991,13 @@ export function ThreadView() {
                 <span className="inline-block w-1.5 h-1.5 rounded-full bg-muted-foreground/60 animate-[thinking_1.4s_ease-in-out_0.2s_infinite]" />
                 <span className="inline-block w-1.5 h-1.5 rounded-full bg-muted-foreground/60 animate-[thinking_1.4s_ease-in-out_0.4s_infinite]" />
               </div>
-              <span className="text-xs">{t('thread.runningExternally', 'Running externally...')}</span>
+              <span className="text-xs">{t('thread.runningExternally', 'Running externally\u2026')}</span>
             </motion.div>
           )}
 
           {activeThread.status === 'waiting' && activeThread.waitingReason === 'question' && (
             <motion.div
-              initial={{ opacity: 0, y: 6 }}
+              initial={prefersReducedMotion ? false : { opacity: 0, y: 6 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ duration: 0.25, ease: 'easeOut' }}
               className="flex items-center gap-2 text-status-warning/80 text-xs"
@@ -1005,7 +1009,7 @@ export function ThreadView() {
 
           {activeThread.status === 'waiting' && activeThread.waitingReason === 'permission' && activeThread.pendingPermission && (
             <motion.div
-              initial={{ opacity: 0, y: 6 }}
+              initial={prefersReducedMotion ? false : { opacity: 0, y: 6 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ duration: 0.25, ease: 'easeOut' }}
             >
@@ -1019,7 +1023,7 @@ export function ThreadView() {
 
           {activeThread.status === 'waiting' && !activeThread.waitingReason && (
             <motion.div
-              initial={{ opacity: 0, y: 6 }}
+              initial={prefersReducedMotion ? false : { opacity: 0, y: 6 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ duration: 0.25, ease: 'easeOut' }}
             >
@@ -1031,7 +1035,7 @@ export function ThreadView() {
 
           {activeThread.resultInfo && !isRunning && activeThread.status !== 'stopped' && activeThread.status !== 'interrupted' && (
             <motion.div
-              initial={{ opacity: 0, y: 6 }}
+              initial={prefersReducedMotion ? false : { opacity: 0, y: 6 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ duration: 0.3, ease: 'easeOut' }}
             >
@@ -1045,7 +1049,7 @@ export function ThreadView() {
 
           {activeThread.status === 'interrupted' && (
             <motion.div
-              initial={{ opacity: 0, y: 6 }}
+              initial={prefersReducedMotion ? false : { opacity: 0, y: 6 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ duration: 0.3, ease: 'easeOut' }}
             >
@@ -1057,7 +1061,7 @@ export function ThreadView() {
 
           {activeThread.status === 'stopped' && (
             <motion.div
-              initial={{ opacity: 0, y: 6 }}
+              initial={prefersReducedMotion ? false : { opacity: 0, y: 6 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ duration: 0.3, ease: 'easeOut' }}
             >
@@ -1076,6 +1080,7 @@ export function ThreadView() {
         <div className="relative">
           <button
             onClick={scrollToBottom}
+            aria-label={t('thread.scrollToBottom', 'Scroll to bottom')}
             className="absolute bottom-2 left-1/2 -translate-x-1/2 z-10 flex items-center gap-1 rounded-full bg-secondary border border-border px-3 py-1.5 text-xs text-muted-foreground shadow-md hover:bg-muted transition-colors"
           >
             <ArrowDown className="h-3 w-3" />

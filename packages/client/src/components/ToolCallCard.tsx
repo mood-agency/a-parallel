@@ -64,8 +64,10 @@ export const ToolCallCard = memo(function ToolCallCard({ name, input, output, on
 
   return (
     <div className="text-sm max-w-full overflow-hidden">
-      <div
-        className="hover:bg-accent/30 transition-colors rounded-md cursor-pointer"
+      <button
+        type="button"
+        aria-expanded={expanded}
+        className="w-full hover:bg-accent/30 transition-colors rounded-md cursor-pointer text-left"
         onClick={() => setExpanded(!expanded)}
       >
         <div className="flex items-center gap-2 w-full px-3 py-1.5 text-left text-xs overflow-hidden">
@@ -123,7 +125,7 @@ export const ToolCallCard = memo(function ToolCallCard({ name, input, output, on
             </p>
           </div>
         )}
-      </div>
+      </button>
       {expanded && (
         <div className="px-3 pb-2 pt-0 border-t border-border/40 overflow-hidden">
           {isTodo && todos ? (

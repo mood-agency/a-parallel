@@ -3,7 +3,7 @@
  * Maps friendly model names to full model IDs and provides helpers.
  */
 
-import type { AgentProvider, AgentModel, ClaudeModel, CodexModel, PermissionMode } from './types.js';
+import type { AgentProvider, AgentModel, ClaudeModel, CodexModel, GeminiModel, PermissionMode } from './types.js';
 
 // ── Model ID mappings ─────────────────────────────────────────
 
@@ -17,6 +17,13 @@ const CODEX_MODEL_IDS: Record<CodexModel, string> = {
   'o3': 'o3',
   'o4-mini': 'o4-mini',
   'codex-mini': 'codex-mini',
+};
+
+const GEMINI_MODEL_IDS: Record<GeminiModel, string> = {
+  'gemini-2.5-flash': 'gemini-2.5-flash',
+  'gemini-2.5-pro': 'gemini-2.5-pro',
+  'gemini-3-flash': 'gemini-3-flash',
+  'gemini-3.1-pro': 'gemini-3.1-pro',
 };
 
 // ── Permission mode mapping (Claude SDK specific) ─────────────
@@ -36,6 +43,9 @@ const CLAUDE_DEFAULT_TOOLS = [
 
 const CODEX_DEFAULT_TOOLS: string[] = [];
 
+// Gemini manages its own tools via ACP — no default tool list needed
+const GEMINI_DEFAULT_TOOLS: string[] = [];
+
 // ── Public API ────────────────────────────────────────────────
 
 /** Resolve a friendly model name to the full model ID for the given provider. */
@@ -50,6 +60,11 @@ export function resolveModelId(provider: AgentProvider, model: AgentModel): stri
     if (!id) throw new Error(`Unknown Codex model: ${model}`);
     return id;
   }
+  if (provider === 'gemini') {
+    const id = GEMINI_MODEL_IDS[model as GeminiModel];
+    if (!id) throw new Error(`Unknown Gemini model: ${model}`);
+    return id;
+  }
   throw new Error(`Unknown provider: ${provider}`);
 }
 
@@ -57,6 +72,7 @@ export function resolveModelId(provider: AgentProvider, model: AgentModel): stri
 export function getDefaultModel(provider: AgentProvider): AgentModel {
   if (provider === 'claude') return 'sonnet';
   if (provider === 'codex') return 'o4-mini';
+  if (provider === 'gemini') return 'gemini-3-flash';
   throw new Error(`Unknown provider: ${provider}`);
 }
 
@@ -64,23 +80,39 @@ export function getDefaultModel(provider: AgentProvider): AgentModel {
 export function getProviderModels(provider: AgentProvider): AgentModel[] {
   if (provider === 'claude') return Object.keys(CLAUDE_MODEL_IDS) as ClaudeModel[];
   if (provider === 'codex') return Object.keys(CODEX_MODEL_IDS) as CodexModel[];
+  if (provider === 'gemini') return Object.keys(GEMINI_MODEL_IDS) as GeminiModel[];
   throw new Error(`Unknown provider: ${provider}`);
 }
 
 /**
  * Resolve permission mode to the provider-specific SDK value.
- * Returns undefined for providers that don't support permission modes (e.g. Codex).
+ * Returns undefined for providers that don't support permission modes.
  */
 export function resolvePermissionMode(provider: AgentProvider, mode: PermissionMode): string | undefined {
   if (provider === 'claude') return CLAUDE_PERMISSION_MAP[mode];
-  // Codex doesn't have permission modes — it always runs fully autonomous
+  // Codex and Gemini don't have permission modes — they run autonomously
   return undefined;
+}
+
+/**
+ * Resolve permission mode for a session resume.
+ * Claude's 'plan' mode must be downgraded to 'acceptEdits' on resume because
+ * the plan was already approved in the original session. Other providers
+ * don't have permission modes so this is a no-op.
+ */
+export function resolveResumePermissionMode(
+  provider: AgentProvider,
+  resolvedMode: string | undefined,
+): string | undefined {
+  if (provider === 'claude' && resolvedMode === 'plan') return 'acceptEdits';
+  return resolvedMode;
 }
 
 /** Get default allowed tools for a provider. */
 export function getDefaultAllowedTools(provider: AgentProvider): string[] {
   if (provider === 'claude') return [...CLAUDE_DEFAULT_TOOLS];
   if (provider === 'codex') return [...CODEX_DEFAULT_TOOLS];
+  if (provider === 'gemini') return [...GEMINI_DEFAULT_TOOLS];
   return [];
 }
 
@@ -88,5 +120,6 @@ export function getDefaultAllowedTools(provider: AgentProvider): string[] {
 export function isModelForProvider(provider: AgentProvider, model: AgentModel): boolean {
   if (provider === 'claude') return model in CLAUDE_MODEL_IDS;
   if (provider === 'codex') return model in CODEX_MODEL_IDS;
+  if (provider === 'gemini') return model in GEMINI_MODEL_IDS;
   return false;
 }

@@ -10,7 +10,7 @@ import { EventEmitter } from 'events';
 import type { AgentProvider, AgentModel, PermissionMode } from '@funny/shared';
 import type { CLIMessage } from './types.js';
 import type { IAgentProcess, IAgentProcessFactory } from './interfaces.js';
-import { resolveModelId, resolvePermissionMode, getDefaultAllowedTools } from '@funny/shared/models';
+import { resolveModelId, resolvePermissionMode, resolveResumePermissionMode, getDefaultAllowedTools } from '@funny/shared/models';
 
 // ── Types ─────────────────────────────────────────────────────────
 
@@ -99,9 +99,9 @@ export class AgentOrchestrator extends EventEmitter {
     const resolvedModel = resolveModelId(provider, model);
     const cliPermissionMode = resolvePermissionMode(provider, permissionMode);
 
-    // When resuming Claude, override 'plan' permission mode to 'acceptEdits'
-    const effectivePermissionMode = (isResume && cliPermissionMode === 'plan')
-      ? 'acceptEdits'
+    // Provider-specific resume override (e.g., Claude's plan → acceptEdits)
+    const effectivePermissionMode = isResume
+      ? resolveResumePermissionMode(provider, cliPermissionMode)
       : cliPermissionMode;
 
     // Spawn agent process

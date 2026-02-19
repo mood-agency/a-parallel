@@ -1,7 +1,11 @@
 /**
  * Backward-compatible facade that combines project-store, thread-store, and ui-store.
  * Components should gradually migrate to importing from the individual stores directly.
+ *
+ * Optimized: Uses useSyncExternalStore to subscribe to all three stores but only
+ * triggers re-renders when the selector result changes (shallow equality check).
  */
+import { useSyncExternalStore, useRef, useCallback } from 'react';
 import { useProjectStore } from './project-store';
 import { useThreadStore } from './thread-store';
 import { useUIStore } from './ui-store';
@@ -14,24 +18,47 @@ type CombinedState = ReturnType<typeof useProjectStore.getState> &
   ReturnType<typeof useThreadStore.getState> &
   ReturnType<typeof useUIStore.getState>;
 
+function getCombinedState(): CombinedState {
+  return {
+    ...useProjectStore.getState(),
+    ...useThreadStore.getState(),
+    ...useUIStore.getState(),
+  } as CombinedState;
+}
+
+/** Subscribe to all three stores, calling `onStoreChange` when any one changes. */
+function subscribeToCombined(onStoreChange: () => void): () => void {
+  const unsub1 = useProjectStore.subscribe(onStoreChange);
+  const unsub2 = useThreadStore.subscribe(onStoreChange);
+  const unsub3 = useUIStore.subscribe(onStoreChange);
+  return () => { unsub1(); unsub2(); unsub3(); };
+}
+
 /**
- * Combined hook that merges all three stores.
- * NOTE: This subscribes to all three stores, so any change triggers re-render.
- * Migrate to useProjectStore/useThreadStore/useUIStore for better performance.
+ * Combined hook that selects from all three stores.
+ * Uses useSyncExternalStore for proper React 18+ concurrent-mode support.
+ * Only re-renders when the selected value changes (referential equality).
  */
 export function useAppStore<T>(selector: (state: CombinedState) => T): T {
-  const p = useProjectStore();
-  const t = useThreadStore();
-  const u = useUIStore();
-  return selector({ ...p, ...t, ...u } as CombinedState);
+  // Memoize selector result to prevent unnecessary re-renders
+  const prevRef = useRef<{ value: T } | null>(null);
+  const selectorRef = useRef(selector);
+  selectorRef.current = selector;
+
+  const getSnapshot = useCallback(() => {
+    const next = selectorRef.current(getCombinedState());
+    if (prevRef.current !== null && Object.is(prevRef.current.value, next)) {
+      return prevRef.current.value;
+    }
+    prevRef.current = { value: next };
+    return next;
+  }, []);
+
+  return useSyncExternalStore(subscribeToCombined, getSnapshot, getSnapshot);
 }
 
 // Imperative getState() for use-ws.ts and use-route-sync.ts
-useAppStore.getState = (): CombinedState => ({
-  ...useProjectStore.getState(),
-  ...useThreadStore.getState(),
-  ...useUIStore.getState(),
-} as CombinedState);
+useAppStore.getState = getCombinedState;
 
 // setState support for tests
 useAppStore.setState = (partial: Partial<CombinedState>) => {

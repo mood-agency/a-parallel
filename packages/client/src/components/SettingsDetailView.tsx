@@ -1,6 +1,6 @@
 import { useAppStore } from '@/stores/app-store';
 import { useProjectStore } from '@/stores/project-store';
-import { useSettingsStore, ALL_STANDARD_TOOLS, TOOL_LABELS, type ThreadMode, type ClaudeModel, type PermissionMode } from '@/stores/settings-store';
+import { useSettingsStore, ALL_STANDARD_TOOLS, TOOL_LABELS, type ThreadMode, type PermissionMode } from '@/stores/settings-store';
 import type { ToolPermission } from '@funny/shared';
 import { settingsItems, settingsLabelKeys, type SettingsItemId } from './SettingsPanel';
 import { cn } from '@/lib/utils';
@@ -15,6 +15,7 @@ import {
 } from '@/components/ui/breadcrumb';
 import { Monitor, GitBranch, RotateCcw } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
+import { getAllModelOptions } from '@/lib/providers';
 import { McpServerSettings } from './McpServerSettings';
 import { SkillsSettings } from './SkillsSettings';
 import { WorktreeSettings } from './WorktreeSettings';
@@ -61,6 +62,7 @@ function SegmentedControl<T extends string>({
         <button
           key={opt.value}
           onClick={() => onChange(opt.value)}
+          aria-pressed={value === opt.value}
           className={cn(
             'flex items-center gap-1.5 px-2.5 py-1 text-xs rounded-sm transition-colors',
             value === opt.value
@@ -108,7 +110,8 @@ function ProjectColorPicker({ projectId, currentColor }: { projectId: string; cu
               ? 'border-primary shadow-sm'
               : 'border-border hover:border-muted-foreground'
           )}
-          title="No color"
+          aria-label="No color"
+          aria-pressed={!currentColor}
         >
           <div className="h-4 w-4 rounded-sm bg-gradient-to-br from-muted-foreground/20 to-muted-foreground/40" />
         </button>
@@ -123,7 +126,8 @@ function ProjectColorPicker({ projectId, currentColor }: { projectId: string; cu
                 : 'border-transparent hover:border-muted-foreground'
             )}
             style={{ backgroundColor: color }}
-            title={color}
+            aria-label={`Color ${color}`}
+            aria-pressed={currentColor === color}
           />
         ))}
       </div>
@@ -134,6 +138,7 @@ function ProjectColorPicker({ projectId, currentColor }: { projectId: string; cu
             type="color"
             value={currentColor || '#7CB9E8'}
             onChange={(e) => updateProject(projectId, { color: e.target.value })}
+            aria-label="Custom color picker"
             className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
           />
           <div
@@ -207,14 +212,10 @@ function GeneralSettings() {
           title={t('settings.defaultModel')}
           description={t('settings.defaultModelDesc')}
         >
-          <SegmentedControl<ClaudeModel>
+          <SegmentedControl<string>
             value={defaultModel}
-            onChange={setDefaultModel}
-            options={[
-              { value: 'haiku', label: t('thread.model.haiku') },
-              { value: 'sonnet', label: t('thread.model.sonnet') },
-              { value: 'opus', label: t('thread.model.opus') },
-            ]}
+            onChange={(v) => setDefaultModel(v as any)}
+            options={getAllModelOptions(t)}
           />
         </SettingRow>
         <SettingRow

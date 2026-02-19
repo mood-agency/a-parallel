@@ -17,6 +17,7 @@ import {
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { cn } from '@/lib/utils';
 import { api } from '@/lib/api';
+import { PROVIDERS, getModelOptions } from '@/lib/providers';
 import { useAppStore } from '@/stores/app-store';
 import { useSettingsStore } from '@/stores/settings-store';
 import { useDraftStore } from '@/stores/draft-store';
@@ -147,6 +148,8 @@ function SearchablePicker({
             onChange={(e) => setSearch(e.target.value)}
             onKeyDown={handleSearchKeyDown}
             placeholder={searchPlaceholder}
+            aria-label={label}
+            autoComplete="off"
             className="w-full bg-transparent text-sm placeholder:text-muted-foreground focus:outline-none"
           />
         </div>
@@ -245,7 +248,7 @@ function WorktreePicker({
   const currentWorktree = worktrees.find(
     (wt) => wt.path.replace(/\\/g, '/').toLowerCase() === normalizedCurrent
   );
-  const displayLabel = currentWorktree?.branch ?? threadBranch ?? '...';
+  const displayLabel = currentWorktree?.branch ?? threadBranch ?? '\u2026';
 
   const items: SearchablePickerItem[] = worktrees.map((wt) => ({
     key: wt.path,
@@ -261,10 +264,10 @@ function WorktreePicker({
         items={items}
         label={t('prompt.selectWorktree', 'Select worktree')}
         displayValue={displayLabel}
-        searchPlaceholder={t('prompt.searchWorktrees', 'Search worktrees...')}
+        searchPlaceholder={t('prompt.searchWorktrees', 'Search worktrees\u2026')}
         noMatchText={t('prompt.noWorktreesMatch', 'No worktrees match')}
         emptyText={t('prompt.noWorktrees', 'No worktrees available')}
-        loadingText={t('prompt.loadingWorktrees', 'Loading worktrees...')}
+        loadingText={t('prompt.loadingWorktrees', 'Loading worktrees\u2026')}
         loading={loading}
         onSelect={(path) => onChange(path)}
         triggerTitle={currentPath}
@@ -296,7 +299,7 @@ function BranchPicker({
       items={items}
       label={t('newThread.baseBranch', 'Base branch')}
       displayValue={selected || t('newThread.selectBranch')}
-      searchPlaceholder={t('newThread.searchBranches', 'Search branches...')}
+      searchPlaceholder={t('newThread.searchBranches', 'Search branches\u2026')}
       noMatchText={t('newThread.noBranchesMatch', 'No branches match')}
       onSelect={(branch) => onChange(branch)}
       triggerClassName="flex items-center gap-1 px-2 py-1 text-xs text-muted-foreground hover:text-foreground transition-colors rounded hover:bg-muted truncate max-w-[200px]"
@@ -306,7 +309,7 @@ function BranchPicker({
 }
 
 interface PromptInputProps {
-  onSubmit: (prompt: string, opts: { model: string; mode: string; threadMode?: string; baseBranch?: string; cwd?: string; sendToBacklog?: boolean; fileReferences?: { path: string }[] }, images?: ImageAttachment[]) => Promise<boolean | void> | boolean | void;
+  onSubmit: (prompt: string, opts: { provider?: string; model: string; mode: string; threadMode?: string; baseBranch?: string; cwd?: string; sendToBacklog?: boolean; fileReferences?: { path: string }[] }, images?: ImageAttachment[]) => Promise<boolean | void> | boolean | void;
   onStop?: () => void;
   loading?: boolean;
   running?: boolean;
@@ -331,11 +334,18 @@ export function PromptInput({
 }: PromptInputProps) {
   const { t } = useTranslation();
 
-  const models = useMemo(() => [
-    { value: 'haiku', label: t('thread.model.haiku') },
-    { value: 'sonnet', label: t('thread.model.sonnet') },
-    { value: 'opus', label: t('thread.model.opus') },
-  ], [t]);
+  const defaultThreadMode = useSettingsStore(s => s.defaultThreadMode);
+  const defaultProvider = useSettingsStore(s => s.defaultProvider);
+  const defaultModel = useSettingsStore(s => s.defaultModel);
+  const defaultPermissionMode = useSettingsStore(s => s.defaultPermissionMode);
+
+  const [prompt, setPrompt] = useState(initialPromptProp ?? '');
+  const [provider, setProvider] = useState<string>(defaultProvider);
+  const [model, setModel] = useState<string>(defaultModel);
+  const [mode, setMode] = useState<string>(defaultPermissionMode);
+  const [threadMode, setThreadMode] = useState<string>(defaultThreadMode);
+
+  const models = useMemo(() => getModelOptions(provider, t), [provider, t]);
 
   const modes = useMemo(() => [
     { value: 'plan', label: t('prompt.plan') },
@@ -343,14 +353,12 @@ export function PromptInput({
     { value: 'confirmEdit', label: t('prompt.askBeforeEdits') },
   ], [t]);
 
-  const defaultThreadMode = useSettingsStore(s => s.defaultThreadMode);
-  const defaultModel = useSettingsStore(s => s.defaultModel);
-  const defaultPermissionMode = useSettingsStore(s => s.defaultPermissionMode);
-
-  const [prompt, setPrompt] = useState(initialPromptProp ?? '');
-  const [model, setModel] = useState<string>(defaultModel);
-  const [mode, setMode] = useState<string>(defaultPermissionMode);
-  const [threadMode, setThreadMode] = useState<string>(defaultThreadMode);
+  // When provider changes, reset model to first available for that provider
+  useEffect(() => {
+    if (!models.some(m => m.value === model)) {
+      setModel(models[0].value);
+    }
+  }, [provider]);
 
   // Sync mode with active thread's permission mode
   const activeThread = useAppStore(s => s.activeThread);
@@ -669,6 +677,7 @@ export function PromptInput({
     const result = await onSubmit(
       submittedPrompt,
       {
+        provider,
         model,
         mode,
         ...(isNewThread ? { threadMode, baseBranch: threadMode === 'worktree' ? selectedBranch : undefined, sendToBacklog } : {}),
@@ -874,11 +883,14 @@ export function PromptInput({
                 <img
                   src={`data:${img.source.media_type};base64,${img.source.data}`}
                   alt={`Attachment ${idx + 1}`}
+                  width={80}
+                  height={80}
                   className="h-20 w-20 object-cover rounded border border-input cursor-pointer hover:opacity-80 transition-opacity"
                   onClick={() => { setLightboxIndex(idx); setLightboxOpen(true); }}
                 />
                 <button
                   onClick={() => removeImage(idx)}
+                  aria-label={t('prompt.removeImage', 'Remove image')}
                   className="absolute -top-1 -right-1 bg-destructive text-destructive-foreground rounded-full p-0.5 opacity-0 group-hover:opacity-100 transition-opacity"
                   disabled={loading}
                 >
@@ -920,7 +932,7 @@ export function PromptInput({
             >
               {mentionLoading && mentionFiles.length === 0 ? (
                 <div className="px-3 py-2 text-xs text-muted-foreground">
-                  {t('prompt.loadingFiles', 'Loading files...')}
+                  {t('prompt.loadingFiles', 'Loading files\u2026')}
                 </div>
               ) : mentionFiles.length === 0 ? (
                 <div className="px-3 py-2 text-xs text-muted-foreground">
@@ -948,7 +960,7 @@ export function PromptInput({
                   ))}
                   {mentionTruncated && (
                     <div className="px-3 py-1.5 text-xs text-muted-foreground border-t border-border">
-                      {t('prompt.moreFilesHint', 'Type to narrow results...')}
+                      {t('prompt.moreFilesHint', 'Type to narrow results\u2026')}
                     </div>
                   )}
                 </>
@@ -993,6 +1005,7 @@ export function PromptInput({
           )}
           <textarea
             ref={textareaCallbackRef}
+            aria-label={t('prompt.messageLabel', 'Message')}
             className="w-full px-3 py-2 text-sm bg-transparent placeholder:text-muted-foreground focus:outline-none resize-none"
             style={{ minHeight: '4.5rem' }}
             placeholder={running ? t('thread.agentWorkingQueue') : defaultPlaceholder}
@@ -1019,6 +1032,7 @@ export function PromptInput({
                   {file.split('/').pop()}
                   <button
                     onClick={() => setSelectedFiles(prev => prev.filter(f => f !== file))}
+                    aria-label={t('prompt.removeFile', 'Remove file')}
                     className="hover:text-destructive ml-0.5"
                   >
                     <X className="h-3 w-3" />
@@ -1060,6 +1074,7 @@ export function PromptInput({
                   <div className="flex items-center gap-0.5 border border-border rounded-md overflow-hidden shrink-0">
                     <button
                       onClick={() => setThreadMode('local')}
+                      aria-pressed={threadMode === 'local'}
                       className={cn(
                         'px-2 py-1 text-xs flex items-center gap-1 transition-colors',
                         threadMode === 'local' ? 'bg-primary/10 text-primary' : 'text-muted-foreground hover:text-foreground'
@@ -1070,6 +1085,7 @@ export function PromptInput({
                     </button>
                     <button
                       onClick={() => setThreadMode('worktree')}
+                      aria-pressed={threadMode === 'worktree'}
                       className={cn(
                         'px-2 py-1 text-xs flex items-center gap-1 transition-colors',
                         threadMode === 'worktree' ? 'bg-primary/10 text-primary' : 'text-muted-foreground hover:text-foreground'
@@ -1094,6 +1110,18 @@ export function PromptInput({
                   )}
                 </>
               )}
+              <Select value={provider} onValueChange={setProvider}>
+                <SelectTrigger className="h-7 w-auto min-w-0 text-xs border-0 bg-transparent shadow-none text-muted-foreground hover:bg-accent hover:text-accent-foreground shrink-0">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {PROVIDERS.map((p) => (
+                    <SelectItem key={p.value} value={p.value}>
+                      {p.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
               <Select value={model} onValueChange={setModel}>
                 <SelectTrigger className="h-7 w-auto min-w-0 text-xs border-0 bg-transparent shadow-none text-muted-foreground hover:bg-accent hover:text-accent-foreground shrink-0">
                   <SelectValue />
@@ -1139,7 +1167,7 @@ export function PromptInput({
                   onClick={() => fileInputRef.current?.click()}
                   variant="ghost"
                   size="icon-sm"
-                  title={t('prompt.addImage')}
+                  aria-label={t('prompt.addImage')}
                   disabled={loading || running}
                   className="text-muted-foreground hover:text-foreground"
                 >
@@ -1150,7 +1178,7 @@ export function PromptInput({
                     onClick={onStop}
                     variant="destructive"
                     size="icon-sm"
-                    title={t('prompt.stopAgent')}
+                    aria-label={t('prompt.stopAgent')}
                   >
                     <Square className="h-3.5 w-3.5" />
                   </Button>
@@ -1159,6 +1187,7 @@ export function PromptInput({
                     onClick={handleSubmit}
                     disabled={(!prompt.trim() && images.length === 0) || loading}
                     size="icon-sm"
+                    aria-label={t('prompt.send', 'Send message')}
                   >
                     {loading ? (
                       <Loader2 className="h-3.5 w-3.5 animate-spin" />
