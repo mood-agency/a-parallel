@@ -38,14 +38,22 @@
     "tauri:dev": "tauri dev",
     "tauri:build": "tauri build",
     "build:sidecar": "node scripts/build-sidecar.js",
-    "test": "bun run --cwd packages/shared test && bun run --cwd packages/core test && bun run --cwd packages/agent test && bun run --cwd packages/server test && bun run --cwd packages/client test"
+    "test": "bun run --cwd packages/shared test && bun run --cwd packages/core test && bun run --cwd packages/agent test && bun run --cwd packages/server test && bun run --cwd packages/client test",
+    "prepare": "husky",
+    "security:check": "npm run security:secrets && npm run security:audit",
+    "security:secrets": "npx secretlint \"**/*\"",
+    "security:audit": "npx audit-ci --moderate",
+    "security:snyk": "npx snyk test --all-projects"
   },
   "devDependencies": {
+    "@secretlint/secretlint-rule-preset-recommend": "^11.3.1",
     "@tauri-apps/api": "^2.10.1",
     "@tauri-apps/cli": "^2.10.0",
     "@tauri-apps/plugin-shell": "^2.3.5",
     "concurrently": "^9.2.1",
-    "neverthrow": "^8.2.0"
+    "husky": "^9.1.7",
+    "neverthrow": "^8.2.0",
+    "secretlint": "^11.3.1"
   },
   "dependencies": {
     "node-pty": "^1.1.0"

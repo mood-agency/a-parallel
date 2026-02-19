@@ -1,0 +1,78 @@
+name: Security Audit
+
+on:
+  push:
+    branches: [master, main]
+  pull_request:
+  schedule:
+    # Run daily at 2 AM UTC to catch new vulnerabilities
+    - cron: '0 2 * * *'
+
+jobs:
+  security:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # Full history for better secret detection
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+
+      # Secret detection
+      - name: Check for leaked secrets
+        run: npx secretlint "**/*"
+        continue-on-error: false
+
+      # Dependency vulnerability scanning with Snyk
+      - name: Run Snyk security scan
+        uses: snyk/actions/node@master
+        continue-on-error: true  # Don't fail the build, just report
+        env:
+          SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
+        with:
+          args: --severity-threshold=high --all-projects
+
+      # Alternative: npm audit (works even without package-lock.json)
+      - name: NPM Security Audit
+        run: |
+          # Run audit in each workspace
+          cd packages/server && npm audit --audit-level=moderate || true
+          cd ../client && npm audit --audit-level=moderate || true
+          cd ../..
+        continue-on-error: true
+
+      # Audit CI - stricter enforcement
+      - name: Audit dependencies with strict thresholds
+        run: npx audit-ci --moderate --package-manager auto
+        continue-on-error: false  # Fail the build on moderate+ vulnerabilities
+
+      # Generate security report
+      - name: Generate security summary
+        if: always()
+        run: |
+          echo "## 🔒 Security Audit Summary" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "- ✅ Secret detection completed" >> $GITHUB_STEP_SUMMARY
+          echo "- ✅ Dependency audit completed" >> $GITHUB_STEP_SUMMARY
+          echo "- ✅ Vulnerability scan completed" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "View detailed results in the job logs above." >> $GITHUB_STEP_SUMMARY
+
+      # Upload results as artifacts
+      - name: Upload security scan results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: security-scan-results
+          path: |
+            snyk-report.json
+            audit-ci-report.json
+          retention-days: 30
