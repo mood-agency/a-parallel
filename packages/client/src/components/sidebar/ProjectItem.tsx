@@ -15,7 +15,7 @@ import {
   DropdownMenuItem,
   DropdownMenuSeparator,
 } from '@/components/ui/dropdown-menu';
-import { Folder, FolderOpen, FolderOpenDot, Search, Trash2, MoreHorizontal, Terminal, Settings, Pencil, Plus, BarChart3 } from 'lucide-react';
+import { Folder, FolderOpen, FolderOpenDot, Search, Trash2, MoreHorizontal, Terminal, Settings, Pencil, Plus, BarChart3, CircleDot } from 'lucide-react';
 import {
   Tooltip,
   TooltipContent,
@@ -41,6 +41,7 @@ interface ProjectItemProps {
   onPinThread: (threadId: string, pinned: boolean) => void;
   onDeleteThread: (threadId: string, title: string) => void;
   onShowAllThreads: () => void;
+  onShowIssues: () => void;
 }
 
 export function ProjectItem({
@@ -58,6 +59,7 @@ export function ProjectItem({
   onPinThread,
   onDeleteThread,
   onShowAllThreads,
+  onShowIssues,
 }: ProjectItemProps) {
   const navigate = useNavigate();
   const { t } = useTranslation();
@@ -208,6 +210,15 @@ export function ProjectItem({
                 >
                   <BarChart3 className="h-3.5 w-3.5" />
                   {t('sidebar.analytics')}
+                </DropdownMenuItem>
+                <DropdownMenuItem
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onShowIssues();
+                  }}
+                >
+                  <CircleDot className="h-3.5 w-3.5" />
+                  {t('sidebar.githubIssues')}
                 </DropdownMenuItem>
                 <DropdownMenuSeparator />
                 <DropdownMenuItem

@@ -36,6 +36,7 @@ import { AutomationInboxButton } from './sidebar/AutomationInboxButton';
 import { ThreadList } from './sidebar/ThreadList';
 import { ProjectItem } from './sidebar/ProjectItem';
 import { GeneralSettingsDialog } from './GeneralSettingsDialog';
+import { IssuesDialog } from './IssuesDialog';
 import { monitorForElements } from '@atlaskit/pragmatic-drag-and-drop/element/adapter';
 
 export function AppSidebar() {
@@ -89,6 +90,7 @@ export function AppSidebar() {
   } | null>(null);
   const [actionLoading, setActionLoading] = useState(false);
   const [generalSettingsOpen, setGeneralSettingsOpen] = useState(false);
+  const [issuesProjectId, setIssuesProjectId] = useState<string | null>(null);
   const projectsScrollRef = useRef<HTMLDivElement>(null);
 
   // Auto-scroll projects list to selected project (e.g. after Ctrl+K)
@@ -351,6 +353,7 @@ export function AppSidebar() {
                 showGlobalSearch();
                 navigate(`/search?project=${project.id}`);
               }}
+              onShowIssues={() => setIssuesProjectId(project.id)}
             />
           ))}
         </div>
@@ -388,6 +391,14 @@ export function AppSidebar() {
       </SidebarFooter>
 
       <GeneralSettingsDialog open={generalSettingsOpen} onOpenChange={setGeneralSettingsOpen} />
+
+      {issuesProjectId && (
+        <IssuesDialog
+          projectId={issuesProjectId}
+          open={!!issuesProjectId}
+          onOpenChange={(open) => { if (!open) setIssuesProjectId(null); }}
+        />
+      )}
 
       {/* Archive confirmation dialog */}
       <Dialog

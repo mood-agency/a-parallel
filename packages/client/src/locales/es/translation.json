@@ -29,7 +29,8 @@
     "searchThreads": "Buscar hilos",
     "threadsTitle": "Actividad",
     "noProjects": "No hay proyectos. Presiona + para agregar uno.",
-    "analytics": "Analíticas"
+    "analytics": "Analíticas",
+    "githubIssues": "GitHub Issues"
   },
   "thread": {
     "status": {
@@ -613,6 +614,16 @@
     "retryNow": "Reintentar Ahora",
     "reconnecting": "Reconectando...",
     "dismiss": "Cerrar"
+  },
+  "issues": {
+    "title": "GitHub Issues",
+    "open": "Abiertos",
+    "closed": "Cerrados",
+    "noIssues": "No se encontraron issues",
+    "loadMore": "Cargar más",
+    "viewOnGithub": "Ver en GitHub",
+    "notGithub": "Este proyecto no está alojado en GitHub",
+    "error": "Error al cargar issues"
   },
   "users": {
     "title": "Usuarios",
