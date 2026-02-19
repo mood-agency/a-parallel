@@ -52,7 +52,14 @@
     "model": {
       "haiku": "Haiku 4.5",
       "sonnet": "Sonnet 4.5",
-      "opus": "Opus 4.6"
+      "opus": "Opus 4.6",
+      "o3": "o3",
+      "o4mini": "o4-mini",
+      "codexMini": "Codex Mini",
+      "gemini3flash": "Gemini 3 Flash",
+      "gemini31pro": "Gemini 3.1 Pro",
+      "gemini25flash": "Gemini 2.5 Flash",
+      "gemini25pro": "Gemini 2.5 Pro"
     },
     "send": "Enviar",
     "stop": "Detener",

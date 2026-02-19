@@ -32,7 +32,7 @@ export function NewThreadDialog() {
   const defaultThreadMode = useSettingsStore(s => s.defaultThreadMode);
   const defaultModel = useSettingsStore(s => s.defaultModel);
   const [mode, setMode] = useState<'local' | 'worktree'>(defaultThreadMode);
-  const [model, setModel] = useState<'sonnet' | 'opus' | 'haiku'>(defaultModel);
+  const [model, setModel] = useState<string>(defaultModel);
   const [branches, setBranches] = useState<string[]>([]);
   const [selectedBranch, setSelectedBranch] = useState('');
   const [prompt, setPrompt] = useState('');
@@ -97,6 +97,7 @@ export function NewThreadDialog() {
         <div className="flex gap-2">
           <button
             onClick={() => setMode('local')}
+            aria-pressed={mode === 'local'}
             className={cn(
               'flex-1 flex items-center justify-center gap-2 rounded-md border px-3 py-2 text-sm transition-colors',
               mode === 'local'
@@ -109,6 +110,7 @@ export function NewThreadDialog() {
           </button>
           <button
             onClick={() => setMode('worktree')}
+            aria-pressed={mode === 'worktree'}
             className={cn(
               'flex-1 flex items-center justify-center gap-2 rounded-md border px-3 py-2 text-sm transition-colors',
               mode === 'worktree'
@@ -135,6 +137,7 @@ export function NewThreadDialog() {
               <button
                 key={key}
                 onClick={() => setModel(key)}
+                aria-pressed={model === key}
                 className={cn(
                   'flex-1 flex items-center justify-center gap-2 rounded-md border px-3 py-2 text-sm transition-colors',
                   model === key
@@ -180,7 +183,9 @@ export function NewThreadDialog() {
                     type="text"
                     value={branchSearch}
                     onChange={(e) => setBranchSearch(e.target.value)}
-                    placeholder={t('newThread.searchBranches', 'Search branches...')}
+                    placeholder={t('newThread.searchBranches', 'Search branches\u2026')}
+                    aria-label={t('newThread.searchBranches', 'Search branches')}
+                    autoComplete="off"
                     className="w-full bg-transparent text-sm placeholder:text-muted-foreground focus:outline-none"
                   />
                 </div>

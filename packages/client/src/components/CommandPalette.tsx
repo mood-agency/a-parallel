@@ -21,7 +21,6 @@ interface CommandPaletteProps {
 }
 
 export function CommandPalette({ open, onOpenChange }: CommandPaletteProps) {
-  console.log('[CommandPalette] render, open=', open);
   const { t } = useTranslation();
   const navigate = useNavigate();
   const projects = useProjectStore(s => s.projects);

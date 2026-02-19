@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
-import type { ToolPermission } from '@funny/shared';
+import type { ToolPermission, AgentProvider, AgentModel } from '@funny/shared';
 
 export type Theme = 'light' | 'dark' | 'system';
 export type Editor = 'cursor' | 'vscode' | 'windsurf' | 'zed' | 'sublime' | 'vim';
@@ -44,14 +44,16 @@ interface SettingsState {
   theme: Theme;
   defaultEditor: Editor;
   defaultThreadMode: ThreadMode;
-  defaultModel: ClaudeModel;
+  defaultProvider: AgentProvider;
+  defaultModel: AgentModel;
   defaultPermissionMode: PermissionMode;
   toolPermissions: Record<string, ToolPermission>;
   setupCompleted: boolean;
   setTheme: (theme: Theme) => void;
   setDefaultEditor: (editor: Editor) => void;
   setDefaultThreadMode: (mode: ThreadMode) => void;
-  setDefaultModel: (model: ClaudeModel) => void;
+  setDefaultProvider: (provider: AgentProvider) => void;
+  setDefaultModel: (model: AgentModel) => void;
   setDefaultPermissionMode: (mode: PermissionMode) => void;
   setToolPermission: (toolName: string, permission: ToolPermission) => void;
   resetToolPermissions: () => void;
@@ -89,6 +91,7 @@ export const useSettingsStore = create<SettingsState>()(
       theme: 'dark',
       defaultEditor: 'cursor',
       defaultThreadMode: 'worktree',
+      defaultProvider: 'claude',
       defaultModel: 'opus',
       defaultPermissionMode: 'autoEdit',
       toolPermissions: { ...DEFAULT_TOOL_PERMISSIONS },
@@ -99,6 +102,7 @@ export const useSettingsStore = create<SettingsState>()(
       },
       setDefaultEditor: (editor) => set({ defaultEditor: editor }),
       setDefaultThreadMode: (mode) => set({ defaultThreadMode: mode }),
+      setDefaultProvider: (provider) => set({ defaultProvider: provider }),
       setDefaultModel: (model) => set({ defaultModel: model }),
       setDefaultPermissionMode: (mode) => set({ defaultPermissionMode: mode }),
       setToolPermission: (toolName, permission) => set((state) => ({
@@ -109,7 +113,7 @@ export const useSettingsStore = create<SettingsState>()(
     }),
     {
       name: 'funny-settings',
-      version: 4,
+      version: 5,
       migrate: (persisted: any, version: number) => {
         if (version < 2) {
           // Old format had allowedTools: string[]
@@ -127,11 +131,18 @@ export const useSettingsStore = create<SettingsState>()(
           version = 3;
         }
         if (version < 4) {
-          // Add default model and permission mode for existing users
-          return {
+          persisted = {
             ...persisted,
             defaultModel: persisted.defaultModel ?? 'opus',
             defaultPermissionMode: persisted.defaultPermissionMode ?? 'autoEdit',
+          };
+          version = 4;
+        }
+        if (version < 5) {
+          // Add default provider for existing users
+          return {
+            ...persisted,
+            defaultProvider: persisted.defaultProvider ?? 'claude',
           };
         }
         return persisted as any;

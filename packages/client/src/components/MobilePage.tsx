@@ -1,6 +1,7 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useAppStore } from '@/stores/app-store';
+import { selectLastMessage } from '@/stores/thread-selectors';
 import { useSettingsStore } from '@/stores/settings-store';
 import { useWS } from '@/hooks/use-ws';
 import { initAuth } from '@/lib/api';
@@ -200,7 +201,7 @@ function ThreadListView({
   return (
     <>
       <header className="flex items-center gap-3 px-4 py-3 border-b border-border shrink-0">
-        <button onClick={onBack} className="p-1 -ml-1 rounded hover:bg-accent">
+        <button onClick={onBack} aria-label={t('common.back', 'Back')} className="p-1 -ml-1 rounded hover:bg-accent">
           <ArrowLeft className="h-5 w-5" />
         </button>
         <h1 className="text-base font-semibold truncate flex-1">
@@ -230,7 +231,7 @@ function ThreadListView({
                 <div className="min-w-0 flex-1">
                   <div className="text-sm font-medium truncate">{thread.title}</div>
                   <div className="text-xs text-muted-foreground mt-0.5">
-                    {new Date(thread.createdAt).toLocaleDateString()}
+                    {new Intl.DateTimeFormat(undefined, { dateStyle: 'medium' }).format(new Date(thread.createdAt))}
                   </div>
                 </div>
                 <StatusBadge status={thread.status} />
@@ -292,7 +293,7 @@ function NewThreadView({
   return (
     <>
       <header className="flex items-center gap-3 px-4 py-3 border-b border-border shrink-0">
-        <button onClick={onBack} className="p-1 -ml-1 rounded hover:bg-accent">
+        <button onClick={onBack} aria-label={t('common.back', 'Back')} className="p-1 -ml-1 rounded hover:bg-accent">
           <ArrowLeft className="h-5 w-5" />
         </button>
         <h1 className="text-base font-semibold">{t('thread.newThread', 'New Thread')}</h1>
@@ -342,7 +343,7 @@ function ChatView({
   }, [threadId, selectThread]);
 
   // Scroll tracking
-  const lastMessage = activeThread?.messages?.[activeThread.messages.length - 1];
+  const lastMessage = selectLastMessage(activeThread);
   const scrollFingerprint = [
     activeThread?.messages?.length,
     lastMessage?.content?.length,
@@ -387,7 +388,7 @@ function ChatView({
     };
   }, [scrollFingerprint]);
 
-  const handleSend = async (prompt: string, opts: { model: string; mode: string }, images?: any[]) => {
+  const handleSend = async (prompt: string, opts: { provider?: string; model: string; mode: string }, images?: any[]) => {
     if (!activeThread || sending) return;
     setSending(true);
 
@@ -399,7 +400,7 @@ function ChatView({
       opts.mode as any
     );
 
-    const result = await api.sendMessage(activeThread.id, prompt, { model: opts.model || undefined, permissionMode: opts.mode || undefined }, images);
+    const result = await api.sendMessage(activeThread.id, prompt, { provider: opts.provider || undefined, model: opts.model || undefined, permissionMode: opts.mode || undefined }, images);
     if (result.isErr()) {
       console.error('Send failed:', result.error);
     }
@@ -419,7 +420,7 @@ function ChatView({
   return (
     <>
       <header className="flex items-center gap-3 px-4 py-3 border-b border-border shrink-0">
-        <button onClick={onBack} className="p-1 -ml-1 rounded hover:bg-accent">
+        <button onClick={onBack} aria-label={t('common.back', 'Back')} className="p-1 -ml-1 rounded hover:bg-accent">
           <ArrowLeft className="h-5 w-5" />
         </button>
         <div className="min-w-0 flex-1">
@@ -473,6 +474,8 @@ function ChatView({
                             key={idx}
                             src={`data:${img.source.media_type};base64,${img.source.data}`}
                             alt={`Attachment ${idx + 1}`}
+                            width={128}
+                            height={128}
                             className="max-h-32 rounded border border-border"
                           />
                         ))}

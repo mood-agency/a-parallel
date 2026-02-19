@@ -21,7 +21,7 @@ export function NewThreadInput() {
 
   const handleCreate = async (
     prompt: string,
-    opts: { model: string; mode: string; threadMode?: string; baseBranch?: string; sendToBacklog?: boolean; fileReferences?: { path: string }[] },
+    opts: { provider?: string; model: string; mode: string; threadMode?: string; baseBranch?: string; sendToBacklog?: boolean; fileReferences?: { path: string }[] },
     images?: any[]
   ): Promise<boolean> => {
     if (!newThreadProjectId || creating) return false;
@@ -58,6 +58,7 @@ export function NewThreadInput() {
       projectId: newThreadProjectId,
       title: prompt.slice(0, 200),
       mode: threadMode,
+      provider: opts.provider,
       model: opts.model,
       permissionMode: opts.mode,
       baseBranch: opts.baseBranch,

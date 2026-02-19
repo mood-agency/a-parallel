@@ -16,8 +16,6 @@
  */
 
 import { nanoid } from 'nanoid';
-import { eq } from 'drizzle-orm';
-import { db, schema } from '../db/index.js';
 import { wsBroker } from './ws-broker.js';
 import * as tm from './thread-manager.js';
 import * as pm from './project-manager.js';
@@ -132,12 +130,8 @@ function getState(requestId: string): ExternalThreadState | null {
   const cached = threadStates.get(requestId);
   if (cached) return cached;
 
-  // Fallback: look up thread by externalRequestId in DB
-  const row = db
-    .select()
-    .from(schema.threads)
-    .where(eq(schema.threads.externalRequestId, requestId))
-    .get();
+  // Fallback: look up thread by externalRequestId via repository
+  const row = tm.getThreadByExternalRequestId(requestId);
 
   if (row) {
     const state: ExternalThreadState = {

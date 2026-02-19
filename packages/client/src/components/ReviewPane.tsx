@@ -214,6 +214,7 @@ export function ReviewPane() {
   const [stashEntries, setStashEntries] = useState<Array<{ index: string; message: string; relativeDate: string }>>([]);
   const [stashPopInProgress, setStashPopInProgress] = useState(false);
   const [resetInProgress, setResetInProgress] = useState(false);
+  const [confirmDialog, setConfirmDialog] = useState<{ type: 'revert' | 'reset'; path?: string } | null>(null);
 
   const isWorktree = useThreadStore(s => s.activeThread?.mode === 'worktree');
   const baseBranch = useThreadStore(s => s.activeThread?.baseBranch);
@@ -484,10 +485,12 @@ export function ReviewPane() {
     await refresh();
   };
 
-  const handleRevertFile = async (path: string) => {
+  const handleRevertFile = (path: string) => {
+    setConfirmDialog({ type: 'revert', path });
+  };
+
+  const executeRevert = async (path: string) => {
     if (!effectiveThreadId) return;
-    const confirmed = window.confirm(t('review.revertConfirm', { paths: path }));
-    if (!confirmed) return;
     const result = await api.revertFiles(effectiveThreadId, [path]);
     if (result.isErr()) {
       toast.error(t('review.revertFailed', { message: result.error.message }));
@@ -667,10 +670,12 @@ export function ReviewPane() {
     }
   };
 
-  const handleResetSoft = async () => {
+  const handleResetSoft = () => {
+    setConfirmDialog({ type: 'reset' });
+  };
+
+  const executeResetSoft = async () => {
     if (!effectiveThreadId || resetInProgress) return;
-    const confirmed = window.confirm(t('review.resetSoftConfirm', 'Undo the last commit? Changes will be kept.'));
-    if (!confirmed) return;
     setResetInProgress(true);
     const result = await api.resetSoft(effectiveThreadId);
     if (result.isErr()) {
@@ -741,7 +746,7 @@ export function ReviewPane() {
               {logLoading ? (
                 <div className="flex items-center gap-2 p-3 text-xs text-muted-foreground">
                   <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                  {t('review.loadingLog', 'Loading commits...')}
+                  {t('review.loadingLog', 'Loading commits\u2026')}
                 </div>
               ) : logEntries.length === 0 ? (
                 <p className="text-xs text-muted-foreground p-3">{t('review.noCommits', 'No commits yet')}</p>
@@ -802,7 +807,7 @@ export function ReviewPane() {
               loadingDiff === selectedFile ? (
                 <div className="flex items-center gap-2 p-3 text-xs text-muted-foreground">
                   <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                  Loading diff...
+                  Loading diff\u2026
                 </div>
               ) : selectedDiffContent ? (
                 <div className="relative text-xs [&_.diff-container]:font-mono [&_.diff-container]:text-sm [&_table]:w-max [&_td:last-child]:w-auto [&_td:last-child]:min-w-0">
@@ -819,7 +824,7 @@ export function ReviewPane() {
                     </TooltipTrigger>
                     <TooltipContent side="left">{t('review.expand', 'Expand')}</TooltipContent>
                   </Tooltip>
-                  <Suspense fallback={<div className="p-2 text-xs text-muted-foreground">Loading diff...</div>}>
+                  <Suspense fallback={<div className="p-2 text-xs text-muted-foreground">Loading diff\u2026</div>}>
                     <MemoizedDiffView diff={selectedDiffContent} />
                   </Suspense>
                 </div>
@@ -853,7 +858,8 @@ export function ReviewPane() {
                 <Search className="absolute left-2 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground pointer-events-none" />
                 <Input
                   type="text"
-                  placeholder={t('review.searchFiles', 'Filter files...')}
+                  placeholder={t('review.searchFiles', 'Filter files\u2026')}
+                  aria-label={t('review.searchFiles', 'Filter files')}
                   value={fileSearch}
                   onChange={(e) => setFileSearch(e.target.value)}
                   className="h-7 pl-7 pr-7 text-xs md:text-xs"
@@ -863,6 +869,7 @@ export function ReviewPane() {
                     variant="ghost"
                     size="icon-xs"
                     onClick={() => setFileSearch('')}
+                    aria-label={t('review.clearSearch', 'Clear search')}
                     className="absolute right-1 top-1/2 -translate-y-1/2 text-muted-foreground"
                   >
                     <X className="h-3 w-3" />
@@ -876,6 +883,9 @@ export function ReviewPane() {
           {summaries.length > 0 && (
             <div className="flex items-center gap-1.5 px-4 py-1.5 border-b border-sidebar-border">
               <button
+                role="checkbox"
+                aria-checked={checkedFiles.size === summaries.length ? true : checkedFiles.size > 0 ? 'mixed' : false}
+                aria-label={t('review.selectAll', 'Select all files')}
                 onClick={toggleAll}
                 className={cn(
                   'flex items-center justify-center h-3.5 w-3.5 rounded border transition-colors flex-shrink-0',
@@ -898,7 +908,7 @@ export function ReviewPane() {
           {loading ? (
             <div className="flex items-center gap-2 p-3 text-xs text-muted-foreground">
               <Loader2 className="h-3.5 w-3.5 animate-spin" />
-              {t('review.loading', 'Loading changes...')}
+              {t('review.loading', 'Loading changes\u2026')}
             </div>
           ) : summaries.length === 0 ? (
             <p className="text-xs text-muted-foreground p-3">{t('review.noChanges')}</p>
@@ -932,6 +942,9 @@ export function ReviewPane() {
                       onClick={() => setSelectedFile(f.path)}
                     >
                       <button
+                        role="checkbox"
+                        aria-checked={isChecked}
+                        aria-label={t('review.selectFile', { file: f.path, defaultValue: `Select ${f.path}` })}
                         onClick={(e) => { e.stopPropagation(); toggleFile(f.path); }}
                         className={cn(
                           'flex items-center justify-center h-3.5 w-3.5 rounded border transition-colors flex-shrink-0',
@@ -949,6 +962,7 @@ export function ReviewPane() {
                         <DropdownMenuTrigger asChild>
                           <button
                             onClick={(e) => e.stopPropagation()}
+                            aria-label={t('review.moreActions', 'More actions')}
                             className="flex items-center justify-center h-4 w-4 rounded text-muted-foreground hover:text-foreground transition-all flex-shrink-0 opacity-0 group-hover:opacity-100 data-[state=open]:opacity-100"
                           >
                             <MoreHorizontal className="h-3 w-3" />
@@ -1047,6 +1061,7 @@ export function ReviewPane() {
               <input
                 type="text"
                 placeholder={t('review.commitTitle')}
+                aria-label={t('review.commitTitle', 'Commit title')}
                 value={commitTitle}
                 onChange={(e) => setCommitTitle(e.target.value)}
                 disabled={!!actionInProgress || generatingMsg}
@@ -1056,6 +1071,7 @@ export function ReviewPane() {
                 <textarea
                   className="w-full px-2 py-1.5 text-xs placeholder:text-muted-foreground focus:outline-none resize-none bg-transparent"
                   rows={7}
+                  aria-label={t('review.commitBody', 'Commit body')}
                   placeholder={t('review.commitBody')}
                   value={commitBody}
                   onChange={(e) => setCommitBody(e.target.value)}
@@ -1221,6 +1237,44 @@ export function ReviewPane() {
         </div>
       </div>
 
+      {/* Confirmation dialog for destructive actions */}
+      <Dialog open={!!confirmDialog} onOpenChange={(open) => { if (!open) setConfirmDialog(null); }}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle>
+              {confirmDialog?.type === 'revert'
+                ? t('review.discardChanges', 'Discard changes')
+                : t('review.undoLastCommit', 'Undo last commit')}
+            </DialogTitle>
+            <DialogDescription>
+              {confirmDialog?.type === 'revert'
+                ? t('review.revertConfirm', { paths: confirmDialog?.path })
+                : t('review.resetSoftConfirm', 'Undo the last commit? Changes will be kept.')}
+            </DialogDescription>
+          </DialogHeader>
+          <div className="flex justify-end gap-2 mt-2">
+            <Button variant="outline" size="sm" onClick={() => setConfirmDialog(null)}>
+              {t('common.cancel', 'Cancel')}
+            </Button>
+            <Button
+              variant="destructive"
+              size="sm"
+              onClick={async () => {
+                const dialog = confirmDialog;
+                setConfirmDialog(null);
+                if (dialog?.type === 'revert' && dialog.path) {
+                  await executeRevert(dialog.path);
+                } else if (dialog?.type === 'reset') {
+                  await executeResetSoft();
+                }
+              }}
+            >
+              {t('common.confirm', 'Confirm')}
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
       {/* Expanded diff modal */}
       <Dialog open={!!expandedFile} onOpenChange={(open) => { if (!open) setExpandedFile(null); }}>
         <DialogContent className="max-w-[90vw] w-[90vw] h-[85vh] flex flex-col p-0 gap-0">
@@ -1245,11 +1299,11 @@ export function ReviewPane() {
                   {loadingDiff === expandedFile ? (
                     <div className="flex items-center gap-2 p-4 text-sm text-muted-foreground">
                       <Loader2 className="h-4 w-4 animate-spin" />
-                      Loading diff...
+                      Loading diff\u2026
                     </div>
                   ) : expandedDiffContent ? (
                     <div className="[&_.diff-container]:font-mono [&_table]:w-full [&_td]:overflow-hidden [&_td]:text-ellipsis">
-                      <Suspense fallback={<div className="p-4 text-sm text-muted-foreground">Loading diff...</div>}>
+                      <Suspense fallback={<div className="p-4 text-sm text-muted-foreground">Loading diff\u2026</div>}>
                         <MemoizedDiffView diff={expandedDiffContent} splitView={true} />
                       </Suspense>
                     </div>
