@@ -14,7 +14,8 @@ import * as profileService from '../services/profile-service.js';
 import * as pm from '../services/project-manager.js';
 import { badRequest, internal } from '@funny/shared/errors';
 import { ok, err } from 'neverthrow';
-import type { GitHubRepo } from '@funny/shared';
+import { getRemoteUrl } from '@funny/core/git';
+import type { GitHubRepo, GitHubIssue } from '@funny/shared';
 
 const GITHUB_API = 'https://api.github.com';
 const DEVICE_CODE_URL = 'https://github.com/login/device/code';
@@ -22,6 +23,17 @@ const ACCESS_TOKEN_URL = 'https://github.com/login/oauth/access_token';
 
 function getClientId(): string | null {
   return process.env.GITHUB_CLIENT_ID || null;
+}
+
+/** Extract owner/repo from a GitHub remote URL. Returns null if not a GitHub URL. */
+function parseGithubOwnerRepo(remoteUrl: string): { owner: string; repo: string } | null {
+  // HTTPS: https://github.com/owner/repo.git
+  const httpsMatch = remoteUrl.match(/github\.com[/:]([^/]+)\/([^/.]+?)(?:\.git)?$/);
+  if (httpsMatch) return { owner: httpsMatch[1], repo: httpsMatch[2] };
+  // SSH: git@github.com:owner/repo.git
+  const sshMatch = remoteUrl.match(/git@github\.com:([^/]+)\/([^/.]+?)(?:\.git)?$/);
+  if (sshMatch) return { owner: sshMatch[1], repo: sshMatch[2] };
+  return null;
 }
 
 /** Make an authenticated request to the GitHub API. */
@@ -313,6 +325,70 @@ githubRoutes.post('/clone', async (c) => {
   }
 
   return c.json(result.value, 201);
+});
+
+// ── GET /issues — list GitHub issues for a project ──────
+
+githubRoutes.get('/issues', async (c) => {
+  const userId = c.get('userId') as string;
+  const projectId = c.req.query('projectId');
+  if (!projectId) {
+    return c.json({ error: 'projectId is required' }, 400);
+  }
+
+  const project = pm.getProject(projectId);
+  if (!project) {
+    return c.json({ error: 'Project not found' }, 404);
+  }
+
+  // Get remote URL from the project's git repo
+  const remoteResult = await getRemoteUrl(project.path);
+  if (remoteResult.isErr() || !remoteResult.value) {
+    return c.json({ error: 'Could not determine remote URL for this project' }, 400);
+  }
+
+  const parsed = parseGithubOwnerRepo(remoteResult.value);
+  if (!parsed) {
+    return c.json({ error: 'This project is not hosted on GitHub' }, 400);
+  }
+
+  const state = c.req.query('state') || 'open';
+  const page = Number(c.req.query('page')) || 1;
+  const perPage = Math.min(Number(c.req.query('per_page')) || 30, 100);
+
+  try {
+    const apiPath = `/repos/${parsed.owner}/${parsed.repo}/issues?state=${state}&page=${page}&per_page=${perPage}&sort=created&direction=desc`;
+    const token = profileService.getGithubToken(userId);
+
+    let res: Response;
+    if (token) {
+      res = await githubApiFetch(apiPath, token);
+    } else {
+      // Public access (works for public repos, rate-limited to ~60 req/hr)
+      res = await fetch(`${GITHUB_API}${apiPath}`, {
+        headers: {
+          Accept: 'application/vnd.github+json',
+          'X-GitHub-Api-Version': '2022-11-28',
+        },
+      });
+    }
+
+    if (!res.ok) {
+      const body = await res.text();
+      return c.json({ error: `GitHub API error: ${res.status}` }, 502);
+    }
+
+    const rawIssues = await res.json() as GitHubIssue[];
+    // Filter out pull requests (GitHub API returns PRs as issues too)
+    const issues = rawIssues.filter((i) => !i.pull_request);
+
+    const linkHeader = res.headers.get('Link') || '';
+    const hasMore = linkHeader.includes('rel="next"');
+
+    return c.json({ issues, hasMore, owner: parsed.owner, repo: parsed.repo });
+  } catch (error: any) {
+    return c.json({ error: error.message }, 502);
+  }
 });
 
 export default githubRoutes;

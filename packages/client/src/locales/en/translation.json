@@ -29,7 +29,8 @@
     "searchThreads": "Search threads",
     "threadsTitle": "Activity",
     "noProjects": "No projects yet. Click + to add one.",
-    "analytics": "Analytics"
+    "analytics": "Analytics",
+    "githubIssues": "GitHub Issues"
   },
   "thread": {
     "status": {
@@ -615,6 +616,16 @@
     "retryNow": "Retry Now",
     "reconnecting": "Reconnecting...",
     "dismiss": "Dismiss"
+  },
+  "issues": {
+    "title": "GitHub Issues",
+    "open": "Open",
+    "closed": "Closed",
+    "noIssues": "No issues found",
+    "loadMore": "Load more",
+    "viewOnGithub": "View on GitHub",
+    "notGithub": "This project is not hosted on GitHub",
+    "error": "Failed to load issues"
   },
   "users": {
     "title": "Users",

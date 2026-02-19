@@ -61,6 +61,26 @@ export interface GitHubRepo {
   };
 }
 
+export interface GitHubIssue {
+  number: number;
+  title: string;
+  state: 'open' | 'closed';
+  body: string | null;
+  created_at: string;
+  updated_at: string;
+  html_url: string;
+  user: {
+    login: string;
+    avatar_url: string;
+  } | null;
+  labels: Array<{
+    name: string;
+    color: string;
+  }>;
+  comments: number;
+  pull_request?: unknown;
+}
+
 export interface CloneRepoRequest {
   cloneUrl: string;
   destinationPath: string;
