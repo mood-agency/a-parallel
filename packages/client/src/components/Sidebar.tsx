@@ -1,4 +1,5 @@
 import { useState, useCallback, useEffect, useRef } from 'react';
+import { cn } from '@/lib/utils';
 import { useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { useProjectStore } from '@/stores/project-store';
@@ -92,6 +93,9 @@ export function AppSidebar() {
   const [generalSettingsOpen, setGeneralSettingsOpen] = useState(false);
   const [issuesProjectId, setIssuesProjectId] = useState<string | null>(null);
   const projectsScrollRef = useRef<HTMLDivElement>(null);
+  const threadsScrollRef = useRef<HTMLDivElement>(null);
+  const [threadsScrolled, setThreadsScrolled] = useState(false);
+  const [projectsScrolled, setProjectsScrolled] = useState(false);
 
   // Auto-scroll projects list to selected project (e.g. after Ctrl+K)
   useEffect(() => {
@@ -131,6 +135,20 @@ export function AppSidebar() {
       },
     });
   }, [projects, reorderProjects]);
+
+  // Track scroll position for top fade gradients
+  useEffect(() => {
+    const threadsEl = threadsScrollRef.current;
+    const projectsEl = projectsScrollRef.current;
+    const onThreadsScroll = () => setThreadsScrolled((threadsEl?.scrollTop ?? 0) > 2);
+    const onProjectsScroll = () => setProjectsScrolled((projectsEl?.scrollTop ?? 0) > 2);
+    threadsEl?.addEventListener('scroll', onThreadsScroll, { passive: true });
+    projectsEl?.addEventListener('scroll', onProjectsScroll, { passive: true });
+    return () => {
+      threadsEl?.removeEventListener('scroll', onThreadsScroll);
+      projectsEl?.removeEventListener('scroll', onProjectsScroll);
+    };
+  }, []);
 
   const handleArchiveConfirm = useCallback(async () => {
     if (!archiveConfirm) return;
@@ -218,7 +236,11 @@ export function AppSidebar() {
         <div className="flex items-center justify-between px-4 pt-4 pb-2">
           <h2 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">{t('sidebar.threadsTitle')}</h2>
         </div>
-        <div className="overflow-y-auto min-h-0 px-2 pb-2" style={{ maskImage: 'linear-gradient(to bottom, transparent, black 12px)', WebkitMaskImage: 'linear-gradient(to bottom, transparent, black 12px)' }}>
+        <div ref={threadsScrollRef} className="relative overflow-y-auto min-h-0 px-2 pb-2">
+          <div className={cn(
+            "sticky top-0 left-0 right-0 h-4 -mb-4 bg-gradient-to-b from-sidebar to-transparent pointer-events-none z-10 transition-opacity duration-150",
+            threadsScrolled ? "opacity-100" : "opacity-0"
+          )} />
           <ThreadList
             onArchiveThread={(threadId, projectId, title, isWorktree) => {
               setArchiveConfirm({ threadId, projectId, title, isWorktree });
@@ -281,7 +303,11 @@ export function AppSidebar() {
       </div>
 
       {/* Projects list (fills remaining space, own scroll) */}
-      <SidebarContent ref={projectsScrollRef} className="px-2 pb-2" style={{ maskImage: 'linear-gradient(to bottom, transparent, black 12px)', WebkitMaskImage: 'linear-gradient(to bottom, transparent, black 12px)' }}>
+      <SidebarContent ref={projectsScrollRef} className="px-2 pb-2 relative">
+        <div className={cn(
+          "sticky top-0 left-0 right-0 h-4 -mb-4 bg-gradient-to-b from-sidebar to-transparent pointer-events-none z-10 transition-opacity duration-150 shrink-0",
+          projectsScrolled ? "opacity-100" : "opacity-0"
+        )} />
         {projects.length === 0 && (
           <button
             onClick={() => setAddProjectOpen(true)}

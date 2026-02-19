@@ -215,15 +215,20 @@ export function ReviewPane() {
   const [hasRebaseConflict, setHasRebaseConflict] = useState(false);
 
   // Show standalone merge button when worktree has no dirty files but has unmerged commits
-  const showMergeOnly = isWorktree && summaries.length === 0 && !loading && gitStatus && !gitStatus.isMergedIntoBase;
+  const showMergeOnly = isWorktree && summaries.length === 0 && !loading && gitStatus && !gitStatus.isMergedIntoBase && !hasRebaseConflict;
 
   // Show standalone push button when no dirty files but there are unpushed commits
-  const showPushOnly = summaries.length === 0 && !loading && gitStatus && gitStatus.unpushedCommitCount > 0;
+  const showPushOnly = summaries.length === 0 && !loading && gitStatus && gitStatus.unpushedCommitCount > 0 && !hasRebaseConflict;
 
   const showMergeConflictToast = useCallback((errorMessage: string, _threadId: string) => {
     const target = baseBranch || 'main';
-    const isConflict = errorMessage.toLowerCase().includes('conflict') ||
-                       errorMessage.toLowerCase().includes('rebase failed');
+    const lower = errorMessage.toLowerCase();
+    const isConflict = lower.includes('conflict') ||
+                       lower.includes('rebase failed') ||
+                       lower.includes('merge failed') ||
+                       lower.includes('automatic merge failed') ||
+                       lower.includes('fix conflicts') ||
+                       lower.includes('could not apply');
 
     if (!isConflict) {
       toast.error(t('review.mergeFailed', { message: errorMessage }));
@@ -745,13 +750,7 @@ export function ReviewPane() {
                         {isChecked && <Check className="h-2.5 w-2.5" />}
                       </button>
                       <span
-                        className="flex-1 truncate font-mono text-[11px] hover:underline"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          setSelectedFile(f.path);
-                          const fullPath = basePath ? `${basePath}/${f.path}` : f.path;
-                          openFileInEditor(fullPath);
-                        }}
+                        className="flex-1 truncate font-mono text-[11px]"
                       >{f.path}</span>
                       <DropdownMenu>
                         <DropdownMenuTrigger asChild>
