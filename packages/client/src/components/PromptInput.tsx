@@ -18,7 +18,8 @@ import { ScrollArea } from '@/components/ui/scroll-area';
 import { cn } from '@/lib/utils';
 import { api } from '@/lib/api';
 import { PROVIDERS, getModelOptions } from '@/lib/providers';
-import { useAppStore } from '@/stores/app-store';
+import { useThreadStore } from '@/stores/thread-store';
+import { useProjectStore } from '@/stores/project-store';
 import { useSettingsStore } from '@/stores/settings-store';
 import { useDraftStore } from '@/stores/draft-store';
 import { ImageLightbox } from './ImageLightbox';
@@ -361,7 +362,7 @@ export function PromptInput({
   }, [provider]);
 
   // Sync mode with active thread's permission mode
-  const activeThread = useAppStore(s => s.activeThread);
+  const activeThread = useThreadStore(s => s.activeThread);
   const activeThreadPermissionMode = activeThread?.permissionMode;
   const [newThreadBranches, setNewThreadBranches] = useState<string[]>([]);
   const [selectedBranch, setSelectedBranch] = useState<string>('');
@@ -404,9 +405,9 @@ export function PromptInput({
   const mentionStartPosRef = useRef<number>(-1);
   const loadFilesTimeoutRef = useRef<ReturnType<typeof setTimeout>>(undefined);
 
-  const projects = useAppStore(s => s.projects);
-  const selectedProjectId = useAppStore(s => s.selectedProjectId);
-  const selectedThreadId = useAppStore(s => s.selectedThreadId);
+  const projects = useProjectStore(s => s.projects);
+  const selectedProjectId = useProjectStore(s => s.selectedProjectId);
+  const selectedThreadId = useThreadStore(s => s.selectedThreadId);
 
   // Draft persistence across thread switches
   const { setPromptDraft, clearPromptDraft } = useDraftStore();
