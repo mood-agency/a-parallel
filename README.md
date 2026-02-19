@@ -15,6 +15,7 @@ funny is a web UI for orchestrating multiple [Claude Code](https://claude.ai/cod
 - **Analytics dashboard** — Track task creation, completion rates, stage distribution, and cost metrics over time
 - **MCP support** — Model Context Protocol integration
 - **Automation scheduling** — Cron-based recurring tasks
+- **Mobile support** — Responsive mobile view with touch-friendly navigation for on-the-go monitoring
 
 ## Installation
 
@@ -114,6 +115,20 @@ The analytics dashboard provides an overview of task activity and costs:
 - **Timeline chart** — Bar chart showing task activity over time, grouped by day/week/month/year
 
 Filter analytics by project and time range (day, week, month, or all-time).
+
+## Mobile Support
+
+funny includes a dedicated mobile view that automatically activates on screens narrower than 768px. The mobile interface provides a streamlined, touch-friendly experience for monitoring and interacting with your agents on the go.
+
+**Mobile features:**
+
+- **Stack-based navigation** — Projects → Threads → Chat, with back buttons for easy navigation
+- **Full chat interaction** — Send messages, view agent responses, approve/reject tool calls, and monitor running agents
+- **Thread management** — Create new threads with model and mode selection directly from your phone
+- **Status monitoring** — Real-time status badges and agent activity indicators
+- **Auto-scrolling** — Smart scroll behavior that follows new messages while preserving your scroll position
+
+The sidebar automatically converts to a slide-out drawer on mobile via the shadcn/ui Sheet component.
 
 ## Development
 
