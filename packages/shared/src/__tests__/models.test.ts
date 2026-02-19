@@ -57,7 +57,7 @@ describe('resolveModelId', () => {
 
   describe('unknown provider', () => {
     test('throws on completely unknown provider', () => {
-      expect(() => resolveModelId('gemini' as any, 'sonnet' as any)).toThrow('Unknown provider: gemini');
+      expect(() => resolveModelId('fake' as any, 'sonnet' as any)).toThrow('Unknown provider: fake');
     });
 
     test('throws on external provider', () => {
@@ -78,7 +78,7 @@ describe('getDefaultModel', () => {
   });
 
   test('throws on unknown provider', () => {
-    expect(() => getDefaultModel('gemini' as any)).toThrow('Unknown provider: gemini');
+    expect(() => getDefaultModel('fake' as any)).toThrow('Unknown provider: fake');
   });
 });
 

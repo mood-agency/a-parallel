@@ -439,6 +439,7 @@ export function ThreadView() {
   const [todoPanelDismissed, setTodoPanelDismissed] = useState(false);
   const [currentSnapshotIdx, setCurrentSnapshotIdx] = useState(-1);
   const [stickyUserMsgId, setStickyUserMsgId] = useState<string | null>(null);
+  const prefersReducedMotion = useReducedMotion();
   // Track which message/tool-call IDs existed when the thread was loaded.
   // Messages in this set skip entrance animations to prevent CLS.
   const knownIdsRef = useRef<Set<string>>(new Set());
@@ -729,7 +730,6 @@ export function ThreadView() {
     }
   };
 
-  const prefersReducedMotion = useReducedMotion();
   const isRunning = activeThread.status === 'running';
   const isExternal = activeThread.provider === 'external';
   const isIdle = activeThread.status === 'idle';

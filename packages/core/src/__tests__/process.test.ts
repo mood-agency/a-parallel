@@ -16,7 +16,7 @@ describe('ProcessExecutionError', () => {
 
 describe('execute', () => {
   test('runs a command and captures stdout', async () => {
-    const result = await execute('echo', ['hello']);
+    const result = await execute('node', ['-e', 'process.stdout.write("hello")']);
     expect(result.stdout.trim()).toBe('hello');
     expect(result.exitCode).toBe(0);
   });
@@ -47,7 +47,7 @@ describe('execute', () => {
   });
 
   test('merges environment variables', async () => {
-    const result = await execute('printenv', ['TEST_VAR_CORE'], {
+    const result = await execute('node', ['-e', 'process.stdout.write(process.env.TEST_VAR_CORE || "")'], {
       env: { TEST_VAR_CORE: 'hello123' },
       reject: false,
     });
@@ -60,7 +60,7 @@ describe('execute', () => {
   test('respects timeout option', async () => {
     try {
       // Sleep for 10 seconds but timeout after 100ms
-      await execute('sleep', ['10'], { timeout: 100 });
+      await execute('node', ['-e', 'setTimeout(()=>{}, 10000)'], { timeout: 100 });
       expect(true).toBe(false); // should not reach
     } catch (error: any) {
       expect(error.message).toContain('timed out');
@@ -70,7 +70,7 @@ describe('execute', () => {
 
 describe('executeSync', () => {
   test('runs a command synchronously', () => {
-    const result = executeSync('echo', ['hello-sync']);
+    const result = executeSync('node', ['-e', 'process.stdout.write("hello-sync")']);
     expect(result.stdout.trim()).toBe('hello-sync');
     expect(result.exitCode).toBe(0);
   });
@@ -92,7 +92,7 @@ describe('executeSync', () => {
 
 describe('executeResult', () => {
   test('returns Ok for successful command', async () => {
-    const result = await executeResult('echo', ['test-result']);
+    const result = await executeResult('node', ['-e', 'process.stdout.write("test-result")']);
     expect(result.isOk()).toBe(true);
     if (result.isOk()) {
       expect(result.value.stdout.trim()).toBe('test-result');
