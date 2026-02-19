@@ -56,6 +56,13 @@ function KanbanCard({ thread, projectInfo, onDelete, search, ghost, contentSnipp
   const ref = useRef<HTMLDivElement>(null);
   const [isDragging, setIsDragging] = useState(false);
 
+  // Scroll the highlighted card into view when returning from thread view
+  useEffect(() => {
+    if (highlighted && ref.current) {
+      ref.current.scrollIntoView({ block: 'center', behavior: 'instant' });
+    }
+  }, [highlighted]);
+
   useEffect(() => {
     const el = ref.current;
     if (!el) return;
