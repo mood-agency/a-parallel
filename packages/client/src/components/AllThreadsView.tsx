@@ -1,4 +1,4 @@
-import { useState, useMemo, useEffect, useRef } from 'react';
+import { useState, useMemo, useEffect, useRef, startTransition } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { useAppStore } from '@/stores/app-store';
@@ -627,44 +627,48 @@ export function AllThreadsView() {
               pageSize={ITEMS_PER_PAGE}
               emptyMessage={t('allThreads.noThreads')}
               searchEmptyMessage={t('allThreads.noMatch')}
-              onThreadClick={(thread) => navigate(`/projects/${thread.projectId}/threads/${thread.id}`)}
+              onThreadClick={(thread) => {
+                startTransition(() => {
+                  navigate(`/projects/${thread.projectId}/threads/${thread.id}`);
+                });
+              }}
               paginationLabel={({ total }) =>
                 `${total} ${t('allThreads.threads')}${search || hasActiveFilters ? ` ${t('allThreads.found')}` : ''}`
               }
               hideSearch={true}
               renderExtraBadges={(thread) => {
-            const gs = statusByThread[thread.id];
-            const gitConf = gs ? gitSyncStateConfig[gs.state] : null;
-            return (
-              <>
-                {!projectFilter && projectInfoById[thread.projectId] && (
-                  <span
-                    className="text-xs px-1.5 py-0.5 rounded"
-                    style={{
-                      backgroundColor: projectInfoById[thread.projectId].color ? `${projectInfoById[thread.projectId].color}1A` : '#3b82f61A',
-                      color: projectInfoById[thread.projectId].color || '#3b82f6',
-                    }}
-                  >
-                    {projectInfoById[thread.projectId].name}
-                  </span>
-                )}
-                {!!thread.archived && (
-                  <span className="inline-flex items-center gap-0.5 text-xs text-status-warning/80 bg-status-warning/10 px-1.5 py-0.5 rounded">
-                    <Archive className="h-2.5 w-2.5" />
-                    {t('allThreads.archived')}
-                  </span>
-                )}
-                {gitConf && (
-                  <span className={cn('text-xs px-1.5 py-0.5 rounded bg-secondary', gitConf.className)}>
-                    {t(gitConf.labelKey)}
-                  </span>
-                )}
-                <span className="text-xs text-muted-foreground bg-secondary px-1.5 py-0.5 rounded">
-                  {t(`thread.mode.${thread.mode}`)}
-                </span>
-              </>
-            );
-          }}
+                const gs = statusByThread[thread.id];
+                const gitConf = gs ? gitSyncStateConfig[gs.state] : null;
+                return (
+                  <>
+                    {!projectFilter && projectInfoById[thread.projectId] && (
+                      <span
+                        className="text-xs px-1.5 py-0.5 rounded"
+                        style={{
+                          backgroundColor: projectInfoById[thread.projectId].color ? `${projectInfoById[thread.projectId].color}1A` : '#3b82f61A',
+                          color: projectInfoById[thread.projectId].color || '#3b82f6',
+                        }}
+                      >
+                        {projectInfoById[thread.projectId].name}
+                      </span>
+                    )}
+                    {!!thread.archived && (
+                      <span className="inline-flex items-center gap-0.5 text-xs text-status-warning/80 bg-status-warning/10 px-1.5 py-0.5 rounded">
+                        <Archive className="h-2.5 w-2.5" />
+                        {t('allThreads.archived')}
+                      </span>
+                    )}
+                    {gitConf && (
+                      <span className={cn('text-xs px-1.5 py-0.5 rounded bg-secondary', gitConf.className)}>
+                        {t(gitConf.labelKey)}
+                      </span>
+                    )}
+                    <span className="text-xs text-muted-foreground bg-secondary px-1.5 py-0.5 rounded">
+                      {t(`thread.mode.${thread.mode}`)}
+                    </span>
+                  </>
+                );
+              }}
             />
           </div>
         )}

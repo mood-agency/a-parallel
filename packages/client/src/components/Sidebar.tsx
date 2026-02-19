@@ -1,4 +1,4 @@
-import { useState, useCallback, useEffect, useRef } from 'react';
+import { useState, useCallback, useEffect, useRef, startTransition } from 'react';
 import { cn } from '@/lib/utils';
 import { useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
@@ -329,7 +329,7 @@ export function AppSidebar() {
                 const wasExpanded = expandedProjects.has(project.id);
                 toggleProject(project.id);
                 // Defer expensive work (API calls, navigation) so the browser can paint the toggle immediately
-                setTimeout(() => {
+                startTransition(() => {
                   if (!wasExpanded) {
                     // startNewThread → selectProject already triggers fetchForProject
                     startNewThread(project.id);
@@ -338,13 +338,13 @@ export function AppSidebar() {
                     useGitStatusStore.getState().fetchForProject(project.id);
                     navigate(`/projects/${project.id}`);
                   }
-                }, 0);
+                });
               }}
               onNewThread={() => {
-                setTimeout(() => {
+                startTransition(() => {
                   startNewThread(project.id);
                   navigate(`/projects/${project.id}`);
-                }, 0);
+                });
               }}
               onRenameProject={() => {
                 setRenameProjectState({ projectId: project.id, currentName: project.name, newName: project.name });
@@ -353,14 +353,14 @@ export function AppSidebar() {
                 setDeleteProjectConfirm({ projectId: project.id, name: project.name });
               }}
               onSelectThread={(threadId) => {
-                setTimeout(() => {
+                startTransition(() => {
                   const store = useThreadStore.getState();
                   // If already on this thread's URL but activeThread didn't load, re-select directly
                   if (store.selectedThreadId === threadId && (!store.activeThread || store.activeThread.id !== threadId)) {
                     store.selectThread(threadId);
                   }
                   navigate(`/projects/${project.id}/threads/${threadId}`);
-                }, 0);
+                });
               }}
               onArchiveThread={(threadId, title) => {
                 const threads = threadsByProject[project.id] ?? [];

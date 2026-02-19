@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useMemo, useCallback } from 'react';
+import { useState, useEffect, useRef, useMemo, useCallback, startTransition } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { toast } from 'sonner';
@@ -99,8 +99,10 @@ function KanbanCard({ thread, projectInfo, onDelete, search, ghost, contentSnipp
       )}
       onClick={() => {
         if (!isDragging) {
-          setKanbanContext({ projectId, search, threadId: thread.id });
-          navigate(`/projects/${thread.projectId}/threads/${thread.id}`);
+          startTransition(() => {
+            setKanbanContext({ projectId, search, threadId: thread.id });
+            navigate(`/projects/${thread.projectId}/threads/${thread.id}`);
+          });
         }
       }}
     >

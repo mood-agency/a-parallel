@@ -136,14 +136,14 @@ export function ThreadItem({ thread, projectPath, isSelected, onSelect, subtitle
       </button>
       <div className="flex-shrink-0 pr-1.5 pl-2 py-1 grid place-items-start justify-items-center min-w-[2.5rem]">
         <span className={cn(
-          'col-start-1 row-start-1 text-xs text-muted-foreground leading-4 h-4 group-hover/thread:hidden',
-          openDropdown && 'hidden'
+          'col-start-1 row-start-1 text-xs text-muted-foreground leading-4 h-4 group-hover/thread:invisible',
+          openDropdown && 'invisible'
         )}>
           {displayTime}
         </span>
         <div className={cn(
-          'col-start-1 row-start-1 hidden group-hover/thread:flex items-center h-4',
-          openDropdown && '!flex'
+          'col-start-1 row-start-1 flex items-center h-4 invisible group-hover/thread:visible',
+          openDropdown && '!visible'
         )}>
           <DropdownMenu onOpenChange={setOpenDropdown}>
             <DropdownMenuTrigger asChild>
