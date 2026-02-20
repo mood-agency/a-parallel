@@ -1101,7 +1101,7 @@ export function ReviewPane() {
                   </Tooltip>
                 </div>
               </div>
-              <div className={cn('grid gap-1', (isWorktree && hasWorktreePath) ? 'grid-cols-5' : 'grid-cols-3')}>
+              <div className={cn('grid gap-1 mt-2', (isWorktree && hasWorktreePath) ? 'grid-cols-5' : 'grid-cols-3')}>
                 {([
                   { value: 'commit' as const, icon: GitCommit, label: t('review.commit', 'Commit') },
                   { value: 'amend' as const, icon: PenLine, label: t('review.amend', 'Amend') },
