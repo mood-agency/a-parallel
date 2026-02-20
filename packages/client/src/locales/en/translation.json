@@ -512,7 +512,8 @@
     "sendToBacklog": "Send to backlog instead of running immediately",
     "loadingFiles": "Loading files...",
     "noFilesMatch": "No files match",
-    "moreFilesHint": "Type to narrow results..."
+    "moreFilesHint": "Type to narrow results...",
+    "emptyPrompt": "Please enter a prompt before sending"
   },
   "gitStatus": {
     "dirty": "Uncommitted changes",

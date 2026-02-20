@@ -510,7 +510,8 @@
     "sendToBacklog": "Enviar al backlog en lugar de ejecutar inmediatamente",
     "loadingFiles": "Cargando archivos...",
     "noFilesMatch": "No hay archivos",
-    "moreFilesHint": "Escribe para filtrar..."
+    "moreFilesHint": "Escribe para filtrar...",
+    "emptyPrompt": "Escribe un prompt antes de enviar"
   },
   "gitStatus": {
     "dirty": "Cambios sin commitear",
