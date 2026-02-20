@@ -1,10 +1,10 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useAppStore } from '@/stores/app-store';
 import { useSettingsStore } from '@/stores/settings-store';
 import { api } from '@/lib/api';
 import { toast } from 'sonner';
-import { GitBranch, Monitor, Sparkles, Zap, Cpu, Check, ChevronsUpDown, Search } from 'lucide-react';
+import { GitBranch, Monitor, Check, ChevronsUpDown, Search } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import {
@@ -19,8 +19,16 @@ import {
   PopoverTrigger,
   PopoverContent,
 } from '@/components/ui/popover';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
 import { Input } from '@/components/ui/input';
 import { ScrollArea } from '@/components/ui/scroll-area';
+import { PROVIDERS, getModelOptions } from '@/lib/providers';
 
 export function NewThreadDialog() {
   const { t } = useTranslation();
@@ -30,9 +38,12 @@ export function NewThreadDialog() {
   const selectThread = useAppStore(s => s.selectThread);
 
   const defaultThreadMode = useSettingsStore(s => s.defaultThreadMode);
+  const defaultProvider = useSettingsStore(s => s.defaultProvider);
   const defaultModel = useSettingsStore(s => s.defaultModel);
   const [mode, setMode] = useState<'local' | 'worktree'>(defaultThreadMode);
+  const [provider, setProvider] = useState<string>(defaultProvider);
   const [model, setModel] = useState<string>(defaultModel);
+  const models = useMemo(() => getModelOptions(provider, t), [provider, t]);
   const [branches, setBranches] = useState<string[]>([]);
   const [selectedBranch, setSelectedBranch] = useState('');
   const [prompt, setPrompt] = useState('');
@@ -41,6 +52,13 @@ export function NewThreadDialog() {
   const [branchSearch, setBranchSearch] = useState('');
   const [branchOpen, setBranchOpen] = useState(false);
   const branchSearchRef = useRef<HTMLInputElement>(null);
+
+  // Reset model when provider changes and current model isn't valid for new provider
+  useEffect(() => {
+    if (!models.some(m => m.value === model)) {
+      setModel(models[0].value);
+    }
+  }, [provider]);
 
   // Load branches and detect default branch when dialog opens
   useEffect(() => {
@@ -70,6 +88,7 @@ export function NewThreadDialog() {
       title: title || prompt,
       mode,
       model,
+      provider,
       baseBranch: mode === 'worktree' ? selectedBranch || undefined : undefined,
       prompt,
     });
@@ -123,32 +142,36 @@ export function NewThreadDialog() {
           </button>
         </div>
 
-        {/* Model selector */}
+        {/* Provider + Model selector */}
         <div>
           <label className="text-xs font-medium text-muted-foreground block mb-1">
             {t('newThread.model')}
           </label>
           <div className="flex gap-2">
-            {([
-              { key: 'haiku' as const, icon: Zap, label: t('thread.model.haiku') },
-              { key: 'sonnet' as const, icon: Sparkles, label: t('thread.model.sonnet') },
-              { key: 'opus' as const, icon: Cpu, label: t('thread.model.opus') },
-            ]).map(({ key, icon: Icon, label }) => (
-              <button
-                key={key}
-                onClick={() => setModel(key)}
-                aria-pressed={model === key}
-                className={cn(
-                  'flex-1 flex items-center justify-center gap-2 rounded-md border px-3 py-2 text-sm transition-colors',
-                  model === key
-                    ? 'border-primary bg-primary/10 text-primary'
-                    : 'border-border text-muted-foreground hover:border-primary/50 hover:bg-accent/50'
-                )}
-              >
-                <Icon className="h-4 w-4" />
-                {label}
-              </button>
-            ))}
+            <Select value={provider} onValueChange={setProvider}>
+              <SelectTrigger className="w-[120px]">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {PROVIDERS.map((p) => (
+                  <SelectItem key={p.value} value={p.value}>
+                    {p.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <Select value={model} onValueChange={setModel}>
+              <SelectTrigger className="flex-1">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {models.map((m) => (
+                  <SelectItem key={m.value} value={m.value}>
+                    {m.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
           </div>
         </div>
 
