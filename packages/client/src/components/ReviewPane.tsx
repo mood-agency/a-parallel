@@ -537,6 +537,8 @@ export function ReviewPane() {
       const target = baseBranch || 'base';
       const branch = useThreadStore.getState().activeThread?.branch || '';
       toast.success(t('review.mergeSuccess', { branch, target, defaultValue: `Merged "${branch}" into "${target}" successfully` }));
+      // Refresh thread data so mode/branch/worktreePath reflect the cleanup
+      await useThreadStore.getState().refreshActiveThread();
     }
     setMergeInProgress(false);
     useGitStatusStore.getState().fetchForThread(effectiveThreadId);
