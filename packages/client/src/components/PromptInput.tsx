@@ -1,5 +1,6 @@
 import { useState, useRef, useEffect, useCallback, useMemo, startTransition } from 'react';
 import { useTranslation } from 'react-i18next';
+import { toast } from 'sonner';
 import { ArrowUp, Square, Loader2, Image as ImageIcon, X, Zap, GitBranch, Check, Monitor, Inbox, FileText } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import {
@@ -673,7 +674,11 @@ export function PromptInput({
   }, [prompt]);
 
   const handleSubmit = async () => {
-    if ((!prompt.trim() && images.length === 0) || loading) return;
+    if (loading) return;
+    if (!prompt.trim() && images.length === 0) {
+      toast.warning(t('prompt.emptyPrompt', 'Please enter a prompt before sending'));
+      return;
+    }
 
     // Capture current values and clear immediately for responsive UX
     const submittedPrompt = prompt;
@@ -1197,7 +1202,7 @@ export function PromptInput({
                 ) : (
                   <Button
                     onClick={handleSubmit}
-                    disabled={(!prompt.trim() && images.length === 0) || loading}
+                    disabled={loading}
                     size="icon-sm"
                     aria-label={t('prompt.send', 'Send message')}
                   >

@@ -506,7 +506,8 @@
     "sendToBacklog": "Enviar para o backlog em vez de executar imediatamente",
     "loadingFiles": "Carregando arquivos...",
     "noFilesMatch": "Nenhum arquivo encontrado",
-    "moreFilesHint": "Digite para filtrar..."
+    "moreFilesHint": "Digite para filtrar...",
+    "emptyPrompt": "Digite um prompt antes de enviar"
   },
   "gitStatus": {
     "dirty": "Alterações não commitadas",
