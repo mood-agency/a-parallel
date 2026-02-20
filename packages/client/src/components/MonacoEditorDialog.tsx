@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Editor } from '@monaco-editor/react';
+import { Editor, type BeforeMount } from '@monaco-editor/react';
 import {
   Dialog,
   DialogContent,
@@ -9,6 +9,7 @@ import {
 } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { api } from '@/lib/api';
+import { cn } from '@/lib/utils';
 import { toast } from 'sonner';
 import { Loader2, Save, X, Maximize2, Minimize2, Eye, EyeOff } from 'lucide-react';
 import { useSettingsStore } from '@/stores/settings-store';
@@ -34,10 +35,23 @@ export function MonacoEditorDialog({ open, onOpenChange, filePath }: MonacoEdito
   const language = getMonacoLanguage(ext);
 
   // Derive Monaco theme from Funny theme
-  const monacoTheme =
-    theme === 'dark' || (theme === 'system' && window.matchMedia('(prefers-color-scheme: dark)').matches)
-      ? 'vs-dark'
-      : 'vs';
+  const isDark =
+    theme === 'dark' || (theme === 'system' && window.matchMedia('(prefers-color-scheme: dark)').matches);
+  const monacoTheme = isDark ? 'funny-dark' : 'vs';
+
+  // Define custom dark theme with black background
+  const handleBeforeMount: BeforeMount = (monaco) => {
+    monaco.editor.defineTheme('funny-dark', {
+      base: 'vs-dark',
+      inherit: true,
+      rules: [],
+      colors: {
+        'editor.background': '#000000',
+        'editorGutter.background': '#000000',
+        'minimap.background': '#0a0a0a',
+      },
+    });
+  };
 
   // Load file content when dialog opens
   useEffect(() => {
@@ -86,16 +100,17 @@ export function MonacoEditorDialog({ open, onOpenChange, filePath }: MonacoEdito
   return (
     <Dialog open={open} onOpenChange={handleClose}>
       <DialogContent
-        className={
+        className={cn(
           isFullscreen
             ? 'max-w-[100vw] max-h-[100vh] w-[100vw] h-[100vh] p-0'
-            : 'max-w-5xl max-h-[85vh] h-[85vh] p-0'
-        }
+            : 'max-w-5xl max-h-[85vh] h-[85vh] p-0',
+          '[&>button:last-child]:hidden'
+        )}
       >
         <DialogHeader className="px-6 pt-4 pb-2 border-b border-border/50">
           <div className="flex items-center justify-between">
             <DialogTitle className="font-mono text-sm truncate">{filePath}</DialogTitle>
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-1">
               {/* Minimap toggle */}
               <Button
                 variant="ghost"
@@ -117,6 +132,17 @@ export function MonacoEditorDialog({ open, onOpenChange, filePath }: MonacoEdito
               >
                 {isFullscreen ? <Minimize2 className="h-4 w-4" /> : <Maximize2 className="h-4 w-4" />}
               </Button>
+
+              {/* Close button */}
+              <Button
+                variant="ghost"
+                size="icon"
+                onClick={handleClose}
+                title={t('common.close', 'Close')}
+                className="h-8 w-8"
+              >
+                <X className="h-4 w-4" />
+              </Button>
             </div>
           </div>
         </DialogHeader>
@@ -131,6 +157,7 @@ export function MonacoEditorDialog({ open, onOpenChange, filePath }: MonacoEdito
               height="100%"
               language={language}
               theme={monacoTheme}
+              beforeMount={handleBeforeMount}
               value={content}
               onChange={(value) => setContent(value || '')}
               options={{
