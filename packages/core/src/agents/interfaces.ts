@@ -12,6 +12,7 @@ export interface IAgentProcess {
   on(event: 'message', listener: (msg: CLIMessage) => void): this;
   on(event: 'error', listener: (err: Error) => void): this;
   on(event: 'exit', listener: (code: number | null) => void): this;
+  removeAllListeners(event?: string): this;
   start(): void;
   kill(): Promise<void>;
   readonly exited: boolean;

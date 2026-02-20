@@ -161,6 +161,33 @@ export class AgentOrchestrator extends EventEmitter {
   }
 
   /**
+   * Extract active agent processes WITHOUT killing them.
+   * Used to preserve agents across bun --watch restarts.
+   * Returns the current active agents and clears internal state.
+   */
+  extractActiveAgents(): Map<string, IAgentProcess> {
+    const agents = new Map(this.activeAgents);
+    // Detach: remove all our listeners so the old orchestrator
+    // doesn't interfere when these processes emit events.
+    for (const [, proc] of agents) {
+      proc.removeAllListeners();
+    }
+    this.activeAgents.clear();
+    this.resultReceived.clear();
+    this.manuallyStopped.clear();
+    return agents;
+  }
+
+  /**
+   * Adopt a surviving agent process (from a previous module evaluation).
+   * Wires fresh event handlers so messages flow to the new DB + WebSocket.
+   */
+  adoptProcess(threadId: string, proc: IAgentProcess): void {
+    this.wireProcessHandlers(proc, threadId);
+    console.log(`[orchestrator] Adopted surviving agent for thread=${threadId}`);
+  }
+
+  /**
    * Kill all active agent processes.
    */
   async stopAll(): Promise<void> {

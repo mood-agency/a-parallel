@@ -70,6 +70,26 @@ export class AgentRunner {
         log.error('Queue drain failed after completion', { namespace: 'queue', threadId: event.threadId, error: String(err) });
       });
     });
+
+    // Adopt surviving agent processes from a previous --watch restart.
+    // globalThis.__funnyActiveAgents is set by the previous cleanup handler.
+    const surviving = (globalThis as any).__funnyActiveAgents as Map<string, any> | undefined;
+    if (surviving?.size) {
+      let adopted = 0;
+      for (const [threadId, proc] of surviving) {
+        if (!proc.exited) {
+          this.orchestrator.adoptProcess(threadId, proc);
+          adopted++;
+        } else {
+          // Process exited during the transition — mark thread status
+          log.info('Surviving agent already exited, skipping adoption', { namespace: 'agent', threadId });
+        }
+      }
+      if (adopted > 0) {
+        log.info(`Adopted ${adopted} surviving agent(s) from previous instance`, { namespace: 'agent', count: adopted });
+      }
+      delete (globalThis as any).__funnyActiveAgents;
+    }
   }
 
   private emitWS(threadId: string, type: WSEvent['type'], data: unknown): void {
@@ -255,6 +275,14 @@ export class AgentRunner {
     await this.orchestrator.stopAll();
   }
 
+  /**
+   * Extract active agent processes WITHOUT killing them.
+   * Used to preserve agents across bun --watch restarts.
+   */
+  extractActiveAgents(): Map<string, any> {
+    return this.orchestrator.extractActiveAgents();
+  }
+
 }
 
 // ── Default singleton (backward-compatible exports) ─────────────
@@ -270,3 +298,4 @@ export const stopAgent = defaultRunner.stopAgent.bind(defaultRunner);
 export const stopAllAgents = defaultRunner.stopAllAgents.bind(defaultRunner);
 export const isAgentRunning = defaultRunner.isAgentRunning.bind(defaultRunner);
 export const cleanupThreadState = defaultRunner.cleanupThreadState.bind(defaultRunner);
+export const extractActiveAgents = defaultRunner.extractActiveAgents.bind(defaultRunner);

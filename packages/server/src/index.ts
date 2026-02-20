@@ -32,7 +32,7 @@ import { logRoutes } from './routes/logs.js';
 import { ingestRoutes } from './routes/ingest.js';
 import { wsBroker } from './services/ws-broker.js';
 import { startScheduler, stopScheduler } from './services/automation-scheduler.js';
-import { startAgent, stopAllAgents } from './services/agent-runner.js';
+import { startAgent, stopAllAgents, extractActiveAgents } from './services/agent-runner.js';
 import * as ptyManager from './services/pty-manager.js';
 import { checkClaudeBinaryAvailability, resetBinaryCache, validateClaudeBinary } from './utils/claude-binary.js';
 import { getAvailableProviders, resetProviderCache, logProviderStatus } from './utils/provider-detection.js';
@@ -184,7 +184,6 @@ if (existsSync(clientDistDir)) {
 
 // Auto-create tables on startup, then start server
 autoMigrate();
-markStaleThreadsInterrupted();
 startScheduler();
 
 // Build handler service context from existing singletons
@@ -223,6 +222,15 @@ if (prev) {
   prev.stop(true);
   if (prevCleanup) await prevCleanup();
   log.info('Cleaned up previous instance (watch restart)', { namespace: 'server' });
+}
+
+// Mark orphaned threads as interrupted — but only on cold starts.
+// On --watch restarts, agent processes survive (stored on globalThis by the
+// previous cleanup) and are adopted by the new AgentRunner. Those threads
+// remain running seamlessly. Only on a true cold start (no prev instance)
+// do we need to mark stale threads.
+if (!prev) {
+  markStaleThreadsInterrupted();
 }
 
 const server = Bun.serve({
@@ -311,7 +319,17 @@ const server = Bun.serve({
 (globalThis as any).__bunCleanup = async () => {
   stopScheduler();
   ptyManager.killAllPtys();
-  await stopAllAgents();
+
+  // Preserve running agent processes across --watch restarts instead of killing them.
+  // Store on globalThis so the next module evaluation can adopt them.
+  const surviving = extractActiveAgents();
+  if (surviving.size > 0) {
+    (globalThis as any).__funnyActiveAgents = surviving;
+    console.log(`[cleanup] Preserved ${surviving.size} agent(s) for next instance`);
+  } else {
+    await stopAllAgents(); // Fallback: kill any stragglers
+  }
+
   closeDatabase();
 };
 
