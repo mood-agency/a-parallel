@@ -111,7 +111,7 @@ export type WaitingReason = 'question' | 'plan' | 'permission';
 
 export type AgentProvider = 'claude' | 'codex' | 'gemini' | 'llm-api' | 'external';
 
-export type ClaudeModel = 'sonnet' | 'opus' | 'haiku';
+export type ClaudeModel = 'sonnet' | 'sonnet-4.6' | 'opus' | 'haiku';
 export type CodexModel = 'o3' | 'o4-mini' | 'codex-mini';
 export type GeminiModel = 'gemini-2.0-flash' | 'gemini-2.5-flash' | 'gemini-2.5-pro' | 'gemini-3-flash-preview' | 'gemini-3-pro-preview';
 export type AgentModel = ClaudeModel | CodexModel | GeminiModel;
