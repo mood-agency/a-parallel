@@ -70,7 +70,7 @@
     "whatShouldAgentDo": "O que o agente deve fazer?",
     "describeTask": "Descreva a tarefa e pressione Enter para iniciar",
     "selectOrCreate": "Pronto para começar",
-    "threadsRunParallel": "Selecione uma thread ou crie uma nova para começar a trabalhar",
+    "threadsRunParallel": "Selecione um projeto na barra lateral para começar a trabalhar",
     "addProjectFirst": "Adicione um projeto",
     "addProjectDescription": "Abra um projeto na barra lateral para executar agentes em paralelo",
     "agentWorking": "O agente está trabalhando...",
