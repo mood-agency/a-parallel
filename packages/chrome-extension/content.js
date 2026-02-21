@@ -17,6 +17,8 @@
   if (window.__funnyAnnotatorActive) return;
   window.__funnyAnnotatorActive = true;
 
+  console.log('[Funny Annotator] v2.1 loaded', new Date().toISOString());
+
   // ---------------------------------------------------------------------------
   // State
   // ---------------------------------------------------------------------------
@@ -26,6 +28,14 @@
   let hoveredElement = null;
   let isPaused = false;
   let annotationsVisible = true;
+  let isDragging = false;
+  let dragOffset = { x: 0, y: 0 };
+  let scrollRafId = null;
+  let runtimeDisconnected = false;
+
+  // Cache for component name lookups (WeakMap so GC can collect removed elements)
+  const componentNameCache = new WeakMap();
+  const componentTreeCache = new WeakMap();
 
   // DOM refs (created once, reused)
   let shadowHost = null;
@@ -38,10 +48,21 @@
   let badgeContainer = null;
   let highlightContainer = null;
 
+  // Cached popover element refs (set after createPopover)
+  let popoverTextarea = null;
+  let popoverError = null;
+  let popoverElementName = null;
+  let popoverAddBtn = null;
+  let popoverDeleteBtn = null;
+
+  // Drag listener refs (for cleanup)
+  let dragMoveHandler = null;
+  let dragUpHandler = null;
+
   // ---------------------------------------------------------------------------
   // Shadow DOM setup
   // ---------------------------------------------------------------------------
-  function createShadowHost() {
+  async function createShadowHost() {
     shadowHost = document.createElement('div');
     shadowHost.id = 'funny-annotator-host';
     shadowHost.style.cssText = 'all:initial; position:fixed; top:0; left:0; width:0; height:0; z-index:2147483647; pointer-events:none;';
@@ -49,7 +70,7 @@
     shadowRoot = shadowHost.attachShadow({ mode: 'open' });
 
     const style = document.createElement('style');
-    style.textContent = getStyles();
+    style.textContent = await loadStyles();
     shadowRoot.appendChild(style);
 
     // Containers
@@ -87,9 +108,9 @@
   // Element info extraction
   // ---------------------------------------------------------------------------
   function getElementName(el) {
-    // Try React component name first
-    const reactName = getReactComponentName(el);
-    if (reactName) return reactName;
+    // Try framework component name first (React, Vue, Angular, Svelte)
+    const compName = getComponentName(el);
+    if (compName) return compName;
 
     // Fallback: tag + class or id
     const tag = el.tagName.toLowerCase();
@@ -107,23 +128,39 @@
     return tag;
   }
 
-  function getReactComponentName(el) {
+  // Framework component access via page-bridge.js (MAIN world).
+  // Content scripts can't see framework internals directly (isolated world).
+  // We communicate with page-bridge.js via CustomEvents + DOM attributes.
+  // Results are cached per-element in WeakMaps to avoid repeated DOM events.
+
+  function queryComponentInfo(el) {
+    // Single bridge call that populates both caches
+    if (componentNameCache.has(el)) return;
     try {
-      const key = Object.keys(el).find(k => k.startsWith('__reactFiber$') || k.startsWith('__reactInternalInstance$'));
-      if (!key) return null;
-      let fiber = el[key];
-      // Walk up fiber tree to find named component
-      while (fiber) {
-        if (fiber.type && typeof fiber.type === 'function') {
-          return fiber.type.displayName || fiber.type.name || null;
-        }
-        if (fiber.type && typeof fiber.type === 'object' && fiber.type.displayName) {
-          return fiber.type.displayName;
-        }
-        fiber = fiber.return;
-      }
-    } catch (_) { /* ignore */ }
-    return null;
+      const uid = '__funny_' + Date.now() + '_' + Math.random().toString(36).slice(2, 6);
+      el.setAttribute(uid, '');
+      document.documentElement.setAttribute('data-funny-target', uid);
+      document.dispatchEvent(new Event('__funny_get_component_info'));
+      componentNameCache.set(el, el.getAttribute('data-funny-component') || '');
+      componentTreeCache.set(el, el.getAttribute('data-funny-tree') || '');
+      el.removeAttribute(uid);
+      el.removeAttribute('data-funny-component');
+      el.removeAttribute('data-funny-tree');
+      document.documentElement.removeAttribute('data-funny-target');
+    } catch (_) {
+      componentNameCache.set(el, '');
+      componentTreeCache.set(el, '');
+    }
+  }
+
+  function getComponentName(el) {
+    queryComponentInfo(el);
+    return componentNameCache.get(el) || null;
+  }
+
+  function getComponentTree(el) {
+    queryComponentInfo(el);
+    return componentTreeCache.get(el) || '';
   }
 
   function getCSSSelector(el) {
@@ -140,13 +177,13 @@
         const classes = current.className.trim().split(/\s+/).filter(c => c && !c.startsWith('funny-')).slice(0, 2);
         if (classes.length) selector += `.${classes.join('.')}`;
       }
-      // Add nth-child if needed for disambiguation
+      // Add nth-of-type if needed for disambiguation
       const parent = current.parentElement;
       if (parent) {
         const siblings = Array.from(parent.children).filter(c => c.tagName === current.tagName);
         if (siblings.length > 1) {
           const idx = siblings.indexOf(current) + 1;
-          selector += `:nth-child(${idx})`;
+          selector += `:nth-of-type(${idx})`;
         }
       }
       parts.unshift(selector);
@@ -202,6 +239,27 @@
     return texts.join(' | ') || 'none';
   }
 
+  function getFullPath(el) {
+    const parts = [];
+    let current = el;
+    while (current && current !== document.documentElement) {
+      parts.unshift(current.tagName.toLowerCase());
+      current = current.parentElement;
+    }
+    return parts.join(' > ');
+  }
+
+  function getNearbyElements(el) {
+    const items = [];
+    const prev = el.previousElementSibling;
+    if (prev) items.push(`prev: ${prev.tagName.toLowerCase()}${prev.className && typeof prev.className === 'string' ? '.' + prev.className.split(/\s+/)[0] : ''}`);
+    const next = el.nextElementSibling;
+    if (next) items.push(`next: ${next.tagName.toLowerCase()}${next.className && typeof next.className === 'string' ? '.' + next.className.split(/\s+/)[0] : ''}`);
+    const parent = el.parentElement;
+    if (parent) items.push(`parent: ${parent.tagName.toLowerCase()}${parent.className && typeof parent.className === 'string' ? '.' + parent.className.split(/\s+/)[0] : ''} (${parent.children.length} children)`);
+    return items.join(', ') || 'none';
+  }
+
   // ---------------------------------------------------------------------------
   // Hover highlight
   // ---------------------------------------------------------------------------
@@ -229,7 +287,14 @@
   // ---------------------------------------------------------------------------
   // Annotation highlights + badges (persistent, for annotated elements)
   // ---------------------------------------------------------------------------
+
+  // Stored DOM refs for annotation overlays (avoid recreating on scroll)
+  let annotationOverlays = []; // [{ hl, badge, element }]
+
   function renderAnnotations() {
+    // Full rebuild: clears and recreates all overlays.
+    // Called when annotations array changes (add/edit/delete/toggle visibility).
+    annotationOverlays = [];
     highlightContainer.innerHTML = '';
     badgeContainer.innerHTML = '';
 
@@ -240,7 +305,7 @@
       if (!el || !document.contains(el)) return;
       const rect = el.getBoundingClientRect();
 
-      // Persistent highlight (green dashed border like Agentation)
+      // Persistent highlight (green dashed border)
       const hl = createElement('div', 'annotation-highlight');
       hl.style.cssText = `
         position: fixed;
@@ -264,15 +329,50 @@
       `;
       badge.addEventListener('click', (e) => {
         e.stopPropagation();
-        showPopoverForEdit(ann, i);
+        showPopoverForEdit(ann, i, e.clientX, e.clientY);
       });
       badgeContainer.appendChild(badge);
+
+      annotationOverlays.push({ hl, badge, element: el });
     });
   }
 
-  // Reposition on scroll/resize
+  function repositionAnnotations() {
+    // Fast path: move existing overlay DOM nodes without rebuilding.
+    for (const { hl, badge, element } of annotationOverlays) {
+      if (!document.contains(element)) continue;
+      const rect = element.getBoundingClientRect();
+      hl.style.top = `${rect.top}px`;
+      hl.style.left = `${rect.left}px`;
+      hl.style.width = `${rect.width}px`;
+      hl.style.height = `${rect.height}px`;
+      badge.style.top = `${rect.top - 10}px`;
+      badge.style.left = `${rect.right - 10}px`;
+    }
+  }
+
+  // Reposition on scroll/resize (throttled via rAF)
   function onScrollOrResize() {
-    if (isActive) renderAnnotations();
+    if (!isActive) return;
+    if (scrollRafId) return; // already scheduled
+    scrollRafId = requestAnimationFrame(() => {
+      scrollRafId = null;
+      // Move existing overlays (no DOM rebuild)
+      repositionAnnotations();
+      // Update hover highlight position
+      if (hoveredElement && document.contains(hoveredElement)) {
+        const rect = hoveredElement.getBoundingClientRect();
+        hoverHighlight.style.top = `${rect.top}px`;
+        hoverHighlight.style.left = `${rect.left}px`;
+        hoverHighlight.style.width = `${rect.width}px`;
+        hoverHighlight.style.height = `${rect.height}px`;
+      }
+      // Update popover position
+      if (popover.style.display !== 'none' && pendingAnnotationElement && document.contains(pendingAnnotationElement)) {
+        const r = pendingAnnotationElement.getBoundingClientRect();
+        positionPopoverAtPoint(r.left, r.top);
+      }
+    });
   }
 
   // ---------------------------------------------------------------------------
@@ -286,37 +386,66 @@
         <span class="popover-element-name"></span>
       </div>
       <textarea class="popover-textarea" placeholder="Describe the issue or change..." rows="3"></textarea>
-      <div class="popover-options">
-        <div class="popover-option-group">
-          <label>Intent</label>
-          <select class="popover-intent">
-            <option value="fix">Fix</option>
-            <option value="change">Change</option>
-            <option value="question">Question</option>
-            <option value="approve">Approve</option>
-          </select>
-        </div>
-        <div class="popover-option-group">
-          <label>Severity</label>
-          <select class="popover-severity">
-            <option value="suggestion">Suggestion</option>
-            <option value="important">Important</option>
-            <option value="blocking">Blocking</option>
-          </select>
+      <div class="popover-error" style="display:none">Please describe the issue or change.</div>
+      <div class="popover-details">
+        <button class="popover-details-toggle">
+          <svg class="popover-details-arrow" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+            <polyline points="9 18 15 12 9 6"></polyline>
+          </svg>
+          Element info
+        </button>
+        <div class="popover-details-body" style="display:none">
+          <div class="popover-detail-row"><span class="popover-detail-label">Selector</span><code class="popover-detail-value popover-detail-selector"></code></div>
+          <div class="popover-detail-row"><span class="popover-detail-label">Classes</span><code class="popover-detail-value popover-detail-classes"></code></div>
+          <div class="popover-detail-row popover-detail-component-row" style="display:none"><span class="popover-detail-label">Component</span><code class="popover-detail-value popover-detail-component"></code></div>
+          <div class="popover-detail-section">
+            <span class="popover-detail-label">Styles</span>
+            <div class="popover-detail-styles"></div>
+          </div>
+          <div class="popover-detail-row popover-detail-a11y-row" style="display:none"><span class="popover-detail-label">Accessibility</span><span class="popover-detail-value popover-detail-a11y"></span></div>
         </div>
       </div>
       <div class="popover-actions">
-        <button class="popover-cancel">Cancel</button>
-        <button class="popover-add">Add</button>
+        <button class="popover-delete" style="display:none">Delete</button>
+        <div class="popover-actions-right">
+          <button class="popover-cancel">Cancel</button>
+          <button class="popover-add">Add</button>
+        </div>
       </div>
     `;
 
+    // Cache element refs
+    popoverTextarea = pop.querySelector('.popover-textarea');
+    popoverError = pop.querySelector('.popover-error');
+    popoverElementName = pop.querySelector('.popover-element-name');
+    popoverAddBtn = pop.querySelector('.popover-add');
+    popoverDeleteBtn = pop.querySelector('.popover-delete');
+
+    // Accordion toggle
+    const detailsToggle = pop.querySelector('.popover-details-toggle');
+    const detailsBody = pop.querySelector('.popover-details-body');
+    const detailsArrow = pop.querySelector('.popover-details-arrow');
+    detailsToggle.addEventListener('click', () => {
+      const open = detailsBody.style.display !== 'none';
+      detailsBody.style.display = open ? 'none' : 'block';
+      detailsArrow.classList.toggle('popover-details-arrow-open', !open);
+    });
+
     // Events
     pop.querySelector('.popover-cancel').addEventListener('click', () => hidePopover());
-    pop.querySelector('.popover-add').addEventListener('click', () => addAnnotationFromPopover());
+    popoverAddBtn.addEventListener('click', () => addAnnotationFromPopover());
+    popoverDeleteBtn.addEventListener('click', () => deleteAnnotationFromPopover());
+
+    // Clear validation error on input
+    popoverTextarea.addEventListener('input', () => {
+      if (popoverTextarea.value.trim()) {
+        popoverTextarea.classList.remove('popover-textarea-error');
+        popoverError.style.display = 'none';
+      }
+    });
 
     // Enter to submit
-    pop.querySelector('.popover-textarea').addEventListener('keydown', (e) => {
+    popoverTextarea.addEventListener('keydown', (e) => {
       if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
         e.preventDefault();
         addAnnotationFromPopover();
@@ -329,47 +458,114 @@
   let pendingAnnotationElement = null;
   let editingAnnotationIndex = -1;
 
-  function showPopoverForElement(el) {
+  function populateElementDetails(el) {
+    const tag = el.tagName.toLowerCase();
+    const classes = (typeof el.className === 'string' ? el.className : '').trim();
+    const component = getComponentTree(el);
+    const a11y = getAccessibilityInfo(el);
+
+    // Selector
+    popover.querySelector('.popover-detail-selector').textContent = tag + (el.id ? `#${el.id}` : '');
+
+    // Classes
+    const classesEl = popover.querySelector('.popover-detail-classes');
+    classesEl.textContent = classes || 'none';
+
+    // Component tree (only show if detected)
+    const compRow = popover.querySelector('.popover-detail-component-row');
+    if (component) {
+      compRow.style.display = '';
+      popover.querySelector('.popover-detail-component').textContent = component;
+    } else {
+      compRow.style.display = 'none';
+    }
+
+    // Computed styles as individual rows
+    const stylesContainer = popover.querySelector('.popover-detail-styles');
+    stylesContainer.innerHTML = '';
+    const cs = window.getComputedStyle(el);
+    const styleGroups = [
+      { label: 'Layout', props: ['display', 'position', 'width', 'height', 'flex-direction', 'justify-content', 'align-items', 'gap'] },
+      { label: 'Spacing', props: ['margin', 'padding'] },
+      { label: 'Typography', props: ['font-family', 'font-size', 'font-weight', 'line-height', 'color'] },
+      { label: 'Visual', props: ['background-color', 'border', 'border-radius', 'opacity', 'overflow'] },
+    ];
+    const skip = new Set(['none', 'normal', 'auto', '0px', 'rgba(0, 0, 0, 0)', 'visible', 'static']);
+    for (const group of styleGroups) {
+      const entries = [];
+      for (const p of group.props) {
+        const v = cs.getPropertyValue(p);
+        if (!v || skip.has(v)) continue;
+        entries.push({ prop: p, value: v });
+      }
+      if (entries.length === 0) continue;
+      const groupEl = document.createElement('div');
+      groupEl.className = 'popover-style-group';
+      groupEl.innerHTML = `<span class="popover-style-group-label">${group.label}</span>`;
+      for (const { prop, value } of entries) {
+        const row = document.createElement('div');
+        row.className = 'popover-style-row';
+        row.innerHTML = `<span class="popover-style-prop">${prop}</span><span class="popover-style-val">${value}</span>`;
+        groupEl.appendChild(row);
+      }
+      stylesContainer.appendChild(groupEl);
+    }
+
+    // Accessibility (only show if meaningful)
+    const a11yRow = popover.querySelector('.popover-detail-a11y-row');
+    if (a11y && a11y !== 'none') {
+      a11yRow.style.display = '';
+      popover.querySelector('.popover-detail-a11y').textContent = a11y;
+    } else {
+      a11yRow.style.display = 'none';
+    }
+  }
+
+  function showPopoverForElement(el, clickX, clickY) {
     pendingAnnotationElement = el;
     editingAnnotationIndex = -1;
-    const rect = el.getBoundingClientRect();
 
-    popover.querySelector('.popover-element-name').textContent = getElementName(el);
-    popover.querySelector('.popover-textarea').value = '';
-    popover.querySelector('.popover-intent').value = 'fix';
-    popover.querySelector('.popover-severity').value = 'suggestion';
-    popover.querySelector('.popover-add').textContent = 'Add';
+    popoverElementName.textContent = getElementName(el);
+    popoverTextarea.value = '';
+    popoverTextarea.classList.remove('popover-textarea-error');
+    popoverError.style.display = 'none';
+    popoverAddBtn.textContent = 'Add';
+    popoverDeleteBtn.style.display = 'none';
+    populateElementDetails(el);
 
-    positionPopover(rect);
+    positionPopoverAtPoint(clickX, clickY);
     popover.style.display = 'block';
-    popover.querySelector('.popover-textarea').focus();
+    popoverTextarea.focus();
   }
 
-  function showPopoverForEdit(ann, index) {
+  function showPopoverForEdit(ann, index, clickX, clickY) {
     pendingAnnotationElement = ann._element;
     editingAnnotationIndex = index;
-    const rect = ann._element.getBoundingClientRect();
 
-    popover.querySelector('.popover-element-name').textContent = ann.elementName;
-    popover.querySelector('.popover-textarea').value = ann.comment;
-    popover.querySelector('.popover-intent').value = ann.intent;
-    popover.querySelector('.popover-severity').value = ann.severity;
-    popover.querySelector('.popover-add').textContent = 'Update';
+    popoverElementName.textContent = ann.elementName;
+    popoverTextarea.value = ann.comment;
+    popoverTextarea.classList.remove('popover-textarea-error');
+    popoverError.style.display = 'none';
+    popoverAddBtn.textContent = 'Update';
+    popoverDeleteBtn.style.display = 'inline-block';
+    populateElementDetails(ann._element);
 
-    positionPopover(rect);
+    positionPopoverAtPoint(clickX, clickY);
     popover.style.display = 'block';
-    popover.querySelector('.popover-textarea').focus();
+    popoverTextarea.focus();
   }
 
-  function positionPopover(rect) {
+  function positionPopoverAtPoint(x, y) {
     const pw = 320;
     const ph = 260;
-    let top = rect.bottom + 8;
-    let left = rect.left;
+    // Position below and to the right of the click point
+    let top = y + 12;
+    let left = x + 12;
 
-    // Keep in viewport
-    if (top + ph > window.innerHeight) top = rect.top - ph - 8;
-    if (left + pw > window.innerWidth) left = window.innerWidth - pw - 16;
+    // If it overflows bottom, place above the click
+    if (top + ph > window.innerHeight) top = y - ph - 12;
+    // If it overflows right, place to the left of the click
+    if (left + pw > window.innerWidth) left = x - pw - 12;
     if (left < 8) left = 8;
     if (top < 8) top = 8;
 
@@ -381,38 +577,57 @@
     popover.style.display = 'none';
     pendingAnnotationElement = null;
     editingAnnotationIndex = -1;
+    hideHoverHighlight();
   }
 
   function addAnnotationFromPopover() {
-    const comment = popover.querySelector('.popover-textarea').value.trim();
-    const intent = popover.querySelector('.popover-intent').value;
-    const severity = popover.querySelector('.popover-severity').value;
+    const comment = popoverTextarea.value.trim();
     const el = pendingAnnotationElement;
 
     if (!el) return;
 
+    // Validate: comment is required
+    if (!comment) {
+      popoverTextarea.classList.add('popover-textarea-error');
+      popoverError.style.display = 'block';
+      popoverTextarea.focus();
+      return;
+    }
+
+    const rect = el.getBoundingClientRect();
     const annotationData = {
+      // Required (Agentation schema v1)
       id: `ann_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
       comment,
-      intent,
-      severity,
-      element: el.tagName.toLowerCase(),
-      elementName: getElementName(el),
       elementPath: getCSSSelector(el),
+      timestamp: Date.now(),
+      x: Math.round((rect.left + rect.width / 2) / window.innerWidth * 100 * 10) / 10,
+      y: Math.round(rect.top + window.scrollY),
+      element: el.tagName.toLowerCase(),
+      // Recommended
+      url: window.location.href,
+      boundingBox: {
+        x: Math.round(rect.x),
+        y: Math.round(rect.y),
+        width: Math.round(rect.width),
+        height: Math.round(rect.height)
+      },
+      // Optional context
+      componentTree: getComponentTree(el),
       cssClasses: (typeof el.className === 'string' ? el.className : '').trim(),
       computedStyles: getComputedStylesSummary(el),
       accessibility: getAccessibilityInfo(el),
       nearbyText: getNearbyText(el),
-      reactComponent: getReactComponentName(el) || '',
+      selectedText: window.getSelection()?.toString()?.trim() || '',
+      // Browser component
+      isFixed: ['fixed', 'sticky'].includes(window.getComputedStyle(el).position),
+      fullPath: getFullPath(el),
+      nearbyElements: getNearbyElements(el),
+      // Lifecycle
+      status: 'pending',
+      // Extra (not in schema, useful for agents)
+      elementName: getElementName(el),
       outerHTML: el.outerHTML.slice(0, 2000),
-      boundingBox: {
-        x: Math.round(el.getBoundingClientRect().x),
-        y: Math.round(el.getBoundingClientRect().y),
-        width: Math.round(el.getBoundingClientRect().width),
-        height: Math.round(el.getBoundingClientRect().height)
-      },
-      url: window.location.href,
-      timestamp: Date.now(),
       _element: el // private ref, not serialized
     };
 
@@ -428,12 +643,31 @@
     updateToolbarCount();
   }
 
+  function deleteAnnotationFromPopover() {
+    if (editingAnnotationIndex >= 0) {
+      annotations.splice(editingAnnotationIndex, 1);
+    }
+    hidePopover();
+    renderAnnotations();
+    updateToolbarCount();
+  }
+
   // ---------------------------------------------------------------------------
   // Toolbar
   // ---------------------------------------------------------------------------
   function createToolbar() {
     const tb = createElement('div', 'toolbar');
     tb.innerHTML = `
+      <div class="toolbar-drag-handle" title="Drag to move">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <circle cx="8" cy="4" r="1.5"></circle>
+          <circle cx="16" cy="4" r="1.5"></circle>
+          <circle cx="8" cy="12" r="1.5"></circle>
+          <circle cx="16" cy="12" r="1.5"></circle>
+          <circle cx="8" cy="20" r="1.5"></circle>
+          <circle cx="16" cy="20" r="1.5"></circle>
+        </svg>
+      </div>
       <button class="toolbar-btn" data-action="pause" title="Pause animations">
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
           <rect x="6" y="4" width="4" height="16"></rect>
@@ -488,6 +722,36 @@
       handleToolbarAction(btn.dataset.action);
     });
 
+    // Drag to reposition (only from the drag handle)
+    const dragHandle = tb.querySelector('.toolbar-drag-handle');
+    dragHandle.addEventListener('mousedown', (e) => {
+      e.preventDefault();
+      isDragging = true;
+      const rect = tb.getBoundingClientRect();
+      dragOffset.x = e.clientX - rect.left;
+      dragOffset.y = e.clientY - rect.top;
+      tb.classList.add('toolbar-dragging');
+      // Close panels so they don't detach visually
+      hideSettingsPanel();
+      hidePopover();
+    });
+
+    // Named handlers so they can be removed on deactivate
+    dragMoveHandler = (e) => {
+      if (!isDragging) return;
+      const x = e.clientX - dragOffset.x;
+      const y = e.clientY - dragOffset.y;
+      tb.style.left = `${x}px`;
+      tb.style.top = `${y}px`;
+      tb.style.bottom = 'auto';
+      tb.style.transform = 'none';
+    };
+    dragUpHandler = () => {
+      if (!isDragging) return;
+      isDragging = false;
+      tb.classList.remove('toolbar-dragging');
+    };
+
     return tb;
   }
 
@@ -512,6 +776,7 @@
       case 'toggle-visibility':
         annotationsVisible = !annotationsVisible;
         renderAnnotations();
+        updateVisibilityButton();
         break;
       case 'copy':
         copyAsMarkdown();
@@ -534,11 +799,32 @@
     }
   }
 
+  function updateVisibilityButton() {
+    const btn = toolbar.querySelector('[data-action="toggle-visibility"]');
+    if (annotationsVisible) {
+      btn.classList.remove('toolbar-btn-active');
+      btn.innerHTML = `
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path>
+          <circle cx="12" cy="12" r="3"></circle>
+        </svg>`;
+    } else {
+      btn.classList.add('toolbar-btn-active');
+      btn.innerHTML = `
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"></path>
+          <line x1="1" y1="1" x2="23" y2="23"></line>
+        </svg>`;
+    }
+  }
+
   function togglePauseAnimations() {
     isPaused = !isPaused;
     if (isPaused) {
       document.getAnimations().forEach(a => a.pause());
       toolbar.querySelector('[data-action="pause"]').classList.add('toolbar-btn-active');
+      hideHoverHighlight();
+      hidePopover();
     } else {
       document.getAnimations().forEach(a => a.play());
       toolbar.querySelector('[data-action="pause"]').classList.remove('toolbar-btn-active');
@@ -568,7 +854,16 @@
       <div class="settings-body">
         <div class="settings-field">
           <label>Server URL</label>
-          <input type="text" class="settings-input" data-key="serverUrl" placeholder="http://localhost:3001" />
+          <div class="settings-url-row">
+            <input type="text" class="settings-input" data-key="serverUrl" placeholder="http://localhost:3001" />
+            <button class="settings-connect-btn" title="Connect">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M5 12h14"></path>
+                <path d="M12 5l7 7-7 7"></path>
+              </svg>
+            </button>
+          </div>
+          <div class="settings-status"></div>
         </div>
         <div class="settings-field">
           <label>Project</label>
@@ -597,8 +892,7 @@
             </select>
           </div>
         </div>
-        <button class="settings-test-btn">Test Connection</button>
-        <div class="settings-status"></div>
+        <div class="settings-react-status"></div>
       </div>
     `;
 
@@ -608,8 +902,8 @@
       hideSettingsPanel();
     });
 
-    // Test connection
-    panel.querySelector('.settings-test-btn').addEventListener('click', (e) => {
+    // Connect button
+    panel.querySelector('.settings-connect-btn').addEventListener('click', (e) => {
       e.stopPropagation();
       testSettingsConnection();
     });
@@ -646,11 +940,61 @@
 
   function showSettingsPanel() {
     settingsPanel.style.display = 'block';
+    positionSettingsPanel();
     loadSettingsData();
+    updateFrameworkStatus();
+  }
+
+  function detectFramework() {
+    // Ask page-bridge.js (MAIN world) to detect JS frameworks.
+    // Returns a comma-separated string like "React, Next.js" or "" if none found.
+    try {
+      document.documentElement.removeAttribute('data-funny-framework');
+      document.dispatchEvent(new Event('__funny_detect_framework'));
+      const result = document.documentElement.getAttribute('data-funny-framework') || '';
+      console.log('[Funny Annotator] Framework detect result:', result || 'none');
+      document.documentElement.removeAttribute('data-funny-framework');
+      return result;
+    } catch (_) {
+      return '';
+    }
+  }
+
+  function updateFrameworkStatus() {
+    const el = settingsPanel.querySelector('.settings-react-status');
+    const frameworks = detectFramework();
+    if (frameworks) {
+      el.style.display = 'none';
+      el.innerHTML = '';
+    } else {
+      el.style.display = 'flex';
+      el.className = 'settings-react-status settings-react-no';
+      el.innerHTML = '<span class="settings-react-dot settings-react-dot-no"></span> No JS framework detected — component tree data will not be included in annotations';
+    }
   }
 
   function hideSettingsPanel() {
     settingsPanel.style.display = 'none';
+  }
+
+  function positionSettingsPanel() {
+    const settingsBtn = toolbar.querySelector('[data-action="settings"]');
+    const btnRect = settingsBtn.getBoundingClientRect();
+    const panelWidth = 340;
+    const gap = 12;
+
+    // Center panel horizontally on the settings button
+    let left = btnRect.left + btnRect.width / 2 - panelWidth / 2;
+    let top = btnRect.top - gap;
+
+    // Keep within viewport
+    if (left + panelWidth > window.innerWidth - 8) left = window.innerWidth - panelWidth - 8;
+    if (left < 8) left = 8;
+
+    // Show above by default; measure height after display
+    settingsPanel.style.left = `${left}px`;
+    settingsPanel.style.top = 'auto';
+    settingsPanel.style.bottom = `${window.innerHeight - top}px`;
   }
 
   async function loadSettingsData() {
@@ -660,7 +1004,7 @@
 
     try {
       const data = await new Promise((resolve) => {
-        chrome.runtime.sendMessage({ type: 'GET_FULL_CONFIG' }, resolve);
+        safeSendMessage({ type: 'GET_FULL_CONFIG' }, resolve);
       });
 
       if (!data?.success) {
@@ -713,17 +1057,20 @@
         populateSettingsModels(effectiveProvider, config.model);
       }
 
-      // Connection dot
+      // Connection state (dot + connect button + status text)
       const dot = settingsPanel.querySelector('.settings-dot');
+      const connectBtn = settingsPanel.querySelector('.settings-connect-btn');
       if (data.connected) {
         dot.className = 'settings-dot settings-dot-ok';
         dot.title = 'Connected';
+        connectBtn.className = 'settings-connect-btn settings-connect-btn-ok';
         statusEl.textContent = 'Connected';
         statusEl.className = 'settings-status settings-status-ok';
       } else {
         dot.className = 'settings-dot settings-dot-err';
         dot.title = 'Not connected';
-        statusEl.textContent = 'Not connected';
+        connectBtn.className = 'settings-connect-btn settings-connect-btn-err';
+        statusEl.textContent = 'Not connected — click arrow to connect';
         statusEl.className = 'settings-status settings-status-error';
       }
     } catch (err) {
@@ -763,23 +1110,26 @@
     settingsPanel.querySelectorAll('[data-key]').forEach(el => {
       config[el.dataset.key] = el.value;
     });
-    chrome.runtime.sendMessage({ type: 'SAVE_CONFIG', config });
+    safeSendMessage({ type: 'SAVE_CONFIG', config });
   }
 
   async function testSettingsConnection() {
     const statusEl = settingsPanel.querySelector('.settings-status');
+    const connectBtn = settingsPanel.querySelector('.settings-connect-btn');
     const serverUrl = settingsPanel.querySelector('[data-key="serverUrl"]').value.trim();
     statusEl.textContent = 'Connecting...';
     statusEl.className = 'settings-status';
+    connectBtn.className = 'settings-connect-btn';
 
     try {
       const result = await new Promise((resolve) => {
-        chrome.runtime.sendMessage({ type: 'TEST_CONNECTION', serverUrl }, resolve);
+        safeSendMessage({ type: 'TEST_CONNECTION', serverUrl }, resolve);
       });
 
       const dot = settingsPanel.querySelector('.settings-dot');
       if (result?.success) {
         dot.className = 'settings-dot settings-dot-ok';
+        connectBtn.className = 'settings-connect-btn settings-connect-btn-ok';
         statusEl.textContent = 'Connected';
         statusEl.className = 'settings-status settings-status-ok';
         // Reload all data with new URL
@@ -787,10 +1137,12 @@
         loadSettingsData();
       } else {
         dot.className = 'settings-dot settings-dot-err';
+        connectBtn.className = 'settings-connect-btn settings-connect-btn-err';
         statusEl.textContent = result?.error || 'Connection failed';
         statusEl.className = 'settings-status settings-status-error';
       }
     } catch (_) {
+      connectBtn.className = 'settings-connect-btn settings-connect-btn-err';
       statusEl.textContent = 'Connection failed';
       statusEl.className = 'settings-status settings-status-error';
     }
@@ -808,14 +1160,16 @@
     md += `**Date:** ${new Date().toISOString()}\n\n---\n\n`;
 
     annotations.forEach((ann, i) => {
-      md += `### Annotation ${i + 1} — ${ann.intent} (${ann.severity})\n\n`;
+      md += `### Annotation ${i + 1}\n\n`;
       md += `**Element:** \`${ann.element}\` at \`${ann.elementPath}\`\n`;
+      md += `**Position:** ${ann.x}% from left, ${ann.y}px from top\n`;
       if (ann.cssClasses) md += `**Classes:** \`${ann.cssClasses}\`\n`;
-      if (ann.reactComponent) md += `**React Component:** \`${ann.reactComponent}\`\n`;
+      if (ann.componentTree) md += `**Component Tree:** \`${ann.componentTree}\`\n`;
       md += `**Styles:** ${ann.computedStyles}\n`;
       md += `**Accessibility:** ${ann.accessibility}\n`;
       md += `**Nearby text:** ${ann.nearbyText}\n`;
       md += `**Bounding box:** ${ann.boundingBox.width}x${ann.boundingBox.height} at (${ann.boundingBox.x}, ${ann.boundingBox.y})\n`;
+      if (ann.isFixed) md += `**Fixed position:** yes\n`;
       if (ann.comment) md += `\n**Comment:** ${ann.comment}\n`;
       md += `\n**HTML (truncated):**\n\`\`\`html\n${ann.outerHTML.slice(0, 500)}\n\`\`\`\n\n`;
       if (i < annotations.length - 1) md += `---\n\n`;
@@ -859,7 +1213,7 @@
       const serialized = annotations.map(({ _element, ...rest }) => rest);
 
       // Send to background worker
-      chrome.runtime.sendMessage({
+      safeSendMessage({
         type: 'SEND_TO_FUNNY',
         data: {
           url: window.location.href,
@@ -888,7 +1242,7 @@
 
   function captureScreenshot() {
     return new Promise((resolve) => {
-      chrome.runtime.sendMessage({ type: 'CAPTURE_SCREENSHOT' }, (response) => {
+      safeSendMessage({ type: 'CAPTURE_SCREENSHOT' }, (response) => {
         resolve(response?.screenshot || null);
       });
     });
@@ -916,7 +1270,7 @@
   // Event handlers
   // ---------------------------------------------------------------------------
   function onMouseMove(e) {
-    if (!isActive || popover.style.display === 'block') return;
+    if (!isActive || isPaused || popover.style.display === 'block') return;
 
     const el = document.elementFromPoint(e.clientX, e.clientY);
     if (!el || el === shadowHost || shadowHost.contains(el)) {
@@ -934,8 +1288,11 @@
   function onClick(e) {
     if (!isActive) return;
 
-    // Ignore clicks on our own UI
-    if (e.target === shadowHost || shadowHost.contains(e.target)) return;
+    // Ignore clicks on our own UI (use composedPath to reliably cross shadow DOM boundaries)
+    if (e.composedPath().includes(shadowHost)) return;
+
+    // When paused, don't intercept clicks — let the page behave normally
+    if (isPaused) return;
 
     // Close settings panel if open
     if (settingsPanel.style.display === 'block') {
@@ -955,8 +1312,8 @@
     e.preventDefault();
     e.stopPropagation();
 
-    hideHoverHighlight();
-    showPopoverForElement(el);
+    // Keep the hover highlight visible while the popover is open
+    showPopoverForElement(el, e.clientX, e.clientY);
   }
 
   function onKeyDown(e) {
@@ -976,17 +1333,28 @@
   // ---------------------------------------------------------------------------
   // Activate / Deactivate
   // ---------------------------------------------------------------------------
-  function activate() {
+  async function activate() {
     if (isActive) return;
     isActive = true;
-    if (!shadowHost) createShadowHost();
+    if (!shadowHost) await createShadowHost();
     toolbar.style.display = 'flex';
+
+    // Inject page-bridge.js into MAIN world (for framework detection).
+    // Done via background script to bypass CSP restrictions.
+    if (!window.__funnyBridgeInjected) {
+      safeSendMessage({ type: 'INJECT_PAGE_BRIDGE' }, () => {
+        window.__funnyBridgeInjected = true;
+      });
+    }
 
     document.addEventListener('mousemove', onMouseMove, true);
     document.addEventListener('click', onClick, true);
     document.addEventListener('keydown', onKeyDown, true);
     window.addEventListener('scroll', onScrollOrResize, true);
     window.addEventListener('resize', onScrollOrResize, true);
+    // Drag listeners (registered on activate, removed on deactivate)
+    document.addEventListener('mousemove', dragMoveHandler);
+    document.addEventListener('mouseup', dragUpHandler);
 
     renderAnnotations();
     updateToolbarCount();
@@ -1000,12 +1368,21 @@
     toolbar.style.display = 'none';
     highlightContainer.innerHTML = '';
     badgeContainer.innerHTML = '';
+    annotationOverlays = [];
 
     document.removeEventListener('mousemove', onMouseMove, true);
     document.removeEventListener('click', onClick, true);
     document.removeEventListener('keydown', onKeyDown, true);
     window.removeEventListener('scroll', onScrollOrResize, true);
     window.removeEventListener('resize', onScrollOrResize, true);
+    document.removeEventListener('mousemove', dragMoveHandler);
+    document.removeEventListener('mouseup', dragUpHandler);
+
+    // Cancel any pending rAF
+    if (scrollRafId) {
+      cancelAnimationFrame(scrollRafId);
+      scrollRafId = null;
+    }
 
     // Resume animations if paused
     if (isPaused) {
@@ -1025,460 +1402,50 @@
         activate();
       }
       sendResponse({ active: isActive });
-    }
-    if (msg.type === 'GET_STATE') {
+    } else if (msg.type === 'GET_STATE') {
       sendResponse({
         active: isActive,
         annotationCount: annotations.length,
         annotations: annotations.map(({ _element, ...rest }) => rest)
       });
-    }
-    if (msg.type === 'ACTIVATE') {
+    } else if (msg.type === 'ACTIVATE') {
       activate();
       sendResponse({ active: true });
     }
-    return true; // Keep channel open for async
+    // No async responses needed — don't return true
   });
 
   // ---------------------------------------------------------------------------
-  // Styles
+  // Runtime disconnect handler
   // ---------------------------------------------------------------------------
-  function getStyles() {
-    return `
-      * { box-sizing: border-box; }
+  // When the extension is updated/reloaded, chrome.runtime becomes invalid.
+  // Wrap sendMessage calls to avoid "Extension context invalidated" errors.
+  function safeSendMessage(msg, callback) {
+    try {
+      if (runtimeDisconnected) return;
+      chrome.runtime.sendMessage(msg, (response) => {
+        if (chrome.runtime.lastError) {
+          runtimeDisconnected = true;
+          console.warn('[Funny Annotator] Extension disconnected:', chrome.runtime.lastError.message);
+          return;
+        }
+        if (callback) callback(response);
+      });
+    } catch (_) {
+      runtimeDisconnected = true;
+    }
+  }
 
-      .hover-highlight {
-        display: none;
-        border: 2px solid #3b82f6;
-        background: rgba(59, 130, 246, 0.08);
-        border-radius: 4px;
-        pointer-events: none;
-        z-index: 10;
-        transition: all 0.1s ease;
-      }
-
-      .hover-label {
-        position: absolute;
-        top: -24px;
-        left: -1px;
-        background: #3b82f6;
-        color: white;
-        font-size: 11px;
-        font-family: 'SF Mono', 'Fira Code', 'Consolas', monospace;
-        padding: 2px 8px;
-        border-radius: 4px 4px 0 0;
-        white-space: nowrap;
-        max-width: 300px;
-        overflow: hidden;
-        text-overflow: ellipsis;
-      }
-
-      .annotation-highlight {
-        border: 2px dashed #22c55e;
-        background: rgba(34, 197, 94, 0.06);
-        border-radius: 4px;
-        pointer-events: none;
-        z-index: 5;
-      }
-
-      .annotation-badge {
-        width: 22px;
-        height: 22px;
-        background: #3b82f6;
-        color: white;
-        font-size: 12px;
-        font-weight: 700;
-        font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
-        border-radius: 50%;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        z-index: 15;
-        box-shadow: 0 2px 6px rgba(0,0,0,0.3);
-        transition: transform 0.15s ease;
-      }
-      .annotation-badge:hover {
-        transform: scale(1.2);
-      }
-
-      /* Popover */
-      .popover {
-        position: fixed;
-        width: 320px;
-        background: #1a1a1a;
-        color: #e5e5e5;
-        border-radius: 12px;
-        padding: 16px;
-        font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
-        font-size: 13px;
-        box-shadow: 0 8px 32px rgba(0,0,0,0.5);
-        z-index: 100;
-        pointer-events: auto;
-      }
-
-      .popover-header {
-        margin-bottom: 10px;
-      }
-
-      .popover-element-name {
-        color: #22c55e;
-        font-family: 'SF Mono', 'Fira Code', 'Consolas', monospace;
-        font-size: 13px;
-        font-weight: 600;
-      }
-
-      .popover-textarea {
-        width: 100%;
-        background: #2a2a2a;
-        border: 1px solid #404040;
-        border-radius: 8px;
-        color: #e5e5e5;
-        font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
-        font-size: 13px;
-        padding: 10px;
-        resize: vertical;
-        outline: none;
-        min-height: 60px;
-      }
-      .popover-textarea:focus {
-        border-color: #3b82f6;
-      }
-      .popover-textarea::placeholder {
-        color: #666;
-      }
-
-      .popover-options {
-        display: flex;
-        gap: 10px;
-        margin: 10px 0;
-      }
-
-      .popover-option-group {
-        flex: 1;
-      }
-
-      .popover-option-group label {
-        display: block;
-        font-size: 11px;
-        color: #888;
-        margin-bottom: 4px;
-        text-transform: uppercase;
-        letter-spacing: 0.5px;
-      }
-
-      .popover-option-group select {
-        width: 100%;
-        background: #2a2a2a;
-        border: 1px solid #404040;
-        border-radius: 6px;
-        color: #e5e5e5;
-        font-size: 12px;
-        padding: 6px 8px;
-        outline: none;
-        cursor: pointer;
-      }
-      .popover-option-group select:focus {
-        border-color: #3b82f6;
-      }
-
-      .popover-actions {
-        display: flex;
-        justify-content: flex-end;
-        gap: 8px;
-        margin-top: 12px;
-      }
-
-      .popover-cancel {
-        background: transparent;
-        border: none;
-        color: #888;
-        font-size: 13px;
-        cursor: pointer;
-        padding: 6px 12px;
-        border-radius: 6px;
-      }
-      .popover-cancel:hover {
-        color: #ccc;
-        background: #333;
-      }
-
-      .popover-add {
-        background: #22c55e;
-        border: none;
-        color: white;
-        font-size: 13px;
-        font-weight: 600;
-        cursor: pointer;
-        padding: 6px 16px;
-        border-radius: 6px;
-      }
-      .popover-add:hover {
-        background: #16a34a;
-      }
-
-      /* Toolbar */
-      .toolbar {
-        position: fixed;
-        bottom: 24px;
-        left: 50%;
-        transform: translateX(-50%);
-        display: none;
-        align-items: center;
-        gap: 4px;
-        background: #1a1a1a;
-        border-radius: 16px;
-        padding: 8px 12px;
-        box-shadow: 0 8px 32px rgba(0,0,0,0.5);
-        pointer-events: auto;
-        z-index: 200;
-        font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
-      }
-
-      .toolbar-btn {
-        width: 36px;
-        height: 36px;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        background: transparent;
-        border: none;
-        color: #aaa;
-        cursor: pointer;
-        border-radius: 10px;
-        transition: all 0.15s ease;
-        padding: 0;
-      }
-      .toolbar-btn:hover {
-        background: #333;
-        color: white;
-      }
-      .toolbar-btn-active {
-        background: #333;
-        color: #3b82f6;
-      }
-      .toolbar-btn[disabled] {
-        opacity: 0.5;
-        cursor: not-allowed;
-      }
-
-      .toolbar-btn-send {
-        width: auto;
-        padding: 0 14px;
-        gap: 6px;
-        background: #22c55e;
-        color: white;
-        font-weight: 600;
-        font-size: 13px;
-      }
-      .toolbar-btn-send:hover {
-        background: #16a34a;
-        color: white;
-      }
-      .toolbar-btn-loading {
-        opacity: 0.7;
-        pointer-events: none;
-      }
-
-      .toolbar-send-label {
-        white-space: nowrap;
-      }
-
-      .toolbar-count {
-        display: inline-flex;
-        align-items: center;
-        justify-content: center;
-        min-width: 20px;
-        height: 20px;
-        background: rgba(255,255,255,0.2);
-        border-radius: 10px;
-        font-size: 11px;
-        font-weight: 700;
-        padding: 0 6px;
-      }
-
-      .toolbar-separator {
-        width: 1px;
-        height: 24px;
-        background: #333;
-        margin: 0 4px;
-      }
-
-      /* Settings panel */
-      .settings-panel {
-        position: fixed;
-        bottom: 80px;
-        left: 50%;
-        transform: translateX(-50%);
-        width: 340px;
-        background: #1a1a1a;
-        color: #e5e5e5;
-        border-radius: 14px;
-        box-shadow: 0 8px 32px rgba(0,0,0,0.5);
-        pointer-events: auto;
-        z-index: 250;
-        font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
-        font-size: 13px;
-        overflow: hidden;
-      }
-
-      .settings-header {
-        display: flex;
-        align-items: center;
-        justify-content: space-between;
-        padding: 12px 14px;
-        border-bottom: 1px solid #2a2a2a;
-      }
-
-      .settings-title {
-        display: flex;
-        align-items: center;
-        gap: 8px;
-        font-weight: 600;
-        font-size: 13px;
-        color: white;
-      }
-
-      .settings-logo {
-        width: 20px;
-        height: 20px;
-        background: #22c55e;
-        border-radius: 6px;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        font-weight: 900;
-        font-size: 11px;
-        color: white;
-      }
-
-      .settings-dot {
-        width: 8px;
-        height: 8px;
-        border-radius: 50%;
-        background: #555;
-        flex-shrink: 0;
-      }
-      .settings-dot-ok { background: #22c55e; }
-      .settings-dot-err { background: #dc2626; }
-
-      .settings-close-btn {
-        width: 28px;
-        height: 28px;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        background: transparent;
-        border: none;
-        color: #888;
-        cursor: pointer;
-        border-radius: 6px;
-        padding: 0;
-      }
-      .settings-close-btn:hover {
-        background: #333;
-        color: white;
-      }
-
-      .settings-body {
-        padding: 12px 14px;
-      }
-
-      .settings-field {
-        margin-bottom: 10px;
-        flex: 1;
-      }
-
-      .settings-field label {
-        display: block;
-        font-size: 11px;
-        color: #888;
-        margin-bottom: 4px;
-        text-transform: uppercase;
-        letter-spacing: 0.5px;
-      }
-
-      .settings-input,
-      .settings-select {
-        width: 100%;
-        background: #2a2a2a;
-        border: 1px solid #404040;
-        border-radius: 8px;
-        color: #e5e5e5;
-        font-size: 12px;
-        padding: 7px 10px;
-        outline: none;
-      }
-      .settings-input:focus,
-      .settings-select:focus {
-        border-color: #3b82f6;
-      }
-      .settings-select { cursor: pointer; }
-
-      .settings-row {
-        display: flex;
-        gap: 10px;
-      }
-
-      .settings-test-btn {
-        width: 100%;
-        padding: 8px;
-        background: #2a2a2a;
-        border: 1px solid #404040;
-        border-radius: 8px;
-        color: #ccc;
-        font-size: 12px;
-        font-weight: 500;
-        cursor: pointer;
-        margin-bottom: 8px;
-      }
-      .settings-test-btn:hover {
-        background: #333;
-        color: white;
-      }
-
-      .settings-status {
-        font-size: 11px;
-        color: #666;
-        text-align: center;
-        min-height: 16px;
-      }
-      .settings-status-ok { color: #22c55e; }
-      .settings-status-error { color: #dc2626; }
-
-      /* Toast */
-      .toast {
-        position: fixed;
-        top: 24px;
-        left: 50%;
-        transform: translateX(-50%) translateY(-20px);
-        background: #1a1a1a;
-        color: #e5e5e5;
-        padding: 10px 20px;
-        border-radius: 10px;
-        font-size: 13px;
-        font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
-        box-shadow: 0 4px 16px rgba(0,0,0,0.4);
-        opacity: 0;
-        transition: all 0.3s ease;
-        pointer-events: none;
-        z-index: 300;
-      }
-      .toast-visible {
-        opacity: 1;
-        transform: translateX(-50%) translateY(0);
-      }
-      .toast-error {
-        background: #dc2626;
-        color: white;
-      }
-
-      .highlight-container, .badge-container {
-        position: fixed;
-        top: 0;
-        left: 0;
-        width: 0;
-        height: 0;
-      }
-    `;
+  // ---------------------------------------------------------------------------
+  // Styles (loaded from external content.css)
+  // ---------------------------------------------------------------------------
+  async function loadStyles() {
+    try {
+      const url = chrome.runtime.getURL('content.css');
+      const res = await fetch(url);
+      return await res.text();
+    } catch (_) {
+      return ''; // Styles will be missing but extension won't crash
+    }
   }
 })();

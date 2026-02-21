@@ -213,10 +213,6 @@ function renderAnnotationList(annotations) {
       <div class="annotation-info">
         <div class="annotation-name">${escapeHtml(ann.elementName)}</div>
         ${ann.comment ? `<div class="annotation-comment">${escapeHtml(ann.comment)}</div>` : ''}
-        <div class="annotation-badges">
-          <span class="annotation-badge ${ann.intent}">${ann.intent}</span>
-          <span class="annotation-badge ${ann.severity}">${ann.severity}</span>
-        </div>
       </div>
     </div>
   `).join('');

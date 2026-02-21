@@ -44,13 +44,16 @@ export function WriteFileCard({ parsed, hideLabel }: { parsed: Record<string, un
                 {displayPath}
               </a>
             ) : (
-              <button
+              <span
+                role="button"
+                tabIndex={0}
                 onClick={(e) => { e.stopPropagation(); openFileInEditor(filePath, defaultEditor); }}
-                className="text-muted-foreground truncate font-mono text-xs min-w-0 hover:text-primary hover:underline text-left"
+                onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.stopPropagation(); openFileInEditor(filePath, defaultEditor); } }}
+                className="text-muted-foreground truncate font-mono text-xs min-w-0 hover:text-primary hover:underline text-left cursor-pointer"
                 title={editorTitle}
               >
                 {displayPath}
-              </button>
+              </span>
             );
           })()
         )}

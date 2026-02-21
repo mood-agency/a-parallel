@@ -177,6 +177,19 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     return true;
   }
 
+  if (msg.type === 'INJECT_PAGE_BRIDGE') {
+    const tabId = sender.tab?.id;
+    if (!tabId) { sendResponse({ success: false }); return true; }
+    chrome.scripting.executeScript({
+      target: { tabId },
+      files: ['page-bridge.js'],
+      world: 'MAIN',
+    })
+      .then(() => sendResponse({ success: true }))
+      .catch(() => sendResponse({ success: false }));
+    return true;
+  }
+
   if (msg.type === 'CLEAR_TOKEN') {
     chrome.storage.local.remove('funnyToken').then(() => sendResponse({ success: true }));
     return true;
