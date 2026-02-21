@@ -48,7 +48,7 @@ interface KanbanViewProps {
 
 const STAGES: ThreadStage[] = ['backlog', 'in_progress', 'review', 'done', 'archived'];
 
-function KanbanCard({ thread, projectInfo, onDelete, search, ghost, contentSnippet, projectId, highlighted }: { thread: Thread; projectInfo?: { name: string; color?: string }; onDelete: (thread: Thread) => void; search?: string; ghost?: boolean; contentSnippet?: string; projectId?: string; highlighted?: boolean }) {
+function KanbanCard({ thread, projectInfo, onDelete, search, ghost, contentSnippet, projectId, highlighted, stage }: { thread: Thread; projectInfo?: { name: string; color?: string }; onDelete: (thread: Thread) => void; search?: string; ghost?: boolean; contentSnippet?: string; projectId?: string; highlighted?: boolean; stage: ThreadStage }) {
   const { t } = useTranslation();
   const navigate = useNavigate();
   const statusByThread = useGitStatusStore((s) => s.statusByThread);
@@ -107,7 +107,7 @@ function KanbanCard({ thread, projectInfo, onDelete, search, ghost, contentSnipp
       }}
     >
       <div className="absolute top-1.5 right-1.5 flex items-center gap-0.5">
-        {thread.pinned && (
+        {thread.pinned && stage === 'review' && (
           <Pin className="h-3 w-3 text-primary rotate-45" />
         )}
         <button
@@ -327,7 +327,7 @@ function KanbanColumn({ stage, threads, projectInfoById, onDelete, projectId, pr
           </div>
         ) : (
           <>
-            {visibleThreads.map((thread) => <KanbanCard key={thread.id} thread={thread} projectInfo={projectInfoById?.[thread.projectId]} onDelete={onDelete} search={search} ghost={stage === 'archived'} contentSnippet={contentSnippets?.get(thread.id)} projectId={projectId} highlighted={thread.id === highlightThreadId} />)}
+            {visibleThreads.map((thread) => <KanbanCard key={thread.id} thread={thread} projectInfo={projectInfoById?.[thread.projectId]} onDelete={onDelete} search={search} ghost={stage === 'archived'} contentSnippet={contentSnippets?.get(thread.id)} projectId={projectId} highlighted={thread.id === highlightThreadId} stage={stage} />)}
             {hasMore && (
               <button
                 onClick={() => setVisibleCount((prev) => prev + 20)}
@@ -351,6 +351,7 @@ export function KanbanView({ threads, projectId, search, contentSnippets, highli
   const archiveThread = useThreadStore((s) => s.archiveThread);
   const unarchiveThread = useThreadStore((s) => s.unarchiveThread);
   const deleteThread = useThreadStore((s) => s.deleteThread);
+  const pinThread = useThreadStore((s) => s.pinThread);
   const selectedThreadId = useThreadStore((s) => s.selectedThreadId);
   const projects = useAppStore((s) => s.projects);
   const loadThreadsForProject = useAppStore((s) => s.loadThreadsForProject);
@@ -505,10 +506,10 @@ export function KanbanView({ threads, projectId, search, contentSnippets, highli
       }
     }
 
-    // Sort each column: pinned first, then by date (most recent first)
+    // Sort each column: pinned first only in review, then by date (most recent first)
     for (const stage of STAGES) {
       map[stage].sort((a, b) => {
-        if (a.pinned !== b.pinned) return a.pinned ? -1 : 1;
+        if (stage === 'review' && a.pinned !== b.pinned) return a.pinned ? -1 : 1;
         const dateA = a.completedAt || a.createdAt;
         const dateB = b.completedAt || b.createdAt;
         return new Date(dateB).getTime() - new Date(dateA).getTime();
@@ -556,6 +557,14 @@ export function KanbanView({ threads, projectId, search, contentSnippets, highli
         }
       }
 
+      // Auto-unpin when moving out of review
+      if (sourceStage === 'review' && newStage !== 'review') {
+        const thread = threads.find((t) => t.id === threadId);
+        if (thread?.pinned) {
+          pinThread(threadId, targetProjectId, false);
+        }
+      }
+
       if (newStage === 'archived') {
         // Dragging to archived column → archive the thread
         archiveThread(threadId, targetProjectId);
@@ -566,7 +575,7 @@ export function KanbanView({ threads, projectId, search, contentSnippets, highli
         updateThreadStage(threadId, targetProjectId, newStage);
       }
     },
-    [projectId, updateThreadStage, archiveThread, unarchiveThread, statusByThread, threads]
+    [projectId, updateThreadStage, archiveThread, unarchiveThread, pinThread, statusByThread, threads]
   );
 
   useEffect(() => {
