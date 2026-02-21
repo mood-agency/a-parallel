@@ -59,6 +59,7 @@ export const gitSyncStateConfig: Record<GitSyncState, { icon: typeof Clock; clas
 const MODEL_ID_TO_KEY: Record<string, string> = {
   'claude-opus-4-6': 'opus',
   'claude-sonnet-4-5-20250929': 'sonnet',
+  'claude-sonnet-4-6': 'sonnet46',
   'claude-haiku-4-5-20251001': 'haiku',
   'gemini-2.0-flash': 'gemini20flash',
   'gemini-2.5-flash': 'gemini25flash',
