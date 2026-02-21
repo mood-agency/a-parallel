@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useProjectStore } from '@/stores/project-store';
 import { useThreadStore } from '@/stores/thread-store';
@@ -38,10 +38,14 @@ export function AutomationInboxView() {
   const [triageStatusFilter, setTriageStatusFilter] = useState<RunTriageStatus | 'all'>('pending');
   const [searchQuery, setSearchQuery] = useState('');
 
+  // Keep a stable ref to avoid restarting the effect on re-renders
+  const loadInboxRef = useRef(loadInbox);
+  loadInboxRef.current = loadInbox;
+
   // Always load all inbox items so tab counts stay accurate; filter client-side
   useEffect(() => {
-    loadInbox();
-  }, [loadInbox]);
+    loadInboxRef.current();
+  }, []);
 
   const filteredInbox = useMemo(() => {
     let items = inbox;
