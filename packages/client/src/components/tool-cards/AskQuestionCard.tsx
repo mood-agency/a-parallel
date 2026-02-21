@@ -2,10 +2,66 @@ import { useState, useRef, useEffect, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 import { MessageCircleQuestion, Check, Send, PenLine, ChevronRight } from 'lucide-react';
 import { cn } from '@/lib/utils';
-import { getQuestions } from './utils';
+import { getQuestions, type Question } from './utils';
 
 // Special index to represent "Other" option
 const OTHER_INDEX = -1;
+
+/**
+ * Parse the output string back into selections and otherTexts maps
+ * by matching answer lines against the original question options.
+ * Output format:
+ *   [Header] Question text
+ *   → Option Label — Option Description
+ *   → Other — free text
+ */
+function parseOutputToSelections(output: string, questions: Question[]): { selections: Map<number, Set<number>>; otherTexts: Map<number, string> } {
+  const selections = new Map<number, Set<number>>();
+  const otherTexts = new Map<number, string>();
+
+  // Split output into question blocks (separated by blank lines)
+  const blocks = output.split('\n\n');
+
+  blocks.forEach((block) => {
+    const lines = block.split('\n');
+    if (lines.length === 0) return;
+
+    // First line is "[Header] Question text" — match to a question by header
+    const headerMatch = lines[0].match(/^\[(.+?)\]/);
+    if (!headerMatch) return;
+    const header = headerMatch[1];
+    const qIndex = questions.findIndex((q) => q.header === header);
+    if (qIndex === -1) return;
+
+    const q = questions[qIndex];
+    const selected = new Set<number>();
+
+    // Remaining lines are "→ Label — Description"
+    for (let i = 1; i < lines.length; i++) {
+      const line = lines[i].replace(/^→\s*/, '');
+      if (!line) continue;
+
+      // Try to match against known options by label
+      const dashIdx = line.indexOf('—');
+      const label = dashIdx !== -1 ? line.substring(0, dashIdx).trim() : line.trim();
+      const optIndex = q.options.findIndex((opt) => opt.label === label);
+      if (optIndex !== -1) {
+        selected.add(optIndex);
+      } else {
+        // Unrecognized option — treat as "Other" answer (locale-independent)
+        const otherText = dashIdx !== -1 ? line.substring(dashIdx + 1).trim() : line;
+        selected.add(OTHER_INDEX);
+        otherTexts.set(qIndex, otherText);
+      }
+    }
+
+    if (selected.size > 0) {
+      selections.set(qIndex, selected);
+    }
+  });
+
+  return { selections, otherTexts };
+}
 
 export function AskQuestionCard({ parsed, onRespond, output, hideLabel }: { parsed: Record<string, unknown>; onRespond?: (answer: string) => void; output?: string; hideLabel?: boolean }) {
   const { t } = useTranslation();
@@ -13,10 +69,16 @@ export function AskQuestionCard({ parsed, onRespond, output, hideLabel }: { pars
   if (!questions || questions.length === 0) return null;
 
   const alreadyAnswered = !!output;
+  // Parse existing output back into selections for read-only display
+  const restoredState = useMemo(() => {
+    if (!alreadyAnswered) return null;
+    return parseOutputToSelections(output!, questions);
+  }, [alreadyAnswered, output, questions]);
+
   const [activeTab, setActiveTab] = useState(0);
-  const [selections, setSelections] = useState<Map<number, Set<number>>>(() => new Map());
+  const [selections, setSelections] = useState<Map<number, Set<number>>>(() => restoredState?.selections ?? new Map());
   const [submitted, setSubmitted] = useState(alreadyAnswered);
-  const [otherTexts, setOtherTexts] = useState<Map<number, string>>(() => new Map());
+  const [otherTexts, setOtherTexts] = useState<Map<number, string>>(() => restoredState?.otherTexts ?? new Map());
   const otherInputRef = useRef<HTMLTextAreaElement>(null);
 
   const toggleOption = (qIndex: number, optIndex: number, multiSelect: boolean) => {
@@ -137,18 +199,6 @@ export function AskQuestionCard({ parsed, onRespond, output, hideLabel }: { pars
 
       {/* Tabs */}
       <div className="border-t border-border/40">
-        {alreadyAnswered ? (
-          <div className="px-3 py-2">
-            {output!.split('\n').map((line, i) => (
-              <p key={i} className={cn(
-                'text-xs leading-relaxed',
-                line.startsWith('→') ? 'text-primary font-medium' : 'text-muted-foreground'
-              )}>
-                {line}
-              </p>
-            ))}
-          </div>
-        ) : (<>
         {questions.length > 1 && (
           <div className="flex gap-0 border-b border-border/40">
             {questions.map((q, i) => (
@@ -178,10 +228,10 @@ export function AskQuestionCard({ parsed, onRespond, output, hideLabel }: { pars
         <div className="px-3 py-2 space-y-2">
           <p className="text-xs text-foreground leading-relaxed">{activeQ.question}</p>
 
-          {/* Options — use min-height from the tallest question to prevent layout shift */}
+          {/* Options — use min-height from the tallest question to prevent layout shift (only when interactive) */}
           <div
             className="space-y-1"
-            style={maxContentHeight > 0 ? { minHeight: `${maxContentHeight}px` } : undefined}
+            style={!submitted && maxContentHeight > 0 ? { minHeight: `${maxContentHeight}px` } : undefined}
           >
             {activeQ.options.map((opt, oi) => {
               const isSelected = activeSelections.has(oi);
@@ -311,7 +361,6 @@ export function AskQuestionCard({ parsed, onRespond, output, hideLabel }: { pars
             </div>
           )}
         </div>
-      </>)}
       </div>
     </div>
   );

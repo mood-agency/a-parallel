@@ -556,7 +556,7 @@ export function LiveColumnsView() {
       <div className="flex-1 flex flex-col h-full min-w-0 overflow-hidden">
         <div className="flex-shrink-0 border-b border-border px-4 py-2 flex items-center gap-2">
           <Columns3 className="h-4 w-4 text-muted-foreground" />
-          <span className="text-sm font-medium">{t('live.title', 'Live')}</span>
+          <span className="text-sm font-medium">{t('live.title', 'Grid')}</span>
           <Popover open={projectPickerOpen} onOpenChange={(v) => { setProjectPickerOpen(v); if (!v) setProjectSearch(''); }}>
             <PopoverTrigger asChild>
               <Button variant="ghost" className="h-6 px-2 text-[10px] gap-1.5 min-w-0">
@@ -625,7 +625,7 @@ export function LiveColumnsView() {
       {/* Header */}
       <div className="flex-shrink-0 border-b border-border px-4 py-2 flex items-center gap-2">
         <Columns3 className="h-4 w-4 text-muted-foreground" />
-        <span className="text-sm font-medium">{t('live.title', 'Live')}</span>
+        <span className="text-sm font-medium">{t('live.title', 'Grid')}</span>
         <Badge variant="outline" className="text-[10px] px-1.5 py-0 h-4">
           {activeThreads.filter(t => ACTIVE_STATUSES.has(t.status)).length} {t('live.active', 'active')}
           {activeThreads.some(t => FINISHED_STATUSES.has(t.status)) && (

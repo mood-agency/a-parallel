@@ -83,8 +83,8 @@ function parseRoute(pathname: string) {
     return { settingsPage: null, projectId: null, threadId: null, globalSearch: false, inbox: false, analytics: true, liveColumns: false };
   }
 
-  // Live columns: /live
-  if (pathname === '/live') {
+  // Grid columns: /grid
+  if (pathname === '/grid') {
     return { settingsPage: null, projectId: null, threadId: null, globalSearch: false, inbox: false, analytics: false, liveColumns: true };
   }
 
