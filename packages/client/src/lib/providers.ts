@@ -34,6 +34,7 @@ export const PROVIDER_MODELS: Record<string, ModelConfig[]> = {
   claude: [
     { value: 'haiku', i18nKey: 'haiku', fallback: 'Haiku 4.5' },
     { value: 'sonnet', i18nKey: 'sonnet', fallback: 'Sonnet 4.5' },
+    { value: 'sonnet-4.6', i18nKey: 'sonnet46', fallback: 'Sonnet 4.6' },
     { value: 'opus', i18nKey: 'opus', fallback: 'Opus 4.6' },
   ],
   codex: [
