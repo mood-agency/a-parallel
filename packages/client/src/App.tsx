@@ -147,7 +147,7 @@ export function App() {
 
       {/* Right sidebar for review pane — animated slide in/out */}
       <AnimatePresence>
-        {reviewPaneOpen && !settingsOpen && (
+        {reviewPaneOpen && !settingsOpen && !allThreadsProjectId && (
           <motion.div
             key="review-pane"
             initial={{ width: 0, opacity: 0 }}

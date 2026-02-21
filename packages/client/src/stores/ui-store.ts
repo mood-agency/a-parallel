@@ -87,7 +87,7 @@ export const useUIStore = create<UIState>((set) => ({
   showGlobalSearch: () => {
     invalidateSelectThread();
     useThreadStore.setState({ selectedThreadId: null, activeThread: null });
-    set({ allThreadsProjectId: '__all__', newThreadProjectId: null, automationInboxOpen: false, addProjectOpen: false, settingsOpen: false, analyticsOpen: false });
+    set({ allThreadsProjectId: '__all__', newThreadProjectId: null, automationInboxOpen: false, addProjectOpen: false, settingsOpen: false, analyticsOpen: false, reviewPaneOpen: false });
   },
 
   setAnalyticsOpen: (open) => {
