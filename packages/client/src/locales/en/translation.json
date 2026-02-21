@@ -567,7 +567,8 @@
     "searchProject": "Search project...",
     "titlePlaceholder": "Thread title...",
     "loadMore": "Load {{count}} more",
-    "backToBoard": "Back to Kanban"
+    "backToBoard": "Back to Kanban",
+    "viewOnBoard": "View on Board"
   },
   "analytics": {
     "title": "Analytics",

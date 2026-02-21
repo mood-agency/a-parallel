@@ -120,6 +120,10 @@ export class AgentRunner {
     // Clear stale DB-mapping state from previous runs
     this.state.clearRunState(threadId);
 
+    // Capture the previous status before overwriting — needed to detect
+    // whether this is a response to a question/plan vs a genuine resume.
+    const previousStatus = this.threadManager.getThread(threadId)?.status;
+
     // Update thread status + provider in DB
     this.threadManager.updateThread(threadId, { status: 'running', provider });
 
@@ -148,12 +152,17 @@ export class AgentRunner {
     // Read session ID from DB for resume
     const thread = this.threadManager.getThread(threadId);
 
-    // Detect post-merge follow-up: thread has sessionId and baseBranch (was a worktree)
-    // but worktreePath is gone (worktree was cleaned up after merge).
+    // Determine the appropriate system prefix for session resume based on context:
+    // 1. Post-merge: worktree was cleaned up after merge
+    // 2. Waiting for user input: agent asked a question or requested plan approval
+    // 3. Default: genuine interruption/resume (handled by orchestrator)
     const isPostMerge = thread?.sessionId && thread?.baseBranch && !thread?.worktreePath;
+    const wasWaitingForUser = previousStatus === 'waiting';
     const systemPrefix = isPostMerge
       ? `[SYSTEM NOTE: This is a follow-up after your previous work was merged into the main branch. The worktree and feature branch have been cleaned up. You are now working in the main project directory. Your conversation history is preserved — continue naturally.]`
-      : undefined;
+      : wasWaitingForUser
+        ? `[SYSTEM NOTE: The user has responded to your question or plan approval request. Continue naturally based on their response.]`
+        : undefined;
 
     // When resuming a plan-mode thread, the orchestrator downgrades to autoEdit.
     // Sync the DB and notify the client so the PromptInput dropdown updates.

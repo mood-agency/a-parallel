@@ -372,21 +372,39 @@ export const ProjectHeader = memo(function ProjectHeader() {
             </DropdownMenuContent>
           </DropdownMenu>
           {activeThread && (
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <Button
-                  variant="ghost"
-                  size="icon-sm"
-                  onClick={() => pinThread(activeThread.id, activeThread.projectId, !activeThread.pinned)}
-                  className={activeThread.pinned ? 'text-primary' : 'text-muted-foreground'}
-                >
-                  {activeThread.pinned ? <PinOff className="h-4 w-4" /> : <Pin className="h-4 w-4" />}
-                </Button>
-              </TooltipTrigger>
-              <TooltipContent>
-                {activeThread.pinned ? t('sidebar.unpin', 'Unpin') : t('sidebar.pin', 'Pin')}
-              </TooltipContent>
-            </Tooltip>
+            <>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button
+                    variant="ghost"
+                    size="icon-sm"
+                    onClick={() => {
+                      setReviewPaneOpen(false);
+                      navigate(`/search?view=board&project=${activeThread.projectId}&highlight=${activeThread.id}`);
+                    }}
+                    className="text-muted-foreground"
+                  >
+                    <Columns3 className="h-4 w-4" />
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent>{t('kanban.viewOnBoard', 'View on Board')}</TooltipContent>
+              </Tooltip>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button
+                    variant="ghost"
+                    size="icon-sm"
+                    onClick={() => pinThread(activeThread.id, activeThread.projectId, !activeThread.pinned)}
+                    className={activeThread.pinned ? 'text-primary' : 'text-muted-foreground'}
+                  >
+                    {activeThread.pinned ? <PinOff className="h-4 w-4" /> : <Pin className="h-4 w-4" />}
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent>
+                  {activeThread.pinned ? t('sidebar.unpin', 'Unpin') : t('sidebar.pin', 'Pin')}
+                </TooltipContent>
+              </Tooltip>
+            </>
           )}
           <Tooltip>
             <TooltipTrigger asChild>

@@ -561,7 +561,8 @@
     "searchProject": "Buscar projeto...",
     "titlePlaceholder": "Título da thread...",
     "loadMore": "Carregar mais {{count}}",
-    "backToBoard": "Voltar ao Kanban"
+    "backToBoard": "Voltar ao Kanban",
+    "viewOnBoard": "Ver no Quadro"
   },
   "analytics": {
     "title": "Analíticas",
