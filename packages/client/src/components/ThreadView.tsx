@@ -1022,8 +1022,8 @@ export function ThreadView() {
         {/* Messages column + input */}
         <div className="flex-1 flex flex-col min-h-0 min-w-0">
           <div className="flex-1 relative min-h-0 min-w-0">
-          <ScrollArea className="h-full px-4 [&_[data-radix-scroll-area-viewport]>div]:!flex [&_[data-radix-scroll-area-viewport]>div]:!flex-col [&_[data-radix-scroll-area-viewport]>div]:min-h-full" viewportRef={scrollViewportRef}>
-          <div className="w-full mx-auto max-w-3xl min-w-[320px] space-y-4 overflow-hidden py-4 mt-auto">
+          <ScrollArea className="h-full [&_[data-radix-scroll-area-viewport]>div]:!flex [&_[data-radix-scroll-area-viewport]>div]:!flex-col [&_[data-radix-scroll-area-viewport]>div]:min-h-full" viewportRef={scrollViewportRef}>
+          <div className="w-full mx-auto max-w-3xl min-w-[320px] space-y-4 overflow-hidden py-4 mt-auto px-4">
             {loadingMore && (
               <div className="flex items-center justify-center py-3">
                 <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
@@ -1163,6 +1163,21 @@ export function ThreadView() {
             )}
 
           </div>
+
+          {/* Input — sticky at bottom */}
+          {!(activeThread.status === 'waiting' && activeThread.waitingReason === 'question') && (
+            <div className="sticky bottom-0 z-10 bg-background px-4">
+              <PromptInput
+                onSubmit={handleSend}
+                onStop={handleStop}
+                loading={sending}
+                running={isRunning && !isExternal}
+                isQueueMode={isQueueMode}
+                queuedCount={(activeThread as any).queuedCount ?? 0}
+                placeholder={t('thread.nextPrompt')}
+              />
+            </div>
+          )}
         </ScrollArea>
 
         {/* Scroll to bottom button */}
@@ -1179,19 +1194,6 @@ export function ThreadView() {
           </div>
         )}
         </div>
-
-          {/* Input — hidden when waiting for a question response */}
-          {!(activeThread.status === 'waiting' && activeThread.waitingReason === 'question') && (
-            <PromptInput
-              onSubmit={handleSend}
-              onStop={handleStop}
-              loading={sending}
-              running={isRunning && !isExternal}
-              isQueueMode={isQueueMode}
-              queuedCount={(activeThread as any).queuedCount ?? 0}
-              placeholder={t('thread.nextPrompt')}
-            />
-          )}
         </div>
 
         {/* Prompt Timeline */}
