@@ -1,7 +1,5 @@
-import { useState, useRef, useEffect, useLayoutEffect, useCallback, useMemo, memo, startTransition } from 'react';
+import { useState, useRef, useEffect, useLayoutEffect, useCallback, useMemo, memo, startTransition, lazy, Suspense } from 'react';
 import { useTranslation } from 'react-i18next';
-import ReactMarkdown from 'react-markdown';
-import remarkGfm from 'remark-gfm';
 import { toast } from 'sonner';
 import { motion, AnimatePresence, useReducedMotion } from 'motion/react';
 import { useAppStore } from '@/stores/app-store';
@@ -21,7 +19,6 @@ import { PromptInput } from './PromptInput';
 import { ToolCallCard } from './ToolCallCard';
 import { ToolCallGroup } from './ToolCallGroup';
 import { ImageLightbox } from './ImageLightbox';
-import { ScrollArea } from '@/components/ui/scroll-area';
 import { Badge } from '@/components/ui/badge';
 import { ProjectHeader } from './thread/ProjectHeader';
 import { NewThreadInput } from './thread/NewThreadInput';
@@ -49,54 +46,67 @@ const FILE_PATH_RE = /(?:[A-Za-z]:[\\\/]|\/)[^\s:*?"<>|,()]+(?::\d+)?/g;
 import { toEditorUriWithLine, openFileInEditor, getEditorLabel } from '@/lib/editor-utils';
 import { editorLabels } from '@/stores/settings-store';
 
-const markdownComponents = {
-  a: ({ href, children }: any) => {
-    const text = String(children);
-    const isWebUrl = href && /^https?:\/\//.test(href);
-    const fileMatch = !isWebUrl && text.match(FILE_PATH_RE);
-    if (fileMatch) {
-      const editor = useSettingsStore.getState().defaultEditor;
-      const uri = toEditorUriWithLine(fileMatch[0], editor);
-      const label = editorLabels[editor];
-      if (uri) {
-        return (
-          <a href={uri} className="text-primary hover:underline" title={`Open in ${label}: ${text}`}>
-            {children}
-          </a>
-        );
-      }
+// Lazy-load react-markdown + remark-gfm to reduce initial bundle (improves LCP)
+const LazyMarkdownRenderer = lazy(() =>
+  Promise.all([
+    import('react-markdown'),
+    import('remark-gfm'),
+  ]).then(([{ default: ReactMarkdown }, { default: remarkGfm }]) => {
+    const remarkPlugins = [remarkGfm];
+    const markdownComponents = {
+      a: ({ href, children }: any) => {
+        const text = String(children);
+        const isWebUrl = href && /^https?:\/\//.test(href);
+        const fileMatch = !isWebUrl && text.match(FILE_PATH_RE);
+        if (fileMatch) {
+          const editor = useSettingsStore.getState().defaultEditor;
+          const uri = toEditorUriWithLine(fileMatch[0], editor);
+          const label = editorLabels[editor];
+          if (uri) {
+            return (
+              <a href={uri} className="text-primary hover:underline" title={`Open in ${label}: ${text}`}>
+                {children}
+              </a>
+            );
+          }
+          return (
+            <button
+              onClick={() => openFileInEditor(fileMatch[0], editor)}
+              className="text-primary hover:underline cursor-pointer inline"
+              title={`Open in ${label}: ${text}`}
+            >
+              {children}
+            </button>
+          );
+        }
+        return <a href={href} className="text-primary hover:underline" target="_blank" rel="noopener noreferrer">{children}</a>;
+      },
+      code: ({ className, children, ...props }: any) => {
+        const isBlock = className?.startsWith('language-');
+        return isBlock
+          ? <code className={cn('block bg-muted p-2 rounded text-xs font-mono overflow-x-auto', className)} {...props}>{children}</code>
+          : <code className="bg-muted px-1 py-0.5 rounded text-xs font-mono" {...props}>{children}</code>;
+      },
+      pre: ({ children }: any) => <pre className="bg-muted rounded p-2 font-mono overflow-x-auto my-2">{children}</pre>,
+    };
+
+    function MarkdownRenderer({ content }: { content: string }) {
       return (
-        <button
-          onClick={() => openFileInEditor(fileMatch[0], editor)}
-          className="text-primary hover:underline cursor-pointer inline"
-          title={`Open in ${label}: ${text}`}
-        >
-          {children}
-        </button>
+        <ReactMarkdown remarkPlugins={remarkPlugins} components={markdownComponents}>
+          {content}
+        </ReactMarkdown>
       );
     }
-    return <a href={href} className="text-primary hover:underline" target="_blank" rel="noopener noreferrer">{children}</a>;
-  },
-  code: ({ className, children, ...props }: any) => {
-    const isBlock = className?.startsWith('language-');
-    return isBlock
-      ? <code className={cn('block bg-muted p-2 rounded text-xs font-mono overflow-x-auto', className)} {...props}>{children}</code>
-      : <code className="bg-muted px-1 py-0.5 rounded text-xs font-mono" {...props}>{children}</code>;
-  },
-  pre: ({ children }: any) => <pre className="bg-muted rounded p-2 font-mono overflow-x-auto my-2">{children}</pre>,
-};
-
-const remarkPlugins = [remarkGfm];
+    return { default: MarkdownRenderer };
+  })
+);
 
 export const MessageContent = memo(function MessageContent({ content }: { content: string }) {
   return (
     <div className="prose prose-sm max-w-none">
-      <ReactMarkdown
-        remarkPlugins={remarkPlugins}
-        components={markdownComponents}
-      >
-        {content}
-      </ReactMarkdown>
+      <Suspense fallback={<div className="text-sm text-muted-foreground whitespace-pre-wrap">{content}</div>}>
+        <LazyMarkdownRenderer content={content} />
+      </Suspense>
     </div>
   );
 });
@@ -681,6 +691,8 @@ export function ThreadView() {
   const prevOldestIdRef = useRef<string | null>(null);
   const prevScrollHeightRef = useRef(0);
   const [showScrollDown, setShowScrollDown] = useState(false);
+  const scrollDownRef = useRef<HTMLDivElement>(null);
+  const todoThrottleRef = useRef(0);
   const [lightboxOpen, setLightboxOpen] = useState(false);
   const [lightboxImages, setLightboxImages] = useState<{ src: string; alt: string }[]>([]);
   const [lightboxIndex, setLightboxIndex] = useState(0);
@@ -766,26 +778,19 @@ export function ThreadView() {
     const viewport = scrollViewportRef.current;
     if (!viewport) return;
 
-    const handleScroll = () => {
-      const { scrollTop, scrollHeight, clientHeight } = viewport;
-      const hasOverflow = scrollHeight > clientHeight + 10;
-      const isAtBottom = scrollHeight - scrollTop - clientHeight <= 80;
-      userHasScrolledUp.current = !isAtBottom;
-      setShowScrollDown(hasOverflow && !isAtBottom);
+    // Expensive: queries DOM for todo-snapshot elements and measures layout.
+    // Throttled to run at most every 150ms to avoid blocking the main thread.
+    const updateTodoSnapshot = (isAtBottom: boolean) => {
+      const now = performance.now();
+      if (now - todoThrottleRef.current < 150) return;
+      todoThrottleRef.current = now;
 
-      // Load older messages when scrolled near the top
-      if (scrollTop < 200 && hasMore && !loadingMore) {
-        loadOlderMessages();
-      }
-
-      const viewportRect = viewport.getBoundingClientRect();
-
-      // Update current TodoWrite snapshot based on scroll position
-      const todoEls = document.querySelectorAll<HTMLElement>('[data-todo-snapshot]');
+      const todoEls = viewport.querySelectorAll<HTMLElement>('[data-todo-snapshot]');
       if (todoEls.length === 0) {
         setCurrentSnapshotIdx(-1);
-      } else if (isAtBottom) {
-        // When auto-scrolling at the bottom, always show the latest snapshot
+        return;
+      }
+      if (isAtBottom) {
         let maxIdx = -1;
         todoEls.forEach((el) => {
           const idx = parseInt(el.dataset.todoSnapshot!, 10);
@@ -793,15 +798,13 @@ export function ThreadView() {
         });
         setCurrentSnapshotIdx(maxIdx);
       } else {
+        const viewportRect = viewport.getBoundingClientRect();
         const threshold = viewportRect.top + viewportRect.height * 0.5;
-
-        // Range check: only show panel when midpoint is within the TodoWrite range
         const firstRect = todoEls[0].getBoundingClientRect();
         const lastRect = todoEls[todoEls.length - 1].getBoundingClientRect();
         if (threshold < firstRect.top || threshold > lastRect.bottom + 150) {
           setCurrentSnapshotIdx(-1);
         } else {
-          // Find the latest snapshot whose element is above the viewport midpoint
           let latestIdx = -1;
           todoEls.forEach((el) => {
             const rect = el.getBoundingClientRect();
@@ -813,6 +816,29 @@ export function ThreadView() {
           setCurrentSnapshotIdx(latestIdx >= 0 ? latestIdx : -1);
         }
       }
+    };
+
+    const handleScroll = () => {
+      const { scrollTop, scrollHeight, clientHeight } = viewport;
+      const hasOverflow = scrollHeight > clientHeight + 10;
+      const isAtBottom = scrollHeight - scrollTop - clientHeight <= 80;
+      userHasScrolledUp.current = !isAtBottom;
+
+      // Update scroll-to-bottom button visibility via DOM (fast path)
+      const shouldShow = hasOverflow && !isAtBottom;
+      if (scrollDownRef.current) {
+        scrollDownRef.current.style.display = shouldShow ? '' : 'none';
+      }
+      // Update React state only when the value actually changes (for PromptTimeline)
+      setShowScrollDown((prev) => prev !== shouldShow ? shouldShow : prev);
+
+      // Load older messages when scrolled near the top
+      if (scrollTop < 200 && hasMore && !loadingMore) {
+        loadOlderMessages();
+      }
+
+      // Throttled: expensive DOM queries for todo snapshot tracking
+      updateTodoSnapshot(isAtBottom);
     };
 
     viewport.addEventListener('scroll', handleScroll, { passive: true });
@@ -837,10 +863,10 @@ export function ThreadView() {
         viewport.scrollTop = viewport.scrollHeight;
       }
     }
-    // Hide scroll-to-bottom button if content doesn't overflow
+    // Hide scroll-to-bottom button via DOM if content doesn't overflow
     const hasOverflow = viewport.scrollHeight > viewport.clientHeight + 10;
-    if (!hasOverflow) {
-      setShowScrollDown(false);
+    if (!hasOverflow && scrollDownRef.current) {
+      scrollDownRef.current.style.display = 'none';
     }
   }, [scrollFingerprint]);
 
@@ -869,7 +895,7 @@ export function ThreadView() {
     const viewport = scrollViewportRef.current;
     if (!viewport) return;
     userHasScrolledUp.current = false;
-    setShowScrollDown(false);
+    if (scrollDownRef.current) scrollDownRef.current.style.display = 'none';
     viewport.scrollTo({ top: viewport.scrollHeight, behavior: 'smooth' });
   }, []);
 
@@ -932,7 +958,19 @@ export function ThreadView() {
     // Always scroll to bottom when the user sends a message (smooth)
     userHasScrolledUp.current = false;
     smoothScrollPending.current = true;
-    setShowScrollDown(false);
+    if (scrollDownRef.current) scrollDownRef.current.style.display = 'none';
+
+    // Clear initialPrompt immediately (outside startTransition) so the
+    // PromptInput prop updates before any intermediate re-renders.
+    // Without this, the idle PromptInput can re-mount with the stale
+    // initialPrompt because startTransition defers the store update.
+    if (activeThread.initialPrompt) {
+      useThreadStore.setState((s) => ({
+        activeThread: s.activeThread?.id === activeThread.id
+          ? { ...s.activeThread, initialPrompt: undefined }
+          : s.activeThread,
+      }));
+    }
 
     startTransition(() => {
       useAppStore.getState().appendOptimisticMessage(
@@ -1021,9 +1059,8 @@ export function ThreadView() {
       <div className="flex-1 flex min-h-0">
         {/* Messages column + input */}
         <div className="flex-1 flex flex-col min-h-0 min-w-0">
-          <div className="flex-1 relative min-h-0 min-w-0">
-          <ScrollArea className="h-full [&_[data-radix-scroll-area-viewport]>div]:!flex [&_[data-radix-scroll-area-viewport]>div]:!flex-col [&_[data-radix-scroll-area-viewport]>div]:min-h-full" viewportRef={scrollViewportRef}>
-          <div className="w-full mx-auto max-w-3xl min-w-[320px] space-y-4 overflow-hidden py-4 mt-auto px-4">
+          <div className="flex-1 min-h-0 min-w-0 overflow-y-auto flex flex-col" ref={scrollViewportRef}>
+          <div className="w-full mx-auto max-w-3xl min-w-[320px] space-y-4 py-4 mt-auto px-4">
             {loadingMore && (
               <div className="flex items-center justify-center py-3">
                 <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
@@ -1166,7 +1203,7 @@ export function ThreadView() {
 
           {/* Input — sticky at bottom */}
           {!(activeThread.status === 'waiting' && activeThread.waitingReason === 'question') && (
-            <div className="sticky bottom-0 z-10 bg-background px-4">
+            <div className="sticky bottom-0 z-10 bg-background">
               <PromptInput
                 onSubmit={handleSend}
                 onStop={handleStop}
@@ -1178,21 +1215,18 @@ export function ThreadView() {
               />
             </div>
           )}
-        </ScrollArea>
-
-        {/* Scroll to bottom button */}
-        {showScrollDown && (
-          <div className="relative">
-            <button
-              onClick={scrollToBottom}
-              aria-label={t('thread.scrollToBottom', 'Scroll to bottom')}
-              className="absolute bottom-2 left-1/2 -translate-x-1/2 z-10 flex items-center gap-1 rounded-full bg-secondary border border-muted-foreground/40 px-3 py-1.5 text-xs text-muted-foreground shadow-md hover:bg-muted transition-colors"
-            >
-              <ArrowDown className="h-3 w-3" />
-              {t('thread.scrollToBottom', 'Scroll to bottom')}
-            </button>
           </div>
-        )}
+
+        {/* Scroll to bottom button — visibility managed via DOM ref to avoid re-renders */}
+        <div ref={scrollDownRef} className="relative" style={{ display: 'none' }}>
+          <button
+            onClick={scrollToBottom}
+            aria-label={t('thread.scrollToBottom', 'Scroll to bottom')}
+            className="absolute bottom-2 left-1/2 -translate-x-1/2 z-10 flex items-center gap-1 rounded-full bg-secondary border border-muted-foreground/40 px-3 py-1.5 text-xs text-muted-foreground shadow-md hover:bg-muted transition-colors"
+          >
+            <ArrowDown className="h-3 w-3" />
+            {t('thread.scrollToBottom', 'Scroll to bottom')}
+          </button>
         </div>
         </div>
 

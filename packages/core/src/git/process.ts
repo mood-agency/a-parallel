@@ -32,7 +32,7 @@ export class ProcessExecutionError extends Error {
 }
 
 // Limits how many git/child processes run at once.
-// Each getStatusSummary() spawns ~7 processes per worktree thread; without a
+// Each getStatusSummary() spawns up to 6 processes per worktree thread (in 3 parallel phases); without a
 // cap, a page load with many projects can spawn 200+ processes simultaneously.
 const processPool = pLimit(6);
 

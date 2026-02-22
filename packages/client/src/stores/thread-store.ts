@@ -404,6 +404,8 @@ export const useThreadStore = create<ThreadState>((set, get) => ({
           ...activeThread,
           initInfo,
           status: newStatus,
+          // Clear initialPrompt so PromptInput doesn't restore it after send
+          initialPrompt: undefined,
           waitingReason: undefined,
           pendingPermission: undefined,
           permissionMode: permissionMode || activeThread.permissionMode,

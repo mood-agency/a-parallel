@@ -635,110 +635,87 @@ export function getStatusSummary(
 ): ResultAsync<GitStatusSummary, DomainError> {
   return ResultAsync.fromPromise(
     (async () => {
-      const porcelainResult = await execute('git', ['status', '--porcelain'], { cwd: worktreeCwd, reject: false });
-      const porcelain = porcelainResult.exitCode === 0 ? porcelainResult.stdout.trim() : '';
-      const dirtyFileCount = porcelain.split('\n').filter(Boolean).length;
+      // Phase 1: two git commands cover what previously took 4
+      //   - `status --porcelain -b` → dirty file count + branch name
+      //   - `diff HEAD --numstat`   → staged + unstaged line stats combined
+      const [statusResult, diffResult] = await Promise.all([
+        execute('git', ['status', '--porcelain', '-b'], { cwd: worktreeCwd, reject: false }),
+        execute('git', ['diff', 'HEAD', '--numstat'], { cwd: worktreeCwd, reject: false }),
+      ]);
 
-      const branchResult = await getCurrentBranch(worktreeCwd);
-      if (branchResult.isErr()) {
-        return { dirtyFileCount, unpushedCommitCount: 0, hasRemoteBranch: false, isMergedIntoBase: false, linesAdded: 0, linesDeleted: 0 };
+      // Parse branch from the first line: "## branch" or "## branch...upstream [ahead N]"
+      let branch: string | null = null;
+      let dirtyFileCount = 0;
+      if (statusResult.exitCode === 0 && statusResult.stdout.trim()) {
+        const lines = statusResult.stdout.trim().split('\n');
+        const headerLine = lines[0]; // e.g. "## main...origin/main [ahead 2]"
+        if (headerLine.startsWith('## ')) {
+          const ref = headerLine.slice(3).split('...')[0].trim();
+          if (ref && ref !== 'HEAD (no branch)') {
+            branch = ref;
+          }
+        }
+        // All lines after the header are dirty files
+        dirtyFileCount = lines.slice(1).filter(Boolean).length;
       }
-      const branch = branchResult.value;
 
-      const remoteResult = await execute(
-        'git', ['rev-parse', '--abbrev-ref', `${branch}@{upstream}`],
-        { cwd: worktreeCwd, reject: false }
-      );
+      // Parse combined line stats
+      let linesAdded = 0;
+      let linesDeleted = 0;
+      if (diffResult.exitCode === 0 && diffResult.stdout.trim()) {
+        for (const line of diffResult.stdout.trim().split('\n')) {
+          const parts = line.split('\t');
+          if (parts.length >= 2) {
+            const added = parseInt(parts[0], 10);
+            const deleted = parseInt(parts[1], 10);
+            if (!isNaN(added)) linesAdded += added;
+            if (!isNaN(deleted)) linesDeleted += deleted;
+          }
+        }
+      }
+
+      if (!branch) {
+        return { dirtyFileCount, unpushedCommitCount: 0, hasRemoteBranch: false, isMergedIntoBase: false, linesAdded, linesDeleted };
+      }
+
+      // Phase 2: commands that depend on branch name — run in parallel
+      const [remoteResult, mergedResult] = await Promise.all([
+        execute('git', ['rev-parse', '--abbrev-ref', `${branch}@{upstream}`], { cwd: worktreeCwd, reject: false }),
+        baseBranch && projectCwd
+          ? execute('git', ['branch', '--merged', baseBranch, '--format=%(refname:short)'], { cwd: projectCwd, reject: false })
+          : Promise.resolve(null),
+      ]);
+
       const remoteBranch = remoteResult.exitCode === 0 ? remoteResult.stdout.trim() : null;
       const hasRemoteBranch = remoteBranch !== null;
 
-      let unpushedCommitCount = 0;
-      if (hasRemoteBranch) {
-        const countResult = await execute(
-          'git', ['rev-list', '--count', `${remoteBranch}..HEAD`],
-          { cwd: worktreeCwd, reject: false }
-        );
-        unpushedCommitCount = countResult.exitCode === 0 ? (parseInt(countResult.stdout.trim(), 10) || 0) : 0;
-      } else if (baseBranch) {
-        const countResult = await execute(
-          'git', ['rev-list', '--count', `${baseBranch}..HEAD`],
-          { cwd: worktreeCwd, reject: false }
-        );
-        unpushedCommitCount = countResult.exitCode === 0 ? (parseInt(countResult.stdout.trim(), 10) || 0) : 0;
-      }
+      // Phase 3: commands that depend on phase 2 results — run in parallel
+      const unpushedRef = hasRemoteBranch ? remoteBranch : baseBranch;
+
+      const needsMergeCheck = mergedResult && mergedResult.exitCode === 0 && mergedResult.stdout.trim()
+        && mergedResult.stdout.trim().split('\n').map((b) => b.trim()).includes(branch);
+
+      const [countResult, mergeBaseResult, branchTipResult] = await Promise.all([
+        unpushedRef
+          ? execute('git', ['rev-list', '--count', `${unpushedRef}..HEAD`], { cwd: worktreeCwd, reject: false })
+          : Promise.resolve(null),
+        needsMergeCheck && baseBranch && projectCwd
+          ? execute('git', ['merge-base', baseBranch, branch], { cwd: projectCwd, reject: false })
+          : Promise.resolve(null),
+        needsMergeCheck && projectCwd
+          ? execute('git', ['rev-parse', branch], { cwd: projectCwd, reject: false })
+          : Promise.resolve(null),
+      ]);
+
+      const unpushedCommitCount = countResult && countResult.exitCode === 0
+        ? (parseInt(countResult.stdout.trim(), 10) || 0) : 0;
 
       let isMergedIntoBase = false;
-      if (baseBranch && projectCwd) {
-        const mergedResult = await execute(
-          'git', ['branch', '--merged', baseBranch, '--format=%(refname:short)'],
-          { cwd: projectCwd, reject: false }
-        );
-        if (mergedResult.exitCode === 0 && mergedResult.stdout.trim()) {
-          const isBranchInMergedList = mergedResult.stdout.trim()
-            .split('\n')
-            .map((b) => b.trim())
-            .includes(branch);
-          if (isBranchInMergedList) {
-            // Check if the branch actually had commits that were merged,
-            // vs simply never diverging from the base branch.
-            // If merge-base equals the branch tip, the branch never diverged — it's clean, not merged.
-            const mergeBaseResult = await execute(
-              'git', ['merge-base', baseBranch, branch],
-              { cwd: projectCwd, reject: false }
-            );
-            const branchTipResult = await execute(
-              'git', ['rev-parse', branch],
-              { cwd: projectCwd, reject: false }
-            );
-            if (mergeBaseResult.exitCode === 0 && branchTipResult.exitCode === 0) {
-              const mergeBase = mergeBaseResult.stdout.trim();
-              const branchTip = branchTipResult.stdout.trim();
-              // Only mark as merged if the branch actually had unique commits
-              isMergedIntoBase = mergeBase !== branchTip;
-            } else {
-              isMergedIntoBase = true;
-            }
-          }
-        }
-      }
-
-      // Get lines added/deleted using git diff --numstat
-      let linesAdded = 0;
-      let linesDeleted = 0;
-
-      // Count staged changes
-      const stagedNumstatResult = await execute(
-        'git', ['diff', '--staged', '--numstat'],
-        { cwd: worktreeCwd, reject: false }
-      );
-      if (stagedNumstatResult.exitCode === 0 && stagedNumstatResult.stdout.trim()) {
-        const lines = stagedNumstatResult.stdout.trim().split('\n');
-        for (const line of lines) {
-          const parts = line.split('\t');
-          if (parts.length >= 2) {
-            const added = parseInt(parts[0], 10);
-            const deleted = parseInt(parts[1], 10);
-            if (!isNaN(added)) linesAdded += added;
-            if (!isNaN(deleted)) linesDeleted += deleted;
-          }
-        }
-      }
-
-      // Count unstaged changes
-      const unstagedNumstatResult = await execute(
-        'git', ['diff', '--numstat'],
-        { cwd: worktreeCwd, reject: false }
-      );
-      if (unstagedNumstatResult.exitCode === 0 && unstagedNumstatResult.stdout.trim()) {
-        const lines = unstagedNumstatResult.stdout.trim().split('\n');
-        for (const line of lines) {
-          const parts = line.split('\t');
-          if (parts.length >= 2) {
-            const added = parseInt(parts[0], 10);
-            const deleted = parseInt(parts[1], 10);
-            if (!isNaN(added)) linesAdded += added;
-            if (!isNaN(deleted)) linesDeleted += deleted;
-          }
+      if (needsMergeCheck && mergeBaseResult && branchTipResult) {
+        if (mergeBaseResult.exitCode === 0 && branchTipResult.exitCode === 0) {
+          isMergedIntoBase = mergeBaseResult.stdout.trim() !== branchTipResult.stdout.trim();
+        } else {
+          isMergedIntoBase = true;
         }
       }
 

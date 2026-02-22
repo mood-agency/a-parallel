@@ -41,9 +41,8 @@ function validateFilePaths(cwd: string, paths: string[]): string | null {
 }
 
 // In-memory cache for bulk git status to avoid spawning excessive git processes.
-// Each getStatusSummary() call spawns ~7 git processes per worktree thread.
 const _gitStatusCache = new Map<string, { data: any; ts: number }>();
-const GIT_STATUS_CACHE_TTL_MS = 30_000; // 30 seconds
+const GIT_STATUS_CACHE_TTL_MS = 5_000; // 5 seconds
 
 /** Invalidate cached git status for a project after mutating git operations. */
 function invalidateGitStatusCache(threadId: string) {
