@@ -1,4 +1,4 @@
-import { useMemo, useRef } from 'react';
+import { useMemo, useRef, useEffect, type RefObject } from 'react';
 import { cn } from '@/lib/utils';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { ListTodo, MessageCircleQuestion, FileCode2, Play, CheckCircle2, Loader2 } from 'lucide-react';
@@ -93,10 +93,62 @@ interface PromptTimelineProps {
   activeMessageId?: string | null;
   threadStatus?: ThreadStatus;
   onScrollToMessage?: (messageId: string, toolCallId?: string) => void;
+  /** Ref to the messages scroll container for bidirectional scroll sync */
+  messagesScrollRef?: RefObject<HTMLDivElement | null>;
 }
 
-export function PromptTimeline({ messages, activeMessageId, threadStatus, onScrollToMessage }: PromptTimelineProps) {
+export function PromptTimeline({ messages, activeMessageId, threadStatus, onScrollToMessage, messagesScrollRef }: PromptTimelineProps) {
   const containerRef = useRef<HTMLDivElement>(null);
+  const isSyncing = useRef(false);
+
+  // Bidirectional scroll sync between timeline and messages
+  useEffect(() => {
+    const timeline = containerRef.current;
+    const messagesEl = messagesScrollRef?.current;
+    if (!timeline || !messagesEl) return;
+
+    let rafId = 0;
+
+    const syncScroll = (source: HTMLElement, target: HTMLElement) => {
+      const sourceMax = source.scrollHeight - source.clientHeight;
+      const targetMax = target.scrollHeight - target.clientHeight;
+      if (sourceMax <= 0 || targetMax <= 0) return;
+      const ratio = source.scrollTop / sourceMax;
+      target.scrollTop = ratio * targetMax;
+    };
+
+    const onTimelineScroll = () => {
+      if (isSyncing.current) return;
+      isSyncing.current = true;
+      if (rafId) cancelAnimationFrame(rafId);
+      rafId = requestAnimationFrame(() => {
+        syncScroll(timeline, messagesEl);
+        rafId = requestAnimationFrame(() => {
+          isSyncing.current = false;
+        });
+      });
+    };
+
+    const onMessagesScroll = () => {
+      if (isSyncing.current) return;
+      isSyncing.current = true;
+      if (rafId) cancelAnimationFrame(rafId);
+      rafId = requestAnimationFrame(() => {
+        syncScroll(messagesEl, timeline);
+        rafId = requestAnimationFrame(() => {
+          isSyncing.current = false;
+        });
+      });
+    };
+
+    timeline.addEventListener('scroll', onTimelineScroll, { passive: true });
+    messagesEl.addEventListener('scroll', onMessagesScroll, { passive: true });
+    return () => {
+      timeline.removeEventListener('scroll', onTimelineScroll);
+      messagesEl.removeEventListener('scroll', onMessagesScroll);
+      if (rafId) cancelAnimationFrame(rafId);
+    };
+  }, [messagesScrollRef]);
 
   const milestones = useMemo<PromptMilestone[]>(() => {
     let idx = 0;
