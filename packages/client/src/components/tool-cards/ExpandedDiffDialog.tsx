@@ -25,7 +25,7 @@ export function ExpandedDiffDialog({ open, onOpenChange, filePath, oldValue, new
         <DialogHeader className="px-4 py-3 pr-10 border-b border-border flex-shrink-0">
           <div className="flex items-center gap-2">
             <FileCode className="h-4 w-4 flex-shrink-0" />
-            <DialogTitle className="font-mono text-sm truncate">{filePath}</DialogTitle>
+            <DialogTitle className="font-mono text-sm truncate [direction:rtl] text-left">{filePath}</DialogTitle>
           </div>
           <DialogDescription className="sr-only">Diff for {getFileName(filePath)}</DialogDescription>
         </DialogHeader>

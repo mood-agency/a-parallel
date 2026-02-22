@@ -13,6 +13,7 @@ import { getAuthMode } from '../lib/auth-mode.js';
 import { getGitIdentity, getGithubToken } from '../services/profile-service.js';
 
 import type { HonoEnv } from '../types/hono-env.js';
+import { wsBroker } from '../services/ws-broker.js';
 
 export const gitRoutes = new Hono<HonoEnv>();
 
@@ -70,6 +71,10 @@ gitRoutes.get('/status', async (c) => {
   const worktreeThreads = threads.filter(
     (t) => t.mode === 'worktree' && t.worktreePath && t.branch
   );
+  // Threads whose worktrees were cleaned up after merge
+  const mergedThreads = threads.filter(
+    (t) => !t.worktreePath && !t.branch && t.baseBranch
+  );
 
   const results = await Promise.allSettled(
     worktreeThreads.map(async (thread) => {
@@ -88,10 +93,22 @@ gitRoutes.get('/status', async (c) => {
     })
   );
 
-  const statuses = results
-    .filter((r): r is PromiseFulfilledResult<any> => r.status === 'fulfilled')
-    .map((r) => r.value)
-    .filter(Boolean);
+  const statuses = [
+    ...results
+      .filter((r): r is PromiseFulfilledResult<any> => r.status === 'fulfilled')
+      .map((r) => r.value)
+      .filter(Boolean),
+    ...mergedThreads.map((t) => ({
+      threadId: t.id,
+      state: 'merged' as const,
+      dirtyFileCount: 0,
+      unpushedCommitCount: 0,
+      hasRemoteBranch: false,
+      isMergedIntoBase: true,
+      linesAdded: 0,
+      linesDeleted: 0,
+    })),
+  ];
 
   const response = { statuses };
   _gitStatusCache.set(projectId, { data: response, ts: Date.now() });
@@ -105,6 +122,20 @@ gitRoutes.get('/:threadId/status', async (c) => {
   const threadResult = requireThread(threadId, userId);
   if (threadResult.isErr()) return resultToResponse(c, threadResult);
   const thread = threadResult.value;
+
+  // Thread was a worktree that got merged & cleaned up — return "merged" directly
+  if (!thread.worktreePath && !thread.branch && thread.baseBranch) {
+    return c.json({
+      threadId,
+      state: 'merged' as const,
+      dirtyFileCount: 0,
+      unpushedCommitCount: 0,
+      hasRemoteBranch: false,
+      isMergedIntoBase: true,
+      linesAdded: 0,
+      linesDeleted: 0,
+    });
+  }
 
   const projectResult = requireProject(thread.projectId);
   if (projectResult.isErr()) return resultToResponse(c, projectResult);
@@ -429,6 +460,24 @@ gitRoutes.post('/:threadId/merge', async (c) => {
     // Do NOT call cleanupThreadState — the thread remains active for follow-ups.
     // In-memory deduplication maps (processedToolUseIds, cliToDbMsgId) must be
     // preserved so session resume can deduplicate re-sent content.
+
+    // Broadcast merged status so Kanban cards update immediately
+    wsBroker.emitToUser(userId, {
+      type: 'git:status',
+      threadId,
+      data: {
+        statuses: [{
+          threadId,
+          state: 'merged' as const,
+          dirtyFileCount: 0,
+          unpushedCommitCount: 0,
+          hasRemoteBranch: false,
+          isMergedIntoBase: true,
+          linesAdded: 0,
+          linesDeleted: 0,
+        }],
+      },
+    });
   }
 
   invalidateGitStatusCache(threadId);

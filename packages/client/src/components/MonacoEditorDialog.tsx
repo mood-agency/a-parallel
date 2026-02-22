@@ -105,7 +105,7 @@ export function MonacoEditorDialog({ open, onOpenChange, filePath, initialConten
       >
         <DialogHeader className="px-6 pt-4 pb-2 border-b border-border/50">
           <div className="flex items-center justify-between">
-            <DialogTitle className="font-mono text-sm truncate">{filePath}</DialogTitle>
+            <DialogTitle className="font-mono text-sm truncate [direction:rtl] text-left">{filePath}</DialogTitle>
             <div className="flex items-center gap-1">
               {/* Markdown preview toggle */}
               {isMarkdown && (
