@@ -8,7 +8,7 @@ import { useAppStore } from '@/stores/app-store';
 import { useUIStore } from '@/stores/ui-store';
 import { cn } from '@/lib/utils';
 import { Input } from '@/components/ui/input';
-import { Loader2, Clock, Copy, Check, Send, CheckCircle2, XCircle, ArrowDown, ShieldQuestion, FileText, ChevronRight } from 'lucide-react';
+import { Loader2, Clock, Copy, Check, Send, CheckCircle2, XCircle, ArrowDown, ShieldQuestion, FileText, ChevronRight, ChevronDown } from 'lucide-react';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
 import { timeAgo, resolveModelLabel } from '@/lib/thread-utils';
 import { useMinuteTick } from '@/hooks/use-minute-tick';
@@ -416,6 +416,59 @@ function buildGroupedRenderItems(messages: any[]): RenderItem[] {
   }
 
   return final;
+}
+
+const COLLAPSED_MAX_H = 128; // px – roughly 8 lines of text
+
+function UserMessageContent({ content }: { content: string }) {
+  const { t } = useTranslation();
+  const [expanded, setExpanded] = useState(false);
+  const [isOverflowing, setIsOverflowing] = useState(false);
+  const preRef = useRef<HTMLPreElement>(null);
+
+  useLayoutEffect(() => {
+    const el = preRef.current;
+    if (el) {
+      setIsOverflowing(el.scrollHeight > COLLAPSED_MAX_H);
+    }
+  }, [content]);
+
+  return (
+    <div className="relative">
+      <pre
+        ref={preRef}
+        className={cn(
+          'whitespace-pre-wrap font-mono text-xs leading-relaxed break-words overflow-x-auto',
+          !expanded && isOverflowing && 'overflow-hidden'
+        )}
+        style={!expanded && isOverflowing ? { maxHeight: COLLAPSED_MAX_H } : undefined}
+      >
+        {content}
+      </pre>
+      {isOverflowing && !expanded && (
+        <div className="absolute bottom-0 left-0 right-0 h-10 bg-gradient-to-t from-foreground to-transparent pointer-events-none" />
+      )}
+      {isOverflowing && (
+        <button
+          type="button"
+          onClick={() => setExpanded(!expanded)}
+          className="flex items-center gap-1 mt-1 text-[11px] text-background/60 hover:text-background/90 transition-colors"
+        >
+          {expanded ? (
+            <>
+              <ChevronRight className="h-3 w-3 -rotate-90" />
+              {t('thread.showLess', 'Show less')}
+            </>
+          ) : (
+            <>
+              <ChevronDown className="h-3 w-3" />
+              {t('thread.showMore', 'Show more')}
+            </>
+          )}
+        </button>
+      )}
+    </div>
+  );
 }
 
 export function ThreadView() {
@@ -959,9 +1012,7 @@ export function ThreadView() {
                                 ))}
                               </div>
                             )}
-                            <pre className="whitespace-pre-wrap font-mono text-xs leading-relaxed break-words overflow-x-auto max-h-80 overflow-y-auto">
-                              {cleanContent.trim()}
-                            </pre>
+                            <UserMessageContent content={cleanContent.trim()} />
                             {(msg.model || msg.permissionMode) && (
                               <div className="flex gap-1 mt-1.5">
                                 {msg.model && (
