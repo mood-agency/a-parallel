@@ -116,17 +116,30 @@ function KanbanCard({ thread, projectInfo, onDelete, search, ghost, contentSnipp
       }}
     >
       <div className="absolute top-1.5 right-1.5 flex items-center gap-0.5">
-        {thread.pinned && stage === 'review' ? (
-          <button
-            className="p-1 rounded transition-opacity hover:bg-primary/10 text-primary"
-            onClick={async (e) => {
-              e.stopPropagation();
-              await pinThread(thread.id, thread.projectId, false);
-            }}
-            aria-label="Unpin thread"
-          >
-            <Pin className="h-3 w-3 rotate-45" />
-          </button>
+        {stage === 'review' ? (
+          thread.pinned ? (
+            <button
+              className="p-1 rounded transition-opacity hover:bg-primary/10 text-primary"
+              onClick={async (e) => {
+                e.stopPropagation();
+                await pinThread(thread.id, thread.projectId, false);
+              }}
+              aria-label="Unpin thread"
+            >
+              <Pin className="h-3 w-3 rotate-45" />
+            </button>
+          ) : (
+            <button
+              className="p-1 rounded opacity-0 group-hover/card:opacity-100 transition-opacity hover:bg-primary/10 text-muted-foreground hover:text-primary"
+              onClick={async (e) => {
+                e.stopPropagation();
+                await pinThread(thread.id, thread.projectId, true);
+              }}
+              aria-label="Pin thread"
+            >
+              <Pin className="h-3 w-3" />
+            </button>
+          )
         ) : null}
         <button
           className="p-1 rounded opacity-0 group-hover/card:opacity-100 transition-opacity hover:bg-destructive/10 hover:text-destructive text-muted-foreground"
