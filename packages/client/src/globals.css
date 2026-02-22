@@ -2,6 +2,18 @@
 @tailwind components;
 @tailwind utilities;
 
+/* Hide timeline when thread container is narrow */
+.thread-container {
+  container-type: inline-size;
+  container-name: thread;
+}
+
+@container thread (max-width: 899px) {
+  .thread-timeline {
+    display: none;
+  }
+}
+
 @layer base {
   :root {
     --background: 0 0% 100%;

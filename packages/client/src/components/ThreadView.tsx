@@ -1056,7 +1056,7 @@ export function ThreadView() {
       </AnimatePresence> */}
 
       {/* Messages + Timeline */}
-      <div className="flex-1 flex min-h-0">
+      <div className="flex-1 flex min-h-0 thread-container">
         {/* Messages column + input */}
         <div className="flex-1 flex flex-col min-h-0 min-w-0">
           <div className="flex-1 min-h-0 min-w-0 overflow-y-auto flex flex-col" ref={scrollViewportRef}>
@@ -1229,23 +1229,25 @@ export function ThreadView() {
           </div>
         </div>
 
-        {/* Prompt Timeline */}
+        {/* Prompt Timeline — hidden when container < 600px */}
         {activeThread.messages.length > 0 && (
-          <PromptTimeline
-            messages={activeThread.messages}
-            activeMessageId={showScrollDown ? undefined : activeThread.messages.filter(m => m.role === 'user' && m.content?.trim()).at(-1)?.id}
-            threadStatus={activeThread.status}
-            messagesScrollRef={scrollViewportRef}
-            onScrollToMessage={(msgId, toolCallId) => {
-              // Try tool call element first, then user message
-              const el = toolCallId
-                ? scrollViewportRef.current?.querySelector(`[data-tool-call-id="${toolCallId}"]`)
-                : scrollViewportRef.current?.querySelector(`[data-user-msg="${msgId}"]`);
-              if (el) {
-                el.scrollIntoView({ behavior: 'smooth', block: 'center' });
-              }
-            }}
-          />
+          <div className="thread-timeline">
+            <PromptTimeline
+              messages={activeThread.messages}
+              activeMessageId={showScrollDown ? undefined : activeThread.messages.filter(m => m.role === 'user' && m.content?.trim()).at(-1)?.id}
+              threadStatus={activeThread.status}
+              messagesScrollRef={scrollViewportRef}
+              onScrollToMessage={(msgId, toolCallId) => {
+                // Try tool call element first, then user message
+                const el = toolCallId
+                  ? scrollViewportRef.current?.querySelector(`[data-tool-call-id="${toolCallId}"]`)
+                  : scrollViewportRef.current?.querySelector(`[data-user-msg="${msgId}"]`);
+                if (el) {
+                  el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                }
+              }}
+            />
+          </div>
         )}
       </div>
 
