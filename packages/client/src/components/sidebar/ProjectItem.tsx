@@ -73,14 +73,11 @@ export const ProjectItem = memo(function ProjectItem({
   const defaultEditor = useSettingsStore((s) => s.defaultEditor);
 
   // Memoize sorted & sliced threads to avoid O(n log n) sort on every render
-  // Pinned sorting only applies to threads in the review stage
   const visibleThreads = useMemo(() => {
     return [...threads]
       .sort((a, b) => {
-        const aPinned = a.pinned && a.stage === 'review';
-        const bPinned = b.pinned && b.stage === 'review';
-        if (aPinned && !bPinned) return -1;
-        if (!aPinned && bPinned) return 1;
+        if (a.pinned && !b.pinned) return -1;
+        if (!a.pinned && b.pinned) return 1;
         return 0;
       })
       .slice(0, 5);
@@ -318,7 +315,7 @@ export const ProjectItem = memo(function ProjectItem({
               isSelected={selectedThreadId === th.id}
               onSelect={() => onSelectThread(th.id)}
               onArchive={th.status === 'running' ? undefined : () => onArchiveThread(th.id, th.title)}
-              onPin={th.stage === 'review' ? () => onPinThread(th.id, !th.pinned) : undefined}
+              onPin={() => onPinThread(th.id, !th.pinned)}
               onDelete={th.status === 'running' ? undefined : () => onDeleteThread(th.id, th.title)}
               gitStatus={th.mode === 'worktree' ? gitStatusByThread[th.id] : undefined}
             />

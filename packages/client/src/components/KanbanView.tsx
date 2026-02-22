@@ -116,31 +116,29 @@ function KanbanCard({ thread, projectInfo, onDelete, search, ghost, contentSnipp
       }}
     >
       <div className="absolute top-1.5 right-1.5 flex items-center gap-0.5">
-        {stage === 'review' ? (
-          thread.pinned ? (
-            <button
-              className="p-1 rounded transition-opacity hover:bg-primary/10 text-primary"
-              onClick={async (e) => {
-                e.stopPropagation();
-                await pinThread(thread.id, thread.projectId, false);
-              }}
-              aria-label="Unpin thread"
-            >
-              <Pin className="h-3 w-3 rotate-45" />
-            </button>
-          ) : (
-            <button
-              className="p-1 rounded opacity-0 group-hover/card:opacity-100 transition-opacity hover:bg-primary/10 text-muted-foreground hover:text-primary"
-              onClick={async (e) => {
-                e.stopPropagation();
-                await pinThread(thread.id, thread.projectId, true);
-              }}
-              aria-label="Pin thread"
-            >
-              <Pin className="h-3 w-3" />
-            </button>
-          )
-        ) : null}
+        {thread.pinned ? (
+          <button
+            className="p-1 rounded transition-opacity hover:bg-primary/10 text-primary"
+            onClick={async (e) => {
+              e.stopPropagation();
+              await pinThread(thread.id, thread.projectId, false);
+            }}
+            aria-label="Unpin thread"
+          >
+            <Pin className="h-3 w-3 rotate-45" />
+          </button>
+        ) : (
+          <button
+            className="p-1 rounded opacity-0 group-hover/card:opacity-100 transition-opacity hover:bg-primary/10 text-muted-foreground hover:text-primary"
+            onClick={async (e) => {
+              e.stopPropagation();
+              await pinThread(thread.id, thread.projectId, true);
+            }}
+            aria-label="Pin thread"
+          >
+            <Pin className="h-3 w-3" />
+          </button>
+        )}
         <button
           className="p-1 rounded opacity-0 group-hover/card:opacity-100 transition-opacity hover:bg-destructive/10 hover:text-destructive text-muted-foreground"
           onClick={(e) => {
@@ -541,10 +539,10 @@ export function KanbanView({ threads, projectId, search, contentSnippets, highli
       }
     }
 
-    // Sort each column: pinned first only in review, then by date (most recent first)
+    // Sort each column: pinned first, then by date (most recent first)
     for (const stage of STAGES) {
       map[stage].sort((a, b) => {
-        if (stage === 'review' && a.pinned !== b.pinned) return a.pinned ? -1 : 1;
+        if (a.pinned !== b.pinned) return a.pinned ? -1 : 1;
         const dateA = a.completedAt || a.createdAt;
         const dateB = b.completedAt || b.createdAt;
         return new Date(dateB).getTime() - new Date(dateA).getTime();
@@ -592,13 +590,6 @@ export function KanbanView({ threads, projectId, search, contentSnippets, highli
         }
       }
 
-      // Auto-unpin when moving out of review
-      if (sourceStage === 'review' && newStage !== 'review') {
-        const thread = threads.find((t) => t.id === threadId);
-        if (thread?.pinned) {
-          pinThread(threadId, targetProjectId, false);
-        }
-      }
 
       if (newStage === 'archived') {
         // Dragging to archived column → archive the thread
