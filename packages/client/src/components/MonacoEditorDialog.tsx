@@ -100,13 +100,14 @@ export function MonacoEditorDialog({ open, onOpenChange, filePath, initialConten
             ? 'max-w-[100vw] max-h-[100vh] w-[100vw] h-[100vh] p-0'
             : 'max-w-5xl max-h-[85vh] h-[85vh] p-0',
           '[&>button:last-child]:hidden',
-          '!duration-0'
+          '!duration-0',
+          'overflow-hidden'
         )}
       >
-        <DialogHeader className="px-6 pt-4 pb-2 border-b border-border/50">
-          <div className="flex items-center justify-between">
-            <DialogTitle className="font-mono text-sm truncate [direction:rtl] text-left">{filePath}</DialogTitle>
-            <div className="flex items-center gap-1">
+        <DialogHeader className="px-6 pt-4 pb-2 border-b border-border/50 overflow-hidden">
+          <div className="flex items-center justify-between gap-2">
+            <DialogTitle className="font-mono text-sm min-w-0 overflow-hidden whitespace-nowrap text-ellipsis" style={{ direction: 'rtl', textAlign: 'left' }}>{filePath}</DialogTitle>
+            <div className="flex items-center gap-1 flex-shrink-0">
               {/* Markdown preview toggle */}
               {isMarkdown && (
                 <Button

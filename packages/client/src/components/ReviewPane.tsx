@@ -1354,10 +1354,10 @@ export function ReviewPane() {
             const Icon = fileStatusIcons[expandedSummary.status] || FileCode;
             return (
               <>
-                <DialogHeader className="px-4 py-3 pr-10 border-b border-border flex-shrink-0">
-                  <div className="flex items-center gap-2 min-w-0">
+                <DialogHeader className="px-4 py-3 pr-10 border-b border-border flex-shrink-0 overflow-hidden">
+                  <div className="flex items-center gap-2 min-w-0 overflow-hidden">
                     <Icon className="h-4 w-4 flex-shrink-0" />
-                    <DialogTitle className="font-mono text-sm truncate [direction:rtl] text-left">{expandedSummary.path}</DialogTitle>
+                    <DialogTitle className="font-mono text-sm min-w-0 overflow-hidden whitespace-nowrap text-ellipsis" style={{ direction: 'rtl', textAlign: 'left' }}>{expandedSummary.path}</DialogTitle>
                   </div>
                   <DialogDescription className="sr-only">
                     {t('review.diffFor', { file: expandedSummary.path, defaultValue: `Diff for ${expandedSummary.path}` })}
