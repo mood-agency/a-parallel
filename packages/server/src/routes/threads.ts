@@ -244,7 +244,7 @@ threadRoutes.post('/', async (c) => {
 
   // Start agent and handle errors (especially Claude CLI not installed)
   try {
-    await startAgent(threadId, augmentedPrompt, cwd, model || 'sonnet', pMode, images, disallowedTools, allowedTools, provider || 'claude');
+    await startAgent(threadId, augmentedPrompt, cwd, resolvedModel, pMode, images, disallowedTools, allowedTools, resolvedProvider);
   } catch (err: any) {
     // If startAgent throws (e.g. Claude CLI not found), return error to client
     log.error('Failed to start agent', { namespace: 'agent', threadId, error: err });
@@ -568,8 +568,12 @@ threadRoutes.patch('/:id', async (c) => {
         id,
         thread.initialPrompt,
         cwd,
-        'sonnet', // default model for idle threads
-        (thread.permissionMode || 'autoEdit') as import('@funny/shared').PermissionMode
+        (thread.model || project.defaultModel || 'sonnet') as import('@funny/shared').AgentModel,
+        (thread.permissionMode || 'autoEdit') as import('@funny/shared').PermissionMode,
+        undefined,
+        undefined,
+        undefined,
+        (thread.provider || project.defaultProvider || 'claude') as import('@funny/shared').AgentProvider
       ).catch((err) => {
         log.error('Failed to auto-start agent for idle thread', { namespace: 'agent', threadId: id, error: err });
         tm.updateThread(id, { status: 'failed', completedAt: new Date().toISOString() });
