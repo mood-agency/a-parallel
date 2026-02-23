@@ -124,7 +124,7 @@ export class AgentExecutor {
         }
 
         // Call api-acp
-        const url = `${this.baseURL}/v1/chat/completions`;
+        const url = `${this.baseURL}/chat/completions`;
         console.log(`[AgentExecutor] POST ${url} model=${this.modelId} msgs=${messages.length} tools=${openaiTools.length} step=${steps}`);
         const response = await fetch(url, {
           method: 'POST',

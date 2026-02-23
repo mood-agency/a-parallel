@@ -425,6 +425,13 @@ const migrations: Migration[] = [
       addColumn('threads', 'created_by', 'TEXT');
     },
   },
+
+  {
+    name: '022_message_author',
+    up() {
+      addColumn('messages', 'author', 'TEXT');
+    },
+  },
 ];
 
 // ── Public API ──────────────────────────────────────────────────
