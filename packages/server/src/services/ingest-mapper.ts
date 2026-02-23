@@ -21,6 +21,7 @@ import * as tm from './thread-manager.js';
 import * as pm from './project-manager.js';
 import type { WSEvent, WSWorkflowStepData, WSWorkflowStatusData } from '@funny/shared';
 import { log } from '../lib/abbacchio.js';
+import { shutdownManager, ShutdownPhase } from './shutdown-manager.js';
 
 // ── Types ────────────────────────────────────────────────────
 
@@ -37,6 +38,8 @@ interface ExternalThreadState {
   threadId: string;
   projectId: string;
   userId: string;
+  /** Timestamp of the last event received for this thread */
+  lastEventAt: number;
 }
 
 /**
@@ -150,6 +153,7 @@ function getState(requestId: string): ExternalThreadState | null {
       threadId: row.id,
       projectId: row.projectId,
       userId: row.userId,
+      lastEventAt: Date.now(),
     };
     threadStates.set(requestId, state);
     return state;
@@ -173,6 +177,7 @@ function getStateByThreadId(threadId: string): ExternalThreadState | null {
       threadId: row.id,
       projectId: row.projectId,
       userId: row.userId,
+      lastEventAt: Date.now(),
     };
     threadStates.set(cacheKey, state);
     return state;
@@ -208,7 +213,7 @@ function emitWS(state: ExternalThreadState, event: WSEvent): void {
 
 // ── Event handlers ───────────────────────────────────────────
 
-function onAccepted(event: IngestEvent): void {
+function onAccepted(event: IngestEvent): string | undefined {
   const { request_id, data, metadata, timestamp } = event;
   const stateKey = resolveStateKey(event);
 
@@ -228,7 +233,7 @@ function onAccepted(event: IngestEvent): void {
       }
       emitWS(existing, { type: 'agent:status', threadId: existing.threadId, data: { status: 'pending' } });
       log.info('Linked to existing thread', { namespace: 'ingest', threadId: existing.threadId, requestId: request_id });
-      return;
+      return existing.threadId;
     }
     throw new Error(`Thread not found: thread_id=${event.thread_id}`);
   }
@@ -277,7 +282,7 @@ function onAccepted(event: IngestEvent): void {
     createdAt: timestamp,
   });
 
-  const state: ExternalThreadState = { threadId, projectId, userId };
+  const state: ExternalThreadState = { threadId, projectId, userId, lastEventAt: Date.now() };
   threadStates.set(request_id, state);
 
   // Insert initial prompt as user message if provided
@@ -289,6 +294,7 @@ function onAccepted(event: IngestEvent): void {
   emitWS(state, { type: 'thread:created', threadId, data: { projectId, title, source: 'ingest' } });
   emitWS(state, { type: 'agent:status', threadId, data: { status: 'pending' } });
   log.info('Thread created', { namespace: 'ingest', threadId, requestId: request_id });
+  return threadId;
 }
 
 /**
@@ -677,39 +683,51 @@ function onWorkflowEvent(event: IngestEvent): void {
  * Process an incoming ingest event. Routes to the appropriate handler
  * based on the event_type suffix.
  */
-export function handleIngestEvent(event: IngestEvent): void {
+export interface IngestResult {
+  threadId?: string;
+}
+
+export function handleIngestEvent(event: IngestEvent): IngestResult {
   // Route workflow events to dedicated handler before suffix-based routing
   if (event.event_type.startsWith('workflow.')) {
-    return onWorkflowEvent(event);
+    onWorkflowEvent(event);
+    return {};
   }
 
   const suffix = event.event_type.split('.').pop();
 
   switch (suffix) {
     case 'accepted':
-      return onAccepted(event);
+      return { threadId: onAccepted(event) };
     case 'started':
-      return onStarted(event);
+      onStarted(event);
+      return {};
     case 'completed':
-      return onCompleted(event);
+      onCompleted(event);
+      return {};
     case 'failed':
-      return onFailed(event);
+      onFailed(event);
+      return {};
     case 'stopped':
-      return onStopped(event);
+      onStopped(event);
+      return {};
     case 'cli_message':
-      return onCLIMessage(event);
+      onCLIMessage(event);
+      return {};
     case 'message':
-      return onMessage(event);
+      onMessage(event);
+      return {};
     default:
       // Silently ignore pipeline lifecycle events that are already
       // handled by cli_message (containers.ready, tier_classified, etc.)
-      if (SILENT_EVENT_TYPES.has(event.event_type)) return;
+      if (SILENT_EVENT_TYPES.has(event.event_type)) return {};
       // For truly unknown events from other sources, render as system message
       const state = resolveState(event);
-      if (!state) return;
+      if (!state) return {};
       const detail = (event.data.message as string) ?? (event.data.detail as string) ?? JSON.stringify(event.data);
       const content = `[${event.event_type}] ${detail}`;
       const msgId = tm.insertMessage({ threadId: state.threadId, role: 'system', content });
       emitWS(state, { type: 'agent:message', threadId: state.threadId, data: { messageId: msgId, role: 'system', content } });
+      return {};
   }
 }

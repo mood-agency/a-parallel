@@ -10,7 +10,7 @@
 
 import { Hono } from 'hono';
 import { timingSafeEqual } from 'crypto';
-import { handleIngestEvent, type IngestEvent } from '../services/ingest-mapper.js';
+import { handleIngestEvent, type IngestEvent, type IngestResult } from '../services/ingest-mapper.js';
 import { log } from '../lib/abbacchio.js';
 
 const ingestRoutes = new Hono();
@@ -50,8 +50,8 @@ ingestRoutes.post('/webhook', async (c) => {
   }
 
   try {
-    handleIngestEvent(body);
-    return c.json({ status: 'ok' }, 200);
+    const result = handleIngestEvent(body);
+    return c.json({ status: 'ok', ...(result.threadId ? { thread_id: result.threadId } : {}) }, 200);
   } catch (err: any) {
     log.error('Error processing ingest event', { namespace: 'ingest', eventType: body.event_type, error: err.message });
     return c.json({ error: err.message }, 500);
