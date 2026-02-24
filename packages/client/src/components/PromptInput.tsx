@@ -1,7 +1,7 @@
 import { useState, useRef, useEffect, useCallback, useMemo, memo } from 'react';
 import { useTranslation } from 'react-i18next';
 import { toast } from 'sonner';
-import { ArrowUp, ArrowRight, Square, Loader2, Paperclip, X, Zap, GitBranch, Check, Inbox, FileText, Globe, Github, FolderOpen } from 'lucide-react';
+import { ArrowUp, ArrowLeft, Square, Loader2, Paperclip, X, Zap, GitBranch, Check, Inbox, FileText, Globe, Github, FolderOpen, Copy } from 'lucide-react';
 import { Switch } from '@/components/ui/switch';
 import { Button } from '@/components/ui/button';
 import {
@@ -1313,23 +1313,46 @@ export const PromptInput = memo(function PromptInput({
                     <span className="flex items-center gap-1 px-2 py-1 text-xs text-muted-foreground truncate max-w-[400px] shrink-0">
                       <FolderOpen className="h-3 w-3 shrink-0" />
                       <span className="truncate font-mono">{effectiveCwd}</span>
+                      <button
+                        type="button"
+                        className="shrink-0 hover:text-foreground transition-colors"
+                        onClick={() => { navigator.clipboard.writeText(effectiveCwd); toast.success('Path copied'); }}
+                      >
+                        <Copy className="h-3 w-3" />
+                      </button>
                     </span>
+                  )}
+                  {followUpBranches.length > 0 && (
+                    <span className="flex items-center gap-1 shrink-0">
+                      <BranchPicker
+                        branches={followUpBranches}
+                        selected={followUpSelectedBranch}
+                        onChange={setFollowUpSelectedBranch}
+                      />
+                      <button
+                        type="button"
+                        className="shrink-0 text-muted-foreground hover:text-foreground transition-colors"
+                        onClick={() => { navigator.clipboard.writeText(followUpSelectedBranch); toast.success('Branch copied'); }}
+                      >
+                        <Copy className="h-3 w-3" />
+                      </button>
+                    </span>
+                  )}
+                  {activeThreadBranch && followUpBranches.length > 0 && (
+                    <ArrowLeft className="h-3 w-3 text-muted-foreground shrink-0" />
                   )}
                   {activeThreadBranch && (
                     <span className="flex items-center gap-1 px-2 py-1 text-xs text-muted-foreground shrink-0">
                       <GitBranch className="h-3 w-3 shrink-0" />
                       <span className="font-mono font-medium text-foreground">{activeThreadBranch}</span>
+                      <button
+                        type="button"
+                        className="shrink-0 hover:text-foreground transition-colors"
+                        onClick={() => { navigator.clipboard.writeText(activeThreadBranch); toast.success('Branch copied'); }}
+                      >
+                        <Copy className="h-3 w-3" />
+                      </button>
                     </span>
-                  )}
-                  {activeThreadBranch && followUpBranches.length > 0 && (
-                    <ArrowRight className="h-3 w-3 text-muted-foreground shrink-0" />
-                  )}
-                  {followUpBranches.length > 0 && (
-                    <BranchPicker
-                      branches={followUpBranches}
-                      selected={followUpSelectedBranch}
-                      onChange={setFollowUpSelectedBranch}
-                    />
                   )}
                 </>
               )}
