@@ -17,10 +17,9 @@ import { DeadLetterQueue } from './infrastructure/dlq.js';
 import { AdapterManager } from './infrastructure/adapter.js';
 import { WebhookAdapter } from './infrastructure/webhook-adapter.js';
 import { RequestLogger } from './infrastructure/request-logger.js';
-import { createPipelineRoutes } from './routes/pipeline.js';
-import { createDirectorRoutes } from './routes/director.js';
 import { createWebhookRoutes } from './routes/webhooks.js';
 import { createLogRoutes } from './routes/logs.js';
+import { createSessionRoutes } from './routes/sessions.js';
 import { PipelineRunner } from './core/pipeline-runner.js';
 import { EventBus } from './infrastructure/event-bus.js';
 import { ManifestManager } from './core/manifest-manager.js';
@@ -28,6 +27,11 @@ import { Integrator } from './core/integrator.js';
 import { Director } from './core/director.js';
 import { BranchCleaner } from './core/branch-cleaner.js';
 import { ModelFactory } from '@funny/core/agents';
+import { SessionStore } from './core/session-store.js';
+import { OrchestratorAgent } from './core/orchestrator-agent.js';
+import { ReactionEngine } from './core/reactions.js';
+import { GitHubTracker } from './trackers/github-tracker.js';
+import type { Tracker } from './trackers/tracker.js';
 import { logger } from './infrastructure/logger.js';
 import { registerManifestWriter } from './listeners/manifest-writer.js';
 import { registerIdempotencyReleaser } from './listeners/idempotency-releaser.js';
@@ -107,6 +111,76 @@ adapterManager.start();
 // Start Director scheduler (0 = disabled)
 director.startSchedule(config.director.schedule_interval_ms);
 
+// ── Session & Orchestrator singletons ───────────────────────────
+
+const sessionStore = new SessionStore(eventBus, config.sessions.persist_path ?? undefined);
+const orchestratorAgent = new OrchestratorAgent(config);
+
+// Initialize tracker (GitHub by default, gracefully handles missing `gh` CLI)
+let tracker: Tracker | null = null;
+try {
+  if (config.tracker.type === 'github') {
+    tracker = config.tracker.repo
+      ? new GitHubTracker(config.tracker.repo, projectPath)
+      : await GitHubTracker.fromCwd(projectPath);
+    logger.info({ tracker: 'github', repo: config.tracker.repo }, 'Issue tracker initialized');
+  }
+} catch (err: any) {
+  logger.warn({ err: err.message }, 'Issue tracker initialization failed — sessions will work without tracker');
+}
+
+// Initialize ReactionEngine
+const reactionEngine = new ReactionEngine(eventBus, sessionStore, config, {
+  respawnAgent: async (sessionId, prompt) => {
+    const session = sessionStore.get(sessionId);
+    if (!session || !session.worktreePath || !session.branch) return;
+
+    // Re-run the implementing agent with the new prompt
+    orchestratorAgent.implementIssue(
+      {
+        number: session.issue.number,
+        title: session.issue.title,
+        state: 'open',
+        body: session.issue.body ?? null,
+        url: session.issue.url,
+        labels: session.issue.labels.map((l) => ({ name: l, color: '' })),
+        assignee: null,
+        commentsCount: 0,
+        createdAt: '',
+        updatedAt: '',
+        comments: [],
+        fullContext: `${session.issue.body ?? ''}\n\n---\n\n**Agent instructions:** ${prompt}`,
+      },
+      session.plan!,
+      session.worktreePath,
+      session.branch,
+    ).catch((err) => {
+      logger.error({ sessionId, err: err.message }, 'Respawned agent failed');
+    });
+  },
+  notify: async (sessionId, message) => {
+    logger.info({ sessionId, message }, 'Session notification');
+    await eventBus.publish({
+      event_type: 'reaction.triggered' as any,
+      request_id: sessionId,
+      timestamp: new Date().toISOString(),
+      data: { sessionId, message, type: 'notification' },
+    });
+  },
+  autoMerge: async (sessionId) => {
+    const session = sessionStore.get(sessionId);
+    if (!session?.prNumber) return;
+    const { execute } = await import('@funny/core/git');
+    await execute('gh', ['pr', 'merge', String(session.prNumber), '--squash', '--delete-branch'], {
+      cwd: session.projectPath,
+    });
+    await sessionStore.transition(sessionId, 'merged', { autoMerged: true });
+    logger.info({ sessionId, prNumber: session.prNumber }, 'PR auto-merged');
+  },
+});
+
+reactionEngine.start();
+
 // ── Event-driven wiring ─────────────────────────────────────────
 
 registerManifestWriter({ eventBus, manifestManager, config });
@@ -139,10 +213,9 @@ app.use('/director/run', pipelineRunLimiter.middleware());
 app.use('/webhooks/*', webhookLimiter.middleware());
 
 // Mount route groups
-app.route('/pipeline', createPipelineRoutes(runner, eventBus, idempotencyGuard));
-app.route('/director', createDirectorRoutes(director, manifestManager));
 app.route('/webhooks', createWebhookRoutes(eventBus, config));
 app.route('/logs', createLogRoutes(requestLogger));
+app.route('/sessions', createSessionRoutes(sessionStore, orchestratorAgent, tracker, eventBus, config));
 
 // ── Service container ──────────────────────────────────────────
 
@@ -164,7 +237,7 @@ container.registerInstance('webhookLimiter', webhookLimiter, () => webhookLimite
 
 // ── Exports ─────────────────────────────────────────────────────
 
-export { app, container, runner, eventBus, director, manifestManager, integrator, config, idempotencyGuard, dlq, branchCleaner, adapterManager, requestLogger };
+export { app, container, runner, eventBus, director, manifestManager, integrator, config, idempotencyGuard, dlq, branchCleaner, adapterManager, requestLogger, sessionStore, orchestratorAgent, reactionEngine, tracker };
 export type { PipelineRequest, PipelineEvent, PipelineEventType, PipelineState, Tier, AgentName } from './core/types.js';
 export type { Manifest, IntegratorResult, DirectorStatus } from './core/manifest-types.js';
 export type { PipelineServiceConfig } from './config/schema.js';

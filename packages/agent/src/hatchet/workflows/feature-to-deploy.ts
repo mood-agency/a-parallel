@@ -14,6 +14,7 @@ import type { HatchetClient, DurableContext } from '@hatchet-dev/typescript-sdk/
 import { execute } from '@funny/core/git';
 import { AgentExecutor, ModelFactory } from '@funny/core/agents';
 import type { AgentRole, AgentContext } from '@funny/core/agents';
+import type { PipelineRunner } from '../../core/pipeline-runner.js';
 import { logger } from '../../infrastructure/logger.js';
 
 // ── Input/Output types ──────────────────────────────────────────
@@ -67,7 +68,7 @@ type WorkflowOutput = {
 
 // ── Workflow registration ───────────────────────────────────────
 
-export function registerFeatureToDeployWorkflow(hatchet: HatchetClient) {
+export function registerFeatureToDeployWorkflow(hatchet: HatchetClient, runner: PipelineRunner) {
   const workflow = hatchet.workflow<FeatureToDeployInput, WorkflowOutput>({
     name: 'feature-to-deploy',
   });
@@ -207,7 +208,7 @@ When finished, output a JSON summary:
     },
   });
 
-  // Step 4: Trigger the quality pipeline via internal API
+  // Step 4: Trigger the quality pipeline directly
   const qualityPipeline = workflow.task({
     name: 'quality-pipeline',
     parents: [implementFeature],
@@ -217,24 +218,18 @@ When finished, output a JSON summary:
       const complexityResult = await ctx.parentOutput(classifyComplexity);
 
       const requestId = `hatchet-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
-      const port = process.env.PORT ?? '3002';
 
-      const response = await fetch(`http://localhost:${port}/pipeline/run`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          request_id: requestId,
-          branch: worktreeResult.branch,
-          worktree_path: worktreeResult.worktreePath,
-          config: {
-            agents: complexityResult.recommended_agents,
-          },
-        }),
+      // Run pipeline directly (fire-and-forget — it publishes events on completion)
+      runner.run({
+        request_id: requestId,
+        branch: worktreeResult.branch,
+        worktree_path: worktreeResult.worktreePath,
+        config: {
+          agents: complexityResult.recommended_agents,
+        },
+      }).catch((err) => {
+        logger.error({ requestId, err: err.message }, 'Quality pipeline run failed');
       });
-
-      if (!response.ok) {
-        throw new Error(`Pipeline trigger failed: ${response.status} ${await response.text()}`);
-      }
 
       return { request_id: requestId } as PipelineOutput;
     },
@@ -247,24 +242,21 @@ When finished, output a JSON summary:
     executionTimeout: '60m',
     fn: async (input, ctx) => {
       const pipelineResult = await ctx.parentOutput(qualityPipeline);
-      const port = process.env.PORT ?? '3002';
 
-      // Poll with exponential backoff
+      // Poll runner status with exponential backoff
       let delay = 5_000;
       const maxDelay = 30_000;
 
       for (let attempt = 0; attempt < 360; attempt++) { // max ~60 min
         if (ctx.cancelled) throw new Error('Cancelled');
 
-        const response = await fetch(`http://localhost:${port}/pipeline/${pipelineResult.request_id}`);
-        if (response.ok) {
-          const status = await response.json() as any;
-
-          if (status.status === 'approved') {
-            return { status: 'approved', result: status } as PipelineStatusOutput;
+        const state = runner.getStatus(pipelineResult.request_id);
+        if (state) {
+          if (state.status === 'approved') {
+            return { status: 'approved', result: state as unknown as Record<string, unknown> } as PipelineStatusOutput;
           }
-          if (status.status === 'failed' || status.status === 'error') {
-            throw new Error(`Pipeline ${status.status}: ${JSON.stringify(status)}`);
+          if (state.status === 'failed' || state.status === 'error') {
+            throw new Error(`Pipeline ${state.status}: ${JSON.stringify(state)}`);
           }
         }
 
