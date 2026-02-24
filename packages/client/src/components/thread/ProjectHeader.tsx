@@ -8,7 +8,7 @@ import { useTerminalStore } from '@/stores/terminal-store';
 import { useGitStatusStore } from '@/stores/git-status-store';
 import { editorLabels, type Editor } from '@/stores/settings-store';
 import { usePreviewWindow } from '@/hooks/use-preview-window';
-import { GitCompare, Globe, Terminal, ExternalLink, Pin, PinOff, Rocket, Play, Square, Loader2, Columns3, ArrowLeft, FolderOpen, Copy, ClipboardList, Check } from 'lucide-react';
+import { GitCompare, Globe, Terminal, ExternalLink, Pin, PinOff, Rocket, Play, Square, Loader2, Columns3, ArrowLeft, FolderOpen, Copy, ClipboardList, Check, EllipsisVertical } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { api } from '@/lib/api';
 import { toast } from 'sonner';
@@ -17,6 +17,7 @@ import {
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuTrigger,
+  DropdownMenuSeparator,
 } from '@/components/ui/dropdown-menu';
 import {
   Tooltip,
@@ -64,41 +65,93 @@ function threadToMarkdown(messages: MessageWithToolCalls[], includeToolCalls: bo
   return lines.join('\n');
 }
 
-function CopyThreadButton({ includeToolCalls }: { includeToolCalls: boolean }) {
+const MoreActionsMenu = memo(function MoreActionsMenu() {
   const { t } = useTranslation();
-  const activeThread = useThreadStore(s => s.activeThread);
-  const [copied, setCopied] = useState(false);
+  const navigate = useNavigate();
+  const threadId = useThreadStore(s => s.activeThread?.id);
+  const threadProjectId = useThreadStore(s => s.activeThread?.projectId);
+  const threadPinned = useThreadStore(s => s.activeThread?.pinned);
+  const hasMessages = useThreadStore(s => (s.activeThread?.messages?.length ?? 0) > 0);
+  const pinThread = useThreadStore(s => s.pinThread);
+  const setReviewPaneOpen = useUIStore(s => s.setReviewPaneOpen);
+  const [copiedText, setCopiedText] = useState(false);
+  const [copiedTools, setCopiedTools] = useState(false);
 
-  const handleCopy = useCallback(() => {
-    if (!activeThread?.messages?.length) return;
-    const md = threadToMarkdown(activeThread.messages, includeToolCalls);
+  const handleCopy = useCallback((includeToolCalls: boolean) => {
+    const messages = useThreadStore.getState().activeThread?.messages;
+    if (!messages?.length) return;
+    const md = threadToMarkdown(messages, includeToolCalls);
     navigator.clipboard.writeText(md);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
-  }, [activeThread?.messages, includeToolCalls]);
-
-  const Icon = copied ? Check : includeToolCalls ? ClipboardList : Copy;
-  const tooltip = includeToolCalls
-    ? t('thread.copyWithTools', 'Copy with tool calls')
-    : t('thread.copyText', 'Copy text only');
+    if (includeToolCalls) {
+      setCopiedTools(true);
+      setTimeout(() => setCopiedTools(false), 2000);
+    } else {
+      setCopiedText(true);
+      setTimeout(() => setCopiedText(false), 2000);
+    }
+  }, []);
 
   return (
-    <Tooltip>
-      <TooltipTrigger asChild>
-        <Button
-          variant="ghost"
-          size="icon-sm"
-          onClick={handleCopy}
-          className={copied ? 'text-status-success' : 'text-muted-foreground'}
-          disabled={!activeThread?.messages?.length}
+    <DropdownMenu>
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <DropdownMenuTrigger asChild>
+            <Button
+              variant="ghost"
+              size="icon-sm"
+              className="text-muted-foreground"
+            >
+              <EllipsisVertical className="h-4 w-4" />
+            </Button>
+          </DropdownMenuTrigger>
+        </TooltipTrigger>
+        <TooltipContent>{t('thread.moreActions', 'More actions')}</TooltipContent>
+      </Tooltip>
+      <DropdownMenuContent align="end">
+        <DropdownMenuItem
+          onClick={() => handleCopy(false)}
+          disabled={!hasMessages}
+          className="cursor-pointer"
         >
-          <Icon className="h-4 w-4" />
-        </Button>
-      </TooltipTrigger>
-      <TooltipContent>{tooltip}</TooltipContent>
-    </Tooltip>
+          {copiedText ? <Check className="h-4 w-4 mr-2" /> : <Copy className="h-4 w-4 mr-2" />}
+          {t('thread.copyText', 'Copy text only')}
+        </DropdownMenuItem>
+        <DropdownMenuItem
+          onClick={() => handleCopy(true)}
+          disabled={!hasMessages}
+          className="cursor-pointer"
+        >
+          {copiedTools ? <Check className="h-4 w-4 mr-2" /> : <ClipboardList className="h-4 w-4 mr-2" />}
+          {t('thread.copyWithTools', 'Copy with tool calls')}
+        </DropdownMenuItem>
+        {threadId && (
+          <>
+            <DropdownMenuSeparator />
+            <DropdownMenuItem
+              onClick={() => pinThread(threadId, threadProjectId!, !threadPinned)}
+              className="cursor-pointer"
+            >
+              {threadPinned
+                ? <><PinOff className="h-4 w-4 mr-2" />{t('sidebar.unpin', 'Unpin')}</>
+                : <><Pin className="h-4 w-4 mr-2" />{t('sidebar.pin', 'Pin')}</>
+              }
+            </DropdownMenuItem>
+            <DropdownMenuItem
+              onClick={() => {
+                setReviewPaneOpen(false);
+                navigate(`/search?view=board&project=${threadProjectId}&highlight=${threadId}`);
+              }}
+              className="cursor-pointer"
+            >
+              <Columns3 className="h-4 w-4 mr-2" />
+              {t('kanban.viewOnBoard', 'View on Board')}
+            </DropdownMenuItem>
+          </>
+        )}
+      </DropdownMenuContent>
+    </DropdownMenu>
   );
-}
+});
 
 function StartupCommandsPopover({ projectId }: { projectId: string }) {
   const { t } = useTranslation();
@@ -210,12 +263,15 @@ function StartupCommandsPopover({ projectId }: { projectId: string }) {
 export const ProjectHeader = memo(function ProjectHeader() {
   const { t } = useTranslation();
   const navigate = useNavigate();
-  const activeThread = useThreadStore(s => s.activeThread);
+  const activeThreadId = useThreadStore(s => s.activeThread?.id);
+  const activeThreadProjectId = useThreadStore(s => s.activeThread?.projectId);
+  const activeThreadTitle = useThreadStore(s => s.activeThread?.title);
+  const activeThreadWorktreePath = useThreadStore(s => s.activeThread?.worktreePath);
+  const activeThreadParentId = useThreadStore(s => s.activeThread?.parentThreadId);
   const selectedProjectId = useProjectStore(s => s.selectedProjectId);
   const projects = useProjectStore(s => s.projects);
   const setReviewPaneOpen = useUIStore(s => s.setReviewPaneOpen);
   const reviewPaneOpen = useUIStore(s => s.reviewPaneOpen);
-  const pinThread = useThreadStore(s => s.pinThread);
   const kanbanContext = useUIStore(s => s.kanbanContext);
   const setKanbanContext = useUIStore(s => s.setKanbanContext);
   const { openPreview, isTauri } = usePreviewWindow();
@@ -223,11 +279,10 @@ export const ProjectHeader = memo(function ProjectHeader() {
   const terminalPanelVisible = useTerminalStore(s => s.panelVisible);
   const setPanelVisible = useTerminalStore(s => s.setPanelVisible);
   const addTab = useTerminalStore(s => s.addTab);
-  const activeThreadId = activeThread?.id;
   const gitStatus = useGitStatusStore(s => activeThreadId ? s.statusByThread[activeThreadId] : undefined);
   const fetchForThread = useGitStatusStore(s => s.fetchForThread);
 
-  const projectId = activeThread?.projectId ?? selectedProjectId;
+  const projectId = activeThreadProjectId ?? selectedProjectId;
   const project = projects.find(p => p.id === projectId);
   const tabs = useTerminalStore((s) => s.tabs);
   const runningWithPort = tabs.filter(
@@ -237,16 +292,16 @@ export const ProjectHeader = memo(function ProjectHeader() {
 
   // Fetch git status when activeThread changes
   useEffect(() => {
-    if (activeThread) {
-      fetchForThread(activeThread.id);
+    if (activeThreadId) {
+      fetchForThread(activeThreadId);
     }
-  }, [activeThread?.id, fetchForThread]);
+  }, [activeThreadId, fetchForThread]);
 
   if (!selectedProjectId) return null;
 
   const handleOpenInEditor = async (editor: Editor) => {
     if (!project) return;
-    const folderPath = activeThread?.worktreePath || project.path;
+    const folderPath = activeThreadWorktreePath || project.path;
     const result = await api.openInEditor(folderPath, editor);
     if (result.isErr()) {
       toast.error(t('sidebar.openInEditorError', 'Failed to open in editor'));
@@ -274,7 +329,7 @@ export const ProjectHeader = memo(function ProjectHeader() {
     <div className="px-4 py-2 border-b border-border">
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2 min-w-0 max-w-[50%]">
-        {kanbanContext && activeThread && (
+        {kanbanContext && activeThreadId && (
           <Tooltip>
             <TooltipTrigger asChild>
               <Button
@@ -289,13 +344,13 @@ export const ProjectHeader = memo(function ProjectHeader() {
             <TooltipContent>{t('kanban.backToBoard', 'Back to Kanban')}</TooltipContent>
           </Tooltip>
         )}
-        {!kanbanContext && activeThread?.parentThreadId && (
+        {!kanbanContext && activeThreadParentId && (
           <Tooltip>
             <TooltipTrigger asChild>
               <Button
                 variant="ghost"
                 size="icon-sm"
-                onClick={() => navigate(`/projects/${activeThread.projectId}/threads/${activeThread.parentThreadId}`)}
+                onClick={() => navigate(`/projects/${activeThreadProjectId}/threads/${activeThreadParentId}`)}
                 className="text-muted-foreground hover:text-foreground shrink-0"
               >
                 <ArrowLeft className="h-4 w-4" />
@@ -314,11 +369,11 @@ export const ProjectHeader = memo(function ProjectHeader() {
                 </BreadcrumbLink>
               </BreadcrumbItem>
             )}
-            {project && activeThread && <BreadcrumbSeparator />}
-            {activeThread && (
+            {project && activeThreadId && <BreadcrumbSeparator />}
+            {activeThreadId && (
               <BreadcrumbItem className="overflow-hidden flex-1">
                 <BreadcrumbPage className="text-sm truncate block">
-                  {activeThread.title}
+                  {activeThreadTitle}
                 </BreadcrumbPage>
               </BreadcrumbItem>
             )}
@@ -326,8 +381,6 @@ export const ProjectHeader = memo(function ProjectHeader() {
         </Breadcrumb>
         </div>
         <div className="flex items-center gap-2">
-          <CopyThreadButton includeToolCalls={false} />
-          <CopyThreadButton includeToolCalls={true} />
           <StartupCommandsPopover projectId={projectId!} />
           {runningWithPort.length > 0 && (
             <Tooltip>
@@ -379,41 +432,6 @@ export const ProjectHeader = memo(function ProjectHeader() {
               ))}
             </DropdownMenuContent>
           </DropdownMenu>
-          {activeThread && (
-            <>
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <Button
-                    variant="ghost"
-                    size="icon-sm"
-                    onClick={() => {
-                      setReviewPaneOpen(false);
-                      navigate(`/search?view=board&project=${activeThread.projectId}&highlight=${activeThread.id}`);
-                    }}
-                    className="text-muted-foreground"
-                  >
-                    <Columns3 className="h-4 w-4" />
-                  </Button>
-                </TooltipTrigger>
-                <TooltipContent>{t('kanban.viewOnBoard', 'View on Board')}</TooltipContent>
-              </Tooltip>
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <Button
-                    variant="ghost"
-                    size="icon-sm"
-                    onClick={() => pinThread(activeThread.id, activeThread.projectId, !activeThread.pinned)}
-                    className={activeThread.pinned ? 'text-primary' : 'text-muted-foreground'}
-                  >
-                    {activeThread.pinned ? <PinOff className="h-4 w-4" /> : <Pin className="h-4 w-4" />}
-                  </Button>
-                </TooltipTrigger>
-                <TooltipContent>
-                  {activeThread.pinned ? t('sidebar.unpin', 'Unpin') : t('sidebar.pin', 'Pin')}
-                </TooltipContent>
-              </Tooltip>
-            </>
-          )}
           <Tooltip>
             <TooltipTrigger asChild>
               <Button
@@ -424,7 +442,6 @@ export const ProjectHeader = memo(function ProjectHeader() {
                   const projectTabs = tabs.filter(t => t.projectId === selectedProjectId);
 
                   if (projectTabs.length === 0 && !terminalPanelVisible) {
-                    // No tabs for this project and panel is closed — create a new PTY tab
                     const cwd = project?.path ?? 'C:\\';
                     const id = crypto.randomUUID();
                     const label = 'Terminal 1';
@@ -438,7 +455,6 @@ export const ProjectHeader = memo(function ProjectHeader() {
                     });
                     setPanelVisible(true);
                   } else {
-                    // Otherwise, just toggle panel visibility
                     toggleTerminalPanel();
                   }
                 }}
@@ -468,6 +484,7 @@ export const ProjectHeader = memo(function ProjectHeader() {
             </TooltipTrigger>
             <TooltipContent>{t('review.title')}</TooltipContent>
           </Tooltip>
+          <MoreActionsMenu />
         </div>
       </div>
     </div>

@@ -1,7 +1,7 @@
 import { useState, useRef, useEffect, useCallback, useMemo, memo } from 'react';
 import { useTranslation } from 'react-i18next';
 import { toast } from 'sonner';
-import { ArrowUp, Square, Loader2, Paperclip, X, Zap, GitBranch, Check, Inbox, FileText, Globe, Github } from 'lucide-react';
+import { ArrowUp, Square, Loader2, Paperclip, X, Zap, GitBranch, Check, Inbox, FileText, Globe, Github, FolderOpen } from 'lucide-react';
 import { Switch } from '@/components/ui/switch';
 import { Button } from '@/components/ui/button';
 import {
@@ -1250,87 +1250,69 @@ export const PromptInput = memo(function PromptInput({
               </div>
             </div>
           </div>
-          {/* Separator + Branch selector + Backlog */}
+          {/* Separator + Bottom bar — different content for new thread vs follow-up */}
           <div className="border-t border-border px-2 py-1.5">
             <div className="flex items-center gap-1 overflow-x-auto no-scrollbar">
-              {remoteUrl && (
-                <span className="flex items-center gap-1 px-2 py-1 text-xs text-muted-foreground truncate max-w-[200px] shrink-0">
-                  {remoteUrl.includes('github.com') ? (
-                    <Github className="h-3 w-3 shrink-0" />
-                  ) : (
-                    <Globe className="h-3 w-3 shrink-0" />
+              {isNewThread ? (
+                <>
+                  {remoteUrl && (
+                    <span className="flex items-center gap-1 px-2 py-1 text-xs text-muted-foreground truncate max-w-[200px] shrink-0">
+                      {remoteUrl.includes('github.com') ? (
+                        <Github className="h-3 w-3 shrink-0" />
+                      ) : (
+                        <Globe className="h-3 w-3 shrink-0" />
+                      )}
+                      <span className="truncate font-mono">{formatRemoteUrl(remoteUrl)}</span>
+                    </span>
                   )}
-                  <span className="truncate font-mono">{formatRemoteUrl(remoteUrl)}</span>
-                </span>
-              )}
-              {!isNewThread && effectiveCwd && selectedProjectId && (
-                activeThread?.mode === 'worktree' ? (
-                  <WorktreePicker
-                    projectId={selectedProjectId}
-                    currentPath={effectiveCwd}
-                    threadBranch={activeThread?.branch}
-                    onChange={setCwdOverride}
-                  />
-                ) : activeThread?.mode === 'local' ? (
-                  <>
-                    {!createWorktreeForFollowUp && (activeThread?.branch || localCurrentBranch) && (
-                      <button className="flex items-center gap-1 px-2 py-1 text-xs text-muted-foreground hover:text-foreground transition-colors rounded hover:bg-muted truncate max-w-[300px]" disabled>
-                        <GitBranch className="h-3 w-3 shrink-0" />
-                        <span className="truncate font-mono">{activeThread?.branch || localCurrentBranch}</span>
-                      </button>
-                    )}
-                    {createWorktreeForFollowUp && followUpBranches.length > 0 && (
-                      <BranchPicker
-                        branches={followUpBranches}
-                        selected={followUpSelectedBranch}
-                        onChange={setFollowUpSelectedBranch}
-                      />
-                    )}
-                    <label className="flex items-center gap-1.5 text-xs text-muted-foreground shrink-0 cursor-pointer">
-                      <Switch
-                        checked={createWorktreeForFollowUp}
-                        onCheckedChange={setCreateWorktreeForFollowUp}
-                        tabIndex={-1}
-                        className="h-4 w-7 data-[state=checked]:bg-primary data-[state=unchecked]:bg-input [&>span]:h-3 [&>span]:w-3 [&>span]:data-[state=checked]:translate-x-3"
-                      />
-                      <span>{t('thread.mode.worktree')}</span>
-                    </label>
-                  </>
-                ) : null
-              )}
-              {isNewThread && newThreadBranches.length > 0 && (
-                <BranchPicker
-                  branches={newThreadBranches}
-                  selected={selectedBranch}
-                  onChange={setSelectedBranch}
-                />
-              )}
-              {isNewThread && (
-                <label className="flex items-center gap-1.5 text-xs text-muted-foreground shrink-0 cursor-pointer">
-                  <Switch
-                    checked={createWorktree}
-                    onCheckedChange={setCreateWorktree}
-                    tabIndex={-1}
-                    className="h-4 w-7 data-[state=checked]:bg-primary data-[state=unchecked]:bg-input [&>span]:h-3 [&>span]:w-3 [&>span]:data-[state=checked]:translate-x-3"
-                  />
-                  <span>{t('thread.mode.worktree')}</span>
-                </label>
-              )}
-              {showBacklog && (
-                <button
-                  onClick={() => setSendToBacklog((v) => !v)}
-                  tabIndex={-1}
-                  className={cn(
-                    'flex items-center gap-1 px-2 py-1 text-xs rounded transition-colors shrink-0 ml-auto',
-                    sendToBacklog
-                      ? 'bg-primary/10 text-primary'
-                      : 'text-muted-foreground hover:text-foreground hover:bg-muted'
+                  {newThreadBranches.length > 0 && (
+                    <BranchPicker
+                      branches={newThreadBranches}
+                      selected={selectedBranch}
+                      onChange={setSelectedBranch}
+                    />
                   )}
-                  title={t('prompt.sendToBacklog')}
-                >
-                  <Inbox className="h-3 w-3" />
-                  {t('prompt.backlog')}
-                </button>
+                  <label className="flex items-center gap-1.5 text-xs text-muted-foreground shrink-0 cursor-pointer">
+                    <Switch
+                      checked={createWorktree}
+                      onCheckedChange={setCreateWorktree}
+                      tabIndex={-1}
+                      className="h-4 w-7 data-[state=checked]:bg-primary data-[state=unchecked]:bg-input [&>span]:h-3 [&>span]:w-3 [&>span]:data-[state=checked]:translate-x-3"
+                    />
+                    <span>{t('thread.mode.worktree')}</span>
+                  </label>
+                  {showBacklog && (
+                    <button
+                      onClick={() => setSendToBacklog((v) => !v)}
+                      tabIndex={-1}
+                      className={cn(
+                        'flex items-center gap-1 px-2 py-1 text-xs rounded transition-colors shrink-0 ml-auto',
+                        sendToBacklog
+                          ? 'bg-primary/10 text-primary'
+                          : 'text-muted-foreground hover:text-foreground hover:bg-muted'
+                      )}
+                      title={t('prompt.sendToBacklog')}
+                    >
+                      <Inbox className="h-3 w-3" />
+                      {t('prompt.backlog')}
+                    </button>
+                  )}
+                </>
+              ) : (
+                <>
+                  {effectiveCwd && (
+                    <span className="flex items-center gap-1 px-2 py-1 text-xs text-muted-foreground truncate max-w-[400px] shrink-0">
+                      <FolderOpen className="h-3 w-3 shrink-0" />
+                      <span className="truncate font-mono">{effectiveCwd}</span>
+                    </span>
+                  )}
+                  {(activeThread?.branch || localCurrentBranch) && (
+                    <span className="flex items-center gap-1 px-2 py-1 text-xs text-muted-foreground shrink-0">
+                      <GitBranch className="h-3 w-3 shrink-0" />
+                      <span className="truncate font-mono">{activeThread?.branch || localCurrentBranch}</span>
+                    </span>
+                  )}
+                </>
               )}
             </div>
           </div>
