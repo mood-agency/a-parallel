@@ -580,6 +580,7 @@ export function ReviewPane() {
       projectId: activeThread.projectId,
       title,
       mode: 'local',
+      model: activeThread.model,
       prompt,
       allowedTools,
       disallowedTools,
