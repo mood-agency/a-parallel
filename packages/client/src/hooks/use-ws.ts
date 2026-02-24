@@ -82,38 +82,64 @@ function handleMessage(e: MessageEvent) {
       scheduleFlush();
       break;
 
-    // Low-frequency events → immediate dispatch
+    // Low-frequency events → wrapped in startTransition so they don't block
+    // user interactions (e.g. opening a dropdown menu). React can interrupt
+    // these updates if a higher-priority event (click, keypress) arrives.
     case 'agent:init':
-      useAppStore.getState().handleWSInit(threadId, data);
+      startTransition(() => {
+        useAppStore.getState().handleWSInit(threadId, data);
+      });
       break;
     case 'agent:status':
-      useAppStore.getState().handleWSStatus(threadId, data);
+      startTransition(() => {
+        useAppStore.getState().handleWSStatus(threadId, data);
+      });
       break;
-    case 'agent:result':
-      // Flush any pending messages before result so ordering is preserved
-      if (pendingMessages.size > 0 || pendingToolOutputs.length > 0) {
-        if (rafId !== null) {
-          cancelAnimationFrame(rafId);
-          rafId = null;
-        }
-        flushBatch();
+    case 'agent:result': {
+      // Flush any pending messages before result so ordering is preserved,
+      // then dispatch result — all inside one transition so React can yield
+      // to user interactions (clicks, keypress) instead of blocking.
+      const hasPendingResult = pendingMessages.size > 0 || pendingToolOutputs.length > 0;
+      if (hasPendingResult && rafId !== null) {
+        cancelAnimationFrame(rafId);
+        rafId = null;
       }
-      useAppStore.getState().handleWSResult(threadId, data);
+      startTransition(() => {
+        if (hasPendingResult) {
+          const msgs = Array.from(pendingMessages.values());
+          const toolOutputs = pendingToolOutputs.slice();
+          pendingMessages.clear();
+          pendingToolOutputs = [];
+          const store = useAppStore.getState();
+          for (const entry of msgs) store.handleWSMessage(entry.threadId, entry.data);
+          for (const entry of toolOutputs) store.handleWSToolOutput(entry.threadId, entry.data);
+        }
+        useAppStore.getState().handleWSResult(threadId, data);
+      });
       // Final review pane refresh when agent finishes
       import('@/stores/review-pane-store').then(({ useReviewPaneStore }) => {
         useReviewPaneStore.getState().notifyDirty(threadId);
       });
       break;
-    case 'agent:tool_call':
-      // Flush pending messages first so the parent message exists
-      if (pendingMessages.size > 0) {
-        if (rafId !== null) {
-          cancelAnimationFrame(rafId);
-          rafId = null;
-        }
-        flushBatch();
+    }
+    case 'agent:tool_call': {
+      // Flush pending messages first so the parent message exists,
+      // then dispatch tool_call — all inside one transition.
+      const hasPendingTC = pendingMessages.size > 0;
+      if (hasPendingTC && rafId !== null) {
+        cancelAnimationFrame(rafId);
+        rafId = null;
       }
-      useAppStore.getState().handleWSToolCall(threadId, data);
+      startTransition(() => {
+        if (hasPendingTC) {
+          const msgs = Array.from(pendingMessages.values());
+          pendingMessages.clear();
+          // Note: only flushing messages here, not tool outputs
+          const store = useAppStore.getState();
+          for (const entry of msgs) store.handleWSMessage(entry.threadId, entry.data);
+        }
+        useAppStore.getState().handleWSToolCall(threadId, data);
+      });
       // Signal ReviewPane when file-modifying tools are invoked
       if (FILE_MODIFYING_TOOLS.has(data.name)) {
         import('@/stores/review-pane-store').then(({ useReviewPaneStore }) => {
@@ -121,6 +147,7 @@ function handleMessage(e: MessageEvent) {
         });
       }
       break;
+    }
     case 'agent:error':
       useAppStore.getState().handleWSStatus(threadId, { status: 'failed' });
       break;
@@ -189,16 +216,18 @@ function handleMessage(e: MessageEvent) {
     }
     case 'thread:event': {
       import('@/stores/thread-store').then(({ useThreadStore }) => {
-        const active = useThreadStore.getState().activeThread;
-        if (active && active.id === threadId) {
-          useThreadStore.setState({
-            activeThread: {
-              ...active,
-              messages: active.messages,
-              threadEvents: [...(active.threadEvents ?? []), data.event],
-            },
-          });
-        }
+        startTransition(() => {
+          const active = useThreadStore.getState().activeThread;
+          if (active && active.id === threadId) {
+            useThreadStore.setState({
+              activeThread: {
+                ...active,
+                messages: active.messages,
+                threadEvents: [...(active.threadEvents ?? []), data.event],
+              },
+            });
+          }
+        });
       });
       break;
     }

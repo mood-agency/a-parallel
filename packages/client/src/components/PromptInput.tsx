@@ -381,9 +381,14 @@ export const PromptInput = memo(function PromptInput({
     { value: 'confirmEdit', label: t('prompt.askBeforeEdits') },
   ], [t]);
 
-  // Sync mode with active thread's permission mode
-  const activeThread = useThreadStore(s => s.activeThread);
-  const activeThreadPermissionMode = activeThread?.permissionMode;
+  // Sync mode with active thread's permission mode — granular selectors to avoid
+  // re-rendering when unrelated activeThread properties (e.g. messages) change.
+  const activeThreadPermissionMode = useThreadStore(s => s.activeThread?.permissionMode);
+  const activeThreadWorktreePath = useThreadStore(s => s.activeThread?.worktreePath);
+  const activeThreadProvider = useThreadStore(s => s.activeThread?.provider);
+  const activeThreadModel = useThreadStore(s => s.activeThread?.model);
+  const activeThreadMode = useThreadStore(s => s.activeThread?.mode);
+  const activeThreadBranch = useThreadStore(s => s.activeThread?.branch);
   const [newThreadBranches, setNewThreadBranches] = useState<string[]>([]);
   const [selectedBranch, setSelectedBranch] = useState<string>('');
   const [images, setImages] = useState<ImageAttachment[]>([]);
@@ -499,7 +504,7 @@ export const PromptInput = memo(function PromptInput({
     [selectedProjectId, projects]
   );
   const [cwdOverride, setCwdOverride] = useState<string | null>(null);
-  const threadCwd = activeThread?.worktreePath || projectPath;
+  const threadCwd = activeThreadWorktreePath || projectPath;
   const effectiveCwd = cwdOverride || threadCwd;
 
   // Reset cwd override when thread or project changes
@@ -524,12 +529,12 @@ export const PromptInput = memo(function PromptInput({
 
   // Sync unified model with active thread's provider+model when thread changes
   useEffect(() => {
-    if (!isNewThread && activeThread?.provider && activeThread?.model) {
-      setUnifiedModel(`${activeThread.provider}:${activeThread.model}`);
+    if (!isNewThread && activeThreadProvider && activeThreadModel) {
+      setUnifiedModel(`${activeThreadProvider}:${activeThreadModel}`);
     } else if (isNewThread) {
       setUnifiedModel(`${defaultProvider}:${defaultModel}`);
     }
-  }, [isNewThread, activeThread?.provider, activeThread?.model, defaultProvider, defaultModel]);
+  }, [isNewThread, activeThreadProvider, activeThreadModel, defaultProvider, defaultModel]);
 
   // Fetch branches for new thread mode
   const effectiveProjectId = propProjectId || selectedProjectId;
@@ -554,7 +559,7 @@ export const PromptInput = memo(function PromptInput({
 
   // Fetch current branch for local mode threads without a saved branch
   useEffect(() => {
-    if (!isNewThread && activeThread?.mode === 'local' && !activeThread?.branch && selectedProjectId) {
+    if (!isNewThread && activeThreadMode === 'local' && !activeThreadBranch && selectedProjectId) {
       (async () => {
         const result = await api.listBranches(selectedProjectId);
         if (result.isOk()) {
@@ -566,7 +571,7 @@ export const PromptInput = memo(function PromptInput({
     } else {
       setLocalCurrentBranch(null);
     }
-  }, [isNewThread, activeThread?.mode, activeThread?.branch, selectedProjectId]);
+  }, [isNewThread, activeThreadMode, activeThreadBranch, selectedProjectId]);
 
   // Fetch git remote origin URL for display
   useEffect(() => {
@@ -586,7 +591,7 @@ export const PromptInput = memo(function PromptInput({
 
   // Fetch branches for follow-up worktree creation (when in local mode thread)
   useEffect(() => {
-    if (!isNewThread && activeThread?.mode === 'local' && selectedProjectId) {
+    if (!isNewThread && activeThreadMode === 'local' && selectedProjectId) {
       (async () => {
         const result = await api.listBranches(selectedProjectId);
         if (result.isOk()) {
@@ -606,7 +611,7 @@ export const PromptInput = memo(function PromptInput({
     } else {
       setFollowUpBranches([]);
     }
-  }, [isNewThread, activeThread?.mode, selectedProjectId]);
+  }, [isNewThread, activeThreadMode, selectedProjectId]);
 
   // Fetch skills once when the menu first opens
   const loadSkills = useCallback(async () => {
@@ -1306,10 +1311,10 @@ export const PromptInput = memo(function PromptInput({
                       <span className="truncate font-mono">{effectiveCwd}</span>
                     </span>
                   )}
-                  {(activeThread?.branch || localCurrentBranch) && (
+                  {(activeThreadBranch || localCurrentBranch) && (
                     <span className="flex items-center gap-1 px-2 py-1 text-xs text-muted-foreground shrink-0">
                       <GitBranch className="h-3 w-3 shrink-0" />
-                      <span className="truncate font-mono">{activeThread?.branch || localCurrentBranch}</span>
+                      <span className="truncate font-mono">{activeThreadBranch || localCurrentBranch}</span>
                     </span>
                   )}
                 </>
