@@ -40,13 +40,25 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
         // Threads load in background and fill in progressively.
         set({ projects, initialized: true });
 
-        // Load threads first, then fetch git statuses only for expanded projects.
-        // Fetching all projects at startup spawns too many git processes and can
-        // crash Bun. Non-expanded projects get their status when the user opens them.
+        // Load threads for all projects in parallel, then batch-update the store
+        // in a single set() call to avoid N separate re-renders (one per project).
+        // Only fetch git statuses for expanded projects to avoid spawning too many
+        // git processes which can crash Bun.
         const threadStore = useThreadStore.getState();
         Promise.all(
-          projects.map((p) => threadStore.loadThreadsForProject(p.id))
-        ).then(() => {
+          projects.map(async (p) => {
+            const result = await api.listThreads(p.id, true);
+            return { projectId: p.id, threads: result.isOk() ? result.value : null };
+          })
+        ).then((results) => {
+          // Batch all thread data into a single store update
+          const threadsByProject: Record<string, any[]> = { ...useThreadStore.getState().threadsByProject };
+          for (const { projectId, threads } of results) {
+            if (threads) threadsByProject[projectId] = threads;
+          }
+          useThreadStore.setState({ threadsByProject });
+
+          // Defer git status fetch for expanded projects
           const gitStore = useGitStatusStore.getState();
           const { expandedProjects } = get();
           for (const p of projects) {
@@ -75,8 +87,15 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
       if (!threadStore.threadsByProject[projectId]) {
         threadStore.loadThreadsForProject(projectId);
       }
-      // Fetch git status when expanding (lazy load instead of at startup)
-      useGitStatusStore.getState().fetchForProject(projectId);
+      // Defer git status fetch to avoid blocking the interaction (INP).
+      // The collapsible animation and thread list render first, then git
+      // status icons fill in once the browser is idle.
+      const fetchGitStatus = () => useGitStatusStore.getState().fetchForProject(projectId);
+      if (typeof requestIdleCallback === 'function') {
+        requestIdleCallback(fetchGitStatus);
+      } else {
+        setTimeout(fetchGitStatus, 100);
+      }
     }
     set({ expandedProjects: next });
   },
@@ -101,8 +120,13 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
     if (!threadStore.threadsByProject[projectId]) {
       threadStore.loadThreadsForProject(projectId);
     }
-    // Refresh git statuses so the header and sidebar show current diff stats
-    useGitStatusStore.getState().fetchForProject(projectId);
+    // Defer git status fetch to avoid blocking the interaction (INP)
+    const fetchGitStatus = () => useGitStatusStore.getState().fetchForProject(projectId);
+    if (typeof requestIdleCallback === 'function') {
+      requestIdleCallback(fetchGitStatus);
+    } else {
+      setTimeout(fetchGitStatus, 100);
+    }
   },
 
   renameProject: async (projectId, name) => {

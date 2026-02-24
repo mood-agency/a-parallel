@@ -136,7 +136,11 @@ export const useThreadStore = create<ThreadState>((set, get) => ({
 
     if (!threadId) return;
 
-    const result = await api.getThread(threadId, 50);
+    // Fire both requests in parallel to avoid sequential network round-trips
+    const [result, eventsResult] = await Promise.all([
+      api.getThread(threadId, 50),
+      api.getThreadEvents(threadId),
+    ]);
 
     if (result.isErr()) {
       if (getSelectGeneration() === gen) {
@@ -192,8 +196,6 @@ export const useThreadStore = create<ThreadState>((set, get) => ({
       }
     }
 
-    // Load thread events (git operations)
-    const eventsResult = await api.getThreadEvents(threadId);
     const threadEvents = eventsResult.isOk() ? eventsResult.value.events : [];
 
     set({ activeThread: { ...thread, hasMore: thread.hasMore ?? false, threadEvents, initInfo: thread.initInfo || buffered || undefined, resultInfo, waitingReason, pendingPermission } });
@@ -484,15 +486,16 @@ export const useThreadStore = create<ThreadState>((set, get) => ({
   refreshActiveThread: async () => {
     const { activeThread } = get();
     if (!activeThread) return;
-    const result = await api.getThread(activeThread.id);
+    const [result, eventsResult] = await Promise.all([
+      api.getThread(activeThread.id),
+      api.getThreadEvents(activeThread.id),
+    ]);
     if (result.isErr()) return; // silently ignore
     const thread = result.value;
     const resultInfo = activeThread.resultInfo
       ?? ((thread.status === 'completed' || thread.status === 'failed')
         ? { status: thread.status as 'completed' | 'failed', cost: thread.cost, duration: 0, error: (thread as any).error }
         : undefined);
-    // Refresh thread events
-    const eventsResult = await api.getThreadEvents(activeThread.id);
     const threadEvents = eventsResult.isOk() ? eventsResult.value.events : activeThread.threadEvents;
     // Clear waitingReason/pendingPermission if server status is no longer waiting
     // (handles case where agent:result WS event was lost during disconnect)

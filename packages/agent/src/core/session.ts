@@ -183,6 +183,8 @@ export class Session {
   get events(): readonly SessionEvent[] { return this.data.events; }
   get model(): string { return this.data.model; }
   get provider(): string { return this.data.provider; }
+  get updatedAt(): string { return this.data.updatedAt; }
+  get createdAt(): string { return this.data.createdAt; }
 
   /** Check if session is in a terminal state */
   get isTerminal(): boolean {

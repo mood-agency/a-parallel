@@ -181,19 +181,9 @@ export const ThreadItem = memo(function ThreadItem({ thread, projectPath, isSele
                 onClick={async (e) => {
                   e.stopPropagation();
                   const folderPath = thread.worktreePath || projectPath;
-                  try {
-                    const response = await fetch('/api/browse/open-directory', {
-                      method: 'POST',
-                      headers: { 'Content-Type': 'application/json' },
-                      body: JSON.stringify({ path: folderPath }),
-                    });
-                    if (!response.ok) {
-                      const result = await response.json();
-                      toast.error(result.error || 'Failed to open directory');
-                    }
-                  } catch (error) {
-                    console.error('Failed to open directory:', error);
-                    toast.error('Failed to open directory');
+                  const result = await api.openDirectory(folderPath);
+                  if (result.isErr()) {
+                    toast.error(result.error.message || 'Failed to open directory');
                   }
                 }}
               >
@@ -204,19 +194,9 @@ export const ThreadItem = memo(function ThreadItem({ thread, projectPath, isSele
                 onClick={async (e) => {
                   e.stopPropagation();
                   const folderPath = thread.worktreePath || projectPath;
-                  try {
-                    const response = await fetch('/api/browse/open-terminal', {
-                      method: 'POST',
-                      headers: { 'Content-Type': 'application/json' },
-                      body: JSON.stringify({ path: folderPath }),
-                    });
-                    if (!response.ok) {
-                      const result = await response.json();
-                      toast.error(result.error || 'Failed to open terminal');
-                    }
-                  } catch (error) {
-                    console.error('Failed to open terminal:', error);
-                    toast.error('Failed to open terminal');
+                  const result = await api.openTerminal(folderPath);
+                  if (result.isErr()) {
+                    toast.error(result.error.message || 'Failed to open terminal');
                   }
                 }}
               >

@@ -107,7 +107,7 @@ const LazyMarkdownRenderer = lazy(() =>
 export const MessageContent = memo(function MessageContent({ content }: { content: string }) {
   return (
     <div className="prose prose-sm max-w-none">
-      <Suspense fallback={<div className="text-sm text-muted-foreground whitespace-pre-wrap">{content}</div>}>
+      <Suspense fallback={<div className="prose prose-sm max-w-none text-sm whitespace-pre-wrap">{content}</div>}>
         <LazyMarkdownRenderer content={content} />
       </Suspense>
     </div>
@@ -549,6 +549,7 @@ const MemoizedMessageList = memo(function MemoizedMessageList({
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.25, ease: 'easeOut' }}
           className={(tc.name === 'AskUserQuestion' || tc.name === 'ExitPlanMode' || tc.name === 'TodoWrite' || tc.name === 'Edit') ? 'border border-border rounded-lg' : undefined}
+          style={{ contentVisibility: 'auto', containIntrinsicSize: 'auto 40px' }}
           data-tool-call-id={tc.id}
           {...(snapshotMap.has(tc.id) ? { 'data-todo-snapshot': snapshotMap.get(tc.id) } : {})}
         >
@@ -575,6 +576,7 @@ const MemoizedMessageList = memo(function MemoizedMessageList({
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.25, ease: 'easeOut' }}
           className={(ti.name === 'AskUserQuestion' || ti.name === 'ExitPlanMode' || ti.name === 'TodoWrite' || ti.name === 'Edit') ? 'border border-border rounded-lg' : undefined}
+          style={{ contentVisibility: 'auto', containIntrinsicSize: 'auto 40px' }}
           data-tool-call-id={ti.calls[0].id}
           {...(groupSnapshotIdx >= 0 ? { 'data-todo-snapshot': groupSnapshotIdx } : {})}
         >
@@ -615,6 +617,7 @@ const MemoizedMessageList = memo(function MemoizedMessageList({
                   ? 'max-w-[80%] ml-auto rounded-lg px-3 py-2 bg-foreground text-background'
                   : 'w-full text-foreground'
               )}
+              style={{ contentVisibility: 'auto', containIntrinsicSize: 'auto 80px' }}
               {...(msg.role === 'user' ? { 'data-user-msg': msg.id } : {})}
             >
               {msg.images && msg.images.length > 0 && (() => {
@@ -1117,20 +1120,17 @@ export function ThreadView() {
     return (
       <div className="flex-1 flex flex-col h-full min-w-0">
         <ProjectHeader />
-        <div className="flex-1 flex items-center justify-center text-muted-foreground px-6">
-          <div className="text-center max-w-3xl">
-            <p className="text-4xl mb-4">✨</p>
-            <p className="text-2xl font-semibold text-foreground mb-1 line-clamp-3">{activeThread.title}</p>
-            <p className="text-sm">{t('thread.describeTask')}</p>
+        <div className="flex-1 flex items-center justify-center text-muted-foreground px-4">
+          <div className="w-full max-w-3xl">
+            <PromptInput
+              onSubmit={handleSend}
+              loading={sending}
+              isNewThread
+              projectId={activeThread.projectId}
+              initialPrompt={activeThread.initialPrompt}
+            />
           </div>
         </div>
-        <PromptInput
-          onSubmit={handleSend}
-          loading={sending}
-          isNewThread
-          projectId={activeThread.projectId}
-          initialPrompt={activeThread.initialPrompt}
-        />
       </div>
     );
   }
@@ -1154,8 +1154,12 @@ export function ThreadView() {
       <div className="flex-1 flex min-h-0 thread-container">
         {/* Messages column + input */}
         <div className="flex-1 flex flex-col min-h-0 min-w-0">
-          <div className="flex-1 min-h-0 min-w-0 overflow-y-auto flex flex-col" ref={scrollViewportRef}>
-          <div className="w-full mx-auto max-w-3xl min-w-[320px] space-y-4 py-4 mt-auto px-4">
+          <div className="flex-1 min-h-0 min-w-0 overflow-y-auto flex flex-col" ref={scrollViewportRef} style={{ contain: 'layout style' }}>
+          {/* Spacer pushes content to the bottom without mt-auto, which caused CLS
+              as the margin shrank when messages arrived. A flex-grow spacer is inert
+              and doesn't trigger CLS because the spacer itself is not painted. */}
+          <div className="flex-grow" aria-hidden="true" />
+          <div className="w-full mx-auto max-w-3xl min-w-[320px] space-y-4 py-4 px-4">
             {loadingMore && (
               <div className="flex items-center justify-center py-3">
                 <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />

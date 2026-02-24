@@ -1,7 +1,8 @@
 import { useState, useRef, useEffect, useCallback, useMemo, memo } from 'react';
 import { useTranslation } from 'react-i18next';
 import { toast } from 'sonner';
-import { ArrowUp, Square, Loader2, Paperclip, X, Zap, GitBranch, Check, Inbox, FileText } from 'lucide-react';
+import { ArrowUp, Square, Loader2, Paperclip, X, Zap, GitBranch, Check, Inbox, FileText, Globe } from 'lucide-react';
+import { Switch } from '@/components/ui/switch';
 import { Button } from '@/components/ui/button';
 import {
   Select,
@@ -17,7 +18,7 @@ import {
 } from '@/components/ui/popover';
 import { cn } from '@/lib/utils';
 import { api } from '@/lib/api';
-import { PROVIDERS, getModelOptions } from '@/lib/providers';
+import { getUnifiedModelOptions, parseUnifiedModel } from '@/lib/providers';
 import { useThreadStore } from '@/stores/thread-store';
 import { useProjectStore } from '@/stores/project-store';
 import { useDraftStore } from '@/stores/draft-store';
@@ -37,6 +38,21 @@ interface SearchablePickerItem {
   isSelected: boolean;
   detail?: string;
   badge?: string;
+}
+
+/** Parse a git remote URL into a friendly `owner/repo` display string. */
+function formatRemoteUrl(url: string): string {
+  // Handle SSH: git@github.com:user/repo.git
+  const sshMatch = url.match(/[:\/]([^/]+\/[^/]+?)(?:\.git)?$/);
+  if (sshMatch) return sshMatch[1];
+  // Handle HTTPS: https://github.com/user/repo.git
+  try {
+    const u = new URL(url);
+    const path = u.pathname.replace(/^\//, '').replace(/\.git$/, '');
+    return path;
+  } catch {
+    return url;
+  }
 }
 
 function SearchablePicker({
@@ -352,12 +368,12 @@ export const PromptInput = memo(function PromptInput({
   const defaultThreadMode = effectiveProject?.defaultMode ?? 'worktree';
 
   const [prompt, setPrompt] = useState(initialPromptProp ?? '');
-  const [provider, setProvider] = useState<string>(defaultProvider);
-  const [model, setModel] = useState<string>(defaultModel);
+  const [unifiedModel, setUnifiedModel] = useState<string>(`${defaultProvider}:${defaultModel}`);
+  const { provider, model } = useMemo(() => parseUnifiedModel(unifiedModel), [unifiedModel]);
   const [mode, setMode] = useState<string>(defaultPermissionMode);
   const [createWorktree, setCreateWorktree] = useState(defaultThreadMode === 'worktree');
 
-  const models = useMemo(() => getModelOptions(provider, t), [provider, t]);
+  const unifiedModelGroups = useMemo(() => getUnifiedModelOptions(t), [t]);
 
   const modes = useMemo(() => [
     { value: 'plan', label: t('prompt.plan') },
@@ -373,18 +389,14 @@ export const PromptInput = memo(function PromptInput({
   const [images, setImages] = useState<ImageAttachment[]>([]);
   const [sendToBacklog, setSendToBacklog] = useState(false);
   const [localCurrentBranch, setLocalCurrentBranch] = useState<string | null>(null);
+  // Git remote origin URL
+  const [remoteUrl, setRemoteUrl] = useState<string | null>(null);
   // For existing threads in local mode: allow creating a worktree
   const [createWorktreeForFollowUp, setCreateWorktreeForFollowUp] = useState(false);
   const [followUpBranches, setFollowUpBranches] = useState<string[]>([]);
   const [followUpSelectedBranch, setFollowUpSelectedBranch] = useState<string>('');
 
 
-  // When provider changes, reset model to first available for that provider
-  useEffect(() => {
-    if (!models.some(m => m.value === model)) {
-      setModel(models[0].value);
-    }
-  }, [provider]);
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
   const textareaCallbackRef = useCallback((node: HTMLTextAreaElement | null) => {
     textareaRef.current = node;
@@ -510,23 +522,14 @@ export const PromptInput = memo(function PromptInput({
     }
   }, [isNewThread, activeThreadPermissionMode, defaultPermissionMode]);
 
-  // Sync provider with active thread's provider when thread changes
+  // Sync unified model with active thread's provider+model when thread changes
   useEffect(() => {
-    if (!isNewThread && activeThread?.provider) {
-      setProvider(activeThread.provider);
+    if (!isNewThread && activeThread?.provider && activeThread?.model) {
+      setUnifiedModel(`${activeThread.provider}:${activeThread.model}`);
     } else if (isNewThread) {
-      setProvider(defaultProvider);
+      setUnifiedModel(`${defaultProvider}:${defaultModel}`);
     }
-  }, [isNewThread, activeThread?.provider, defaultProvider]);
-
-  // Sync model with active thread's model when thread changes
-  useEffect(() => {
-    if (!isNewThread && activeThread?.model) {
-      setModel(activeThread.model);
-    } else if (isNewThread) {
-      setModel(defaultModel);
-    }
-  }, [isNewThread, activeThread?.model, defaultModel]);
+  }, [isNewThread, activeThread?.provider, activeThread?.model, defaultProvider, defaultModel]);
 
   // Fetch branches for new thread mode
   const effectiveProjectId = propProjectId || selectedProjectId;
@@ -564,6 +567,22 @@ export const PromptInput = memo(function PromptInput({
       setLocalCurrentBranch(null);
     }
   }, [isNewThread, activeThread?.mode, activeThread?.branch, selectedProjectId]);
+
+  // Fetch git remote origin URL for display
+  useEffect(() => {
+    if (projectPath) {
+      (async () => {
+        const result = await api.remoteUrl(projectPath);
+        if (result.isOk()) {
+          setRemoteUrl(result.value.url);
+        } else {
+          setRemoteUrl(null);
+        }
+      })();
+    } else {
+      setRemoteUrl(null);
+    }
+  }, [projectPath]);
 
   // Fetch branches for follow-up worktree creation (when in local mode thread)
   useEffect(() => {
@@ -993,7 +1012,7 @@ export const PromptInput = memo(function PromptInput({
             "relative rounded-md border bg-background",
             isDragging
               ? "border-primary border-2 ring-2 ring-primary/20"
-              : "border-input focus-within:ring-1 focus-within:ring-ring"
+              : "border-input focus-within:border-ring"
           )}
           onDragOver={handleDragOver}
           onDragLeave={handleDragLeave}
@@ -1128,95 +1147,20 @@ export const PromptInput = memo(function PromptInput({
             onChange={handleFileSelect}
             disabled={loading || running}
           />
-          {/* Bottom toolbar — single row, horizontal scroll to avoid layout shifts from wrapping */}
+          {/* Bottom toolbar — single row */}
           <div className="px-2 py-2.5">
             <div className="flex items-center gap-1 overflow-x-auto no-scrollbar h-9">
-              {!isNewThread && effectiveCwd && selectedProjectId && (
-                activeThread?.mode === 'worktree' ? (
-                  <WorktreePicker
-                    projectId={selectedProjectId}
-                    currentPath={effectiveCwd}
-                    threadBranch={activeThread?.branch}
-                    onChange={setCwdOverride}
-                  />
-                ) : activeThread?.mode === 'local' ? (
-                  <>
-                    {!createWorktreeForFollowUp && (activeThread?.branch || localCurrentBranch) && (
-                      <button className="flex items-center gap-1 px-2 py-1 text-xs text-muted-foreground hover:text-foreground transition-colors rounded hover:bg-muted truncate max-w-[300px]" disabled>
-                        <GitBranch className="h-3 w-3 shrink-0" />
-                        <span className="truncate font-mono">{activeThread?.branch || localCurrentBranch}</span>
-                      </button>
-                    )}
-                    {createWorktreeForFollowUp && followUpBranches.length > 0 && (
-                      <BranchPicker
-                        branches={followUpBranches}
-                        selected={followUpSelectedBranch}
-                        onChange={setFollowUpSelectedBranch}
-                      />
-                    )}
-                    <button
-                      onClick={() => setCreateWorktreeForFollowUp(!createWorktreeForFollowUp)}
-                      tabIndex={-1}
-                      className={cn(
-                        'flex items-center gap-1 px-2 py-1 text-xs rounded transition-colors shrink-0',
-                        createWorktreeForFollowUp
-                          ? 'bg-primary/10 text-primary'
-                          : 'text-muted-foreground hover:text-foreground hover:bg-muted'
-                      )}
-                      title={t('newThread.createWorktree', 'Create isolated worktree')}
-                    >
-                      <GitBranch className="h-3 w-3" />
-                      <span>{t('thread.mode.worktree')}</span>
-                    </button>
-                  </>
-                ) : null
-              )}
-              {isNewThread && newThreadBranches.length > 0 && (
-                <BranchPicker
-                  branches={newThreadBranches}
-                  selected={selectedBranch}
-                  onChange={setSelectedBranch}
-                />
-              )}
-              {isNewThread && (
-                <button
-                  onClick={() => setCreateWorktree(!createWorktree)}
-                  tabIndex={-1}
-                  className={cn(
-                    'flex items-center gap-1 px-2 py-1 text-xs rounded transition-colors shrink-0',
-                    createWorktree
-                      ? 'bg-primary/10 text-primary'
-                      : 'text-muted-foreground hover:text-foreground hover:bg-muted'
-                  )}
-                  title={t('newThread.createWorktree', 'Create isolated worktree')}
-                >
-                  <span>{t('thread.mode.worktree')}</span>
-                </button>
-              )}
-              <Select value={provider} onValueChange={setProvider}>
-                <SelectTrigger tabIndex={-1} className="h-7 w-auto min-w-0 text-xs border-0 bg-transparent shadow-none text-muted-foreground hover:bg-accent hover:text-accent-foreground shrink-0">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {PROVIDERS.map((p) => (
-                    <SelectItem key={p.value} value={p.value}>
-                      {p.label}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-              <Select value={model} onValueChange={setModel}>
-                <SelectTrigger tabIndex={-1} className="h-7 w-auto min-w-0 text-xs border-0 bg-transparent shadow-none text-muted-foreground hover:bg-accent hover:text-accent-foreground shrink-0">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {models.map((m) => (
-                    <SelectItem key={m.value} value={m.value}>
-                      {m.label}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+              <Button
+                onClick={() => fileInputRef.current?.click()}
+                variant="ghost"
+                size="icon-sm"
+                tabIndex={-1}
+                aria-label={t('prompt.attach')}
+                disabled={loading || (running && !isQueueMode)}
+                className="text-muted-foreground hover:text-foreground"
+              >
+                <Paperclip className="h-4 w-4" />
+              </Button>
               <Select value={mode} onValueChange={setMode}>
                 <SelectTrigger tabIndex={-1} className="h-7 w-auto min-w-0 text-xs border-0 bg-transparent shadow-none text-muted-foreground hover:bg-accent hover:text-accent-foreground shrink-0">
                   <SelectValue />
@@ -1229,35 +1173,25 @@ export const PromptInput = memo(function PromptInput({
                   ))}
                 </SelectContent>
               </Select>
-              {showBacklog && (
-                <button
-                  onClick={() => setSendToBacklog((v) => !v)}
-                  tabIndex={-1}
-                  className={cn(
-                    'flex items-center gap-1 px-2 py-1 text-xs rounded transition-colors shrink-0',
-                    sendToBacklog
-                      ? 'bg-primary/10 text-primary'
-                      : 'text-muted-foreground hover:text-foreground hover:bg-muted'
-                  )}
-                  title={t('prompt.sendToBacklog')}
-                >
-                  <Inbox className="h-3 w-3" />
-                  {t('prompt.backlog')}
-                </button>
-              )}
-              {/* Attach + send — always visible, pushed right */}
+              {/* Model + send — always visible, pushed right */}
               <div className="flex items-center gap-1 ml-auto shrink-0">
-                <Button
-                  onClick={() => fileInputRef.current?.click()}
-                  variant="ghost"
-                  size="icon-sm"
-                  tabIndex={-1}
-                  aria-label={t('prompt.attach')}
-                  disabled={loading || (running && !isQueueMode)}
-                  className="text-muted-foreground hover:text-foreground"
-                >
-                  <Paperclip className="h-4 w-4" />
-                </Button>
+                <Select value={unifiedModel} onValueChange={setUnifiedModel}>
+                  <SelectTrigger tabIndex={-1} className="h-7 w-auto min-w-0 text-xs border-0 bg-transparent shadow-none text-muted-foreground hover:bg-accent hover:text-accent-foreground shrink-0">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {unifiedModelGroups.map((group) => (
+                      <div key={group.provider}>
+                        <div className="px-2 py-1.5 text-xs font-semibold text-muted-foreground">{group.providerLabel}</div>
+                        {group.models.map((m) => (
+                          <SelectItem key={m.value} value={m.value}>
+                            {m.label}
+                          </SelectItem>
+                        ))}
+                      </div>
+                    ))}
+                  </SelectContent>
+                </Select>
                 {queuedCount > 0 && (
                   <span className="inline-flex items-center px-1.5 py-0.5 text-xs font-medium rounded bg-muted text-muted-foreground">
                     {queuedCount} {t('prompt.queued')}
@@ -1314,6 +1248,86 @@ export const PromptInput = memo(function PromptInput({
                   </Button>
                 )}
               </div>
+            </div>
+          </div>
+          {/* Separator + Branch selector + Backlog */}
+          <div className="border-t border-border px-2 py-1.5">
+            <div className="flex items-center gap-1 overflow-x-auto no-scrollbar">
+              {remoteUrl && (
+                <span className="flex items-center gap-1 px-2 py-1 text-xs text-muted-foreground truncate max-w-[200px] shrink-0">
+                  <Globe className="h-3 w-3 shrink-0" />
+                  <span className="truncate font-mono">{formatRemoteUrl(remoteUrl)}</span>
+                </span>
+              )}
+              {!isNewThread && effectiveCwd && selectedProjectId && (
+                activeThread?.mode === 'worktree' ? (
+                  <WorktreePicker
+                    projectId={selectedProjectId}
+                    currentPath={effectiveCwd}
+                    threadBranch={activeThread?.branch}
+                    onChange={setCwdOverride}
+                  />
+                ) : activeThread?.mode === 'local' ? (
+                  <>
+                    {!createWorktreeForFollowUp && (activeThread?.branch || localCurrentBranch) && (
+                      <button className="flex items-center gap-1 px-2 py-1 text-xs text-muted-foreground hover:text-foreground transition-colors rounded hover:bg-muted truncate max-w-[300px]" disabled>
+                        <GitBranch className="h-3 w-3 shrink-0" />
+                        <span className="truncate font-mono">{activeThread?.branch || localCurrentBranch}</span>
+                      </button>
+                    )}
+                    {createWorktreeForFollowUp && followUpBranches.length > 0 && (
+                      <BranchPicker
+                        branches={followUpBranches}
+                        selected={followUpSelectedBranch}
+                        onChange={setFollowUpSelectedBranch}
+                      />
+                    )}
+                    <label className="flex items-center gap-1.5 text-xs text-muted-foreground shrink-0 cursor-pointer">
+                      <Switch
+                        checked={createWorktreeForFollowUp}
+                        onCheckedChange={setCreateWorktreeForFollowUp}
+                        tabIndex={-1}
+                        className="h-4 w-7 data-[state=checked]:bg-primary data-[state=unchecked]:bg-input [&>span]:h-3 [&>span]:w-3 [&>span]:data-[state=checked]:translate-x-3"
+                      />
+                      <span>{t('thread.mode.worktree')}</span>
+                    </label>
+                  </>
+                ) : null
+              )}
+              {isNewThread && newThreadBranches.length > 0 && (
+                <BranchPicker
+                  branches={newThreadBranches}
+                  selected={selectedBranch}
+                  onChange={setSelectedBranch}
+                />
+              )}
+              {isNewThread && (
+                <label className="flex items-center gap-1.5 text-xs text-muted-foreground shrink-0 cursor-pointer">
+                  <Switch
+                    checked={createWorktree}
+                    onCheckedChange={setCreateWorktree}
+                    tabIndex={-1}
+                    className="h-4 w-7 data-[state=checked]:bg-primary data-[state=unchecked]:bg-input [&>span]:h-3 [&>span]:w-3 [&>span]:data-[state=checked]:translate-x-3"
+                  />
+                  <span>{t('thread.mode.worktree')}</span>
+                </label>
+              )}
+              {showBacklog && (
+                <button
+                  onClick={() => setSendToBacklog((v) => !v)}
+                  tabIndex={-1}
+                  className={cn(
+                    'flex items-center gap-1 px-2 py-1 text-xs rounded transition-colors shrink-0 ml-auto',
+                    sendToBacklog
+                      ? 'bg-primary/10 text-primary'
+                      : 'text-muted-foreground hover:text-foreground hover:bg-muted'
+                  )}
+                  title={t('prompt.sendToBacklog')}
+                >
+                  <Inbox className="h-3 w-3" />
+                  {t('prompt.backlog')}
+                </button>
+              )}
             </div>
           </div>
         </div>

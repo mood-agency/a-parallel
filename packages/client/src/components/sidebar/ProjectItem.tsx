@@ -22,9 +22,11 @@ import {
   TooltipTrigger,
 } from '@/components/ui/tooltip';
 import type { Project, Thread } from '@funny/shared';
+import { useThreadStore } from '@/stores/thread-store';
 import { useGitStatusStore } from '@/stores/git-status-store';
 import { useSettingsStore } from '@/stores/settings-store';
 import { openDirectoryInEditor, getEditorLabel } from '@/lib/editor-utils';
+import { api } from '@/lib/api';
 import { ThreadItem } from './ThreadItem';
 import { draggable, dropTargetForElements } from '@atlaskit/pragmatic-drag-and-drop/element/adapter';
 
@@ -33,7 +35,6 @@ interface ProjectItemProps {
   threads: Thread[];
   isExpanded: boolean;
   isSelected: boolean;
-  selectedThreadId: string | null;
   onToggle: (projectId: string) => void;
   onNewThread: (projectId: string) => void;
   onRenameProject: (projectId: string, currentName: string) => void;
@@ -52,7 +53,6 @@ export const ProjectItem = memo(function ProjectItem({
   threads,
   isExpanded,
   isSelected,
-  selectedThreadId,
   onToggle,
   onNewThread,
   onRenameProject,
@@ -68,7 +68,32 @@ export const ProjectItem = memo(function ProjectItem({
   const navigate = useNavigate();
   const { t } = useTranslation();
   const [openDropdown, setOpenDropdown] = useState(false);
-  const gitStatusByThread = useGitStatusStore((s) => s.statusByThread);
+  // Select only the git statuses for threads visible in *this* project.
+  // We use a selector that returns a JSON-serializable fingerprint to avoid
+  // re-rendering every ProjectItem when an unrelated thread's git status changes.
+  const visibleWorktreeIds = useMemo(
+    () => threads.filter(t => t.mode === 'worktree').map(t => t.id),
+    [threads]
+  );
+  const statusByThread = useGitStatusStore((s) => s.statusByThread);
+  const gitStatusForThreads = useMemo(() => {
+    const result: Record<string, import('@funny/shared').GitStatusInfo> = {};
+    for (const id of visibleWorktreeIds) {
+      if (statusByThread[id]) result[id] = statusByThread[id];
+    }
+    return result;
+  }, [visibleWorktreeIds, statusByThread]);
+  // Read selectedThreadId from the store directly, scoped to this project's
+  // thread IDs. This avoids passing selectedThreadId as a prop from the parent,
+  // which caused *every* ProjectItem to re-render on any thread selection.
+  const threadIds = useMemo(() => threads.map(t => t.id), [threads]);
+  const selectedThreadId = useThreadStore(
+    useCallback(
+      (s: { selectedThreadId: string | null }) =>
+        s.selectedThreadId && threadIds.includes(s.selectedThreadId) ? s.selectedThreadId : null,
+      [threadIds]
+    )
+  );
   const defaultEditor = useSettingsStore((s) => s.defaultEditor);
 
   // Memoize sorted & sliced threads to avoid O(n log n) sort on every render
@@ -175,14 +200,9 @@ export const ProjectItem = memo(function ProjectItem({
                 <DropdownMenuItem
                   onClick={async (e) => {
                     e.stopPropagation();
-                    try {
-                      await fetch('/api/browse/open-directory', {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ path: project.path }),
-                      });
-                    } catch (error) {
-                      console.error('Failed to open directory:', error);
+                    const result = await api.openDirectory(project.path);
+                    if (result.isErr()) {
+                      console.error('Failed to open directory:', result.error);
                     }
                   }}
                 >
@@ -192,14 +212,9 @@ export const ProjectItem = memo(function ProjectItem({
                 <DropdownMenuItem
                   onClick={async (e) => {
                     e.stopPropagation();
-                    try {
-                      await fetch('/api/browse/open-terminal', {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ path: project.path }),
-                      });
-                    } catch (error) {
-                      console.error('Failed to open terminal:', error);
+                    const result = await api.openTerminal(project.path);
+                    if (result.isErr()) {
+                      console.error('Failed to open terminal:', result.error);
                     }
                   }}
                 >
@@ -314,7 +329,7 @@ export const ProjectItem = memo(function ProjectItem({
               onArchive={th.status === 'running' ? undefined : () => onArchiveThread(project.id, th.id, th.title)}
               onPin={() => onPinThread(project.id, th.id, !th.pinned)}
               onDelete={th.status === 'running' ? undefined : () => onDeleteThread(project.id, th.id, th.title)}
-              gitStatus={th.mode === 'worktree' ? gitStatusByThread[th.id] : undefined}
+              gitStatus={th.mode === 'worktree' ? gitStatusForThreads[th.id] : undefined}
             />
           ))}
           {threads.length > 5 && (

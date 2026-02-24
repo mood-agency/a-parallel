@@ -255,7 +255,9 @@ export function PromptTimeline({ messages, activeMessageId, threadStatus, onScro
                 const latest = todoLatestStatus.get(key);
                 const firstSeen = todoFirstSeen.get(key);
                 if (!latest || !firstSeen) continue;
-                const isInProgress = latest.status === 'in_progress';
+                const isFinishedThread = threadStatus === 'completed' || threadStatus === 'failed' || threadStatus === 'stopped';
+                const isInProgress = latest.status === 'in_progress' && !isFinishedThread;
+                const isCompleted = latest.status === 'completed' || (latest.status === 'in_progress' && isFinishedThread);
                 const step = `${todoIndex + 1}/${totalTodos}`;
                 const label = isInProgress && latest.activeForm
                   ? latest.activeForm
@@ -267,7 +269,7 @@ export function PromptTimeline({ messages, activeMessageId, threadStatus, onScro
                   index: idx++,
                   type: 'todo',
                   toolCallId: firstSeen.toolCallId,
-                  completed: latest.status === 'completed',
+                  completed: isCompleted,
                   inProgress: isInProgress,
                 });
                 todoIndex++;

@@ -13,15 +13,17 @@ post {
 body:json {
   {
     "issueNumber": 42,
-    "projectPath": "{{worktreePath}}"
+    "projectPath": "{{worktreePath}}",
+    "title": "Add dark mode toggle",
+    "body": "Implement a dark mode toggle in the settings page"
   }
 }
 
 docs {
   ## Start Session
-
+  
   Starts processing a single GitHub issue autonomously.
-
+  
   The agent will:
   1. Fetch the issue from GitHub
   2. Plan the implementation (via OrchestratorAgent)
@@ -30,10 +32,10 @@ docs {
   5. Run quality checks
   6. Create a PR
   7. Monitor CI and review feedback
-
+  
   If Hatchet is configured, triggers the `issue-to-pr` durable workflow.
   Without Hatchet, runs planning inline and returns the plan.
-
+  
   **Request body:**
   - `issueNumber` (required) — GitHub issue number
   - `projectPath` (required) — Path to the git repo

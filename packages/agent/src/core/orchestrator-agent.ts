@@ -6,8 +6,12 @@
  * - Creates an implementation plan (files to modify, approach, risks)
  * - Decides if the issue needs decomposition into sub-tasks
  *
- * Uses AgentExecutor with read-only tools (read, glob, grep, bash)
- * to explore the codebase before producing a plan.
+ * For planning: makes a direct LLM call (no AgentExecutor) to avoid
+ * the executor's own output-format instructions conflicting with the
+ * planner's JSON schema.
+ *
+ * For implementing: uses AgentExecutor which provides tools (bash, read,
+ * edit, glob, grep) for the coding agent to actually modify files.
  */
 
 import { AgentExecutor, ModelFactory } from '@funny/core/agents';
@@ -17,7 +21,16 @@ import type { ImplementationPlan } from './session.js';
 import type { PipelineServiceConfig } from '../config/schema.js';
 import { logger } from '../infrastructure/logger.js';
 
-// ── System prompt ───────────────────────────────────────────────
+// ── Planner event types ─────────────────────────────────────────
+
+export type PlannerEvent =
+  | { type: 'text'; content: string; step: number }
+  | { type: 'tool_call'; name: string; args: Record<string, any>; id: string; step: number }
+  | { type: 'tool_result'; id: string; name: string; result: string; step: number }
+  | { type: 'plan_ready'; plan: ImplementationPlan }
+  | { type: 'error'; message: string };
+
+// ── Planning prompt ──────────────────────────────────────────────
 
 function buildPlanningPrompt(issue: IssueDetail, projectPath: string): string {
   return `You are a senior software architect analyzing a GitHub issue to create an implementation plan.
@@ -30,15 +43,16 @@ ${issue.fullContext}
 
 Analyze this issue and the codebase to create a detailed implementation plan.
 
-1. **Explore the codebase** — Use read, glob, and grep to understand the existing architecture
+1. **Explore the codebase** — Use the tools to understand the existing architecture
 2. **Identify relevant files** — Find files that need to be modified or created
 3. **Design the approach** — Determine the best way to implement this
 4. **Assess complexity** — Estimate if this is small, medium, or large
 5. **Identify risks** — What could go wrong? Are there edge cases?
 
-## Output Format
+## CRITICAL: Output Format
 
-After exploring, output your plan as a JSON block:
+After your analysis, you MUST output your plan as a JSON block wrapped in triple backticks.
+This is the ONLY output format you should use. Do NOT use any other JSON structure.
 
 \`\`\`json
 {
@@ -46,11 +60,13 @@ After exploring, output your plan as a JSON block:
   "approach": "Detailed description of the implementation approach (2-5 sentences)",
   "files_to_modify": ["path/to/file1.ts", "path/to/file2.ts"],
   "files_to_create": ["path/to/new-file.ts"],
-  "estimated_complexity": "small" | "medium" | "large",
+  "estimated_complexity": "small",
   "risks": ["Risk 1", "Risk 2"],
   "sub_tasks": ["Sub-task 1 (optional)", "Sub-task 2 (optional)"]
 }
 \`\`\`
+
+Note: estimated_complexity must be one of: "small", "medium", or "large".
 
 ## Guidelines
 
@@ -102,17 +118,7 @@ ${plan.risks.length > 0 ? `**Risks to watch for:**\n${plan.risks.map((r) => `- $
 - Stay on the current branch — do NOT create new branches
 - Make incremental commits for logical chunks of work
 - If you encounter something unexpected, adapt the plan sensibly
-- If a risk from the plan materializes, handle it gracefully
-
-When finished, output a JSON summary:
-
-\`\`\`json
-{
-  "status": "passed",
-  "findings": [{ "severity": "info", "description": "Implementation summary...", "fix_applied": true }],
-  "fixes_applied": 1
-}
-\`\`\``;
+- If a risk from the plan materializes, handle it gracefully`;
 }
 
 // ── OrchestratorAgent ───────────────────────────────────────────
@@ -122,40 +128,227 @@ export class OrchestratorAgent {
 
   /**
    * Analyze an issue and produce an implementation plan.
-   * The agent explores the codebase with read-only tools.
+   *
+   * Uses a direct LLM call (not AgentExecutor) to avoid conflicting
+   * output-format instructions. The planner needs its own JSON schema
+   * (summary, approach, files) — not the executor's (status, findings).
    */
   async planIssue(
     issue: IssueDetail,
     projectPath: string,
-    opts?: { signal?: AbortSignal },
+    opts?: {
+      signal?: AbortSignal;
+      /** Called for each planner step — text output and tool calls */
+      onEvent?: (event: PlannerEvent) => void;
+    },
   ): Promise<ImplementationPlan> {
     const { orchestrator } = this.config;
 
-    const role: AgentRole = {
-      name: 'planner',
-      systemPrompt: buildPlanningPrompt(issue, projectPath),
-      model: orchestrator.model,
-      provider: orchestrator.provider,
-      tools: [],
-      maxTurns: orchestrator.max_planning_turns,
-    };
-
-    const context: AgentContext = {
-      branch: 'main',
-      worktreePath: projectPath,
-      tier: 'medium',
-      diffStats: { files_changed: 0, lines_added: 0, lines_deleted: 0, changed_files: [] },
-      previousResults: [],
-      baseBranch: 'main',
-    };
-
     const modelFactory = new ModelFactory();
-    const resolved = modelFactory.resolve(role.provider, role.model);
-    const executor = new AgentExecutor(resolved.baseURL, resolved.modelId, resolved.apiKey);
-    const result = await executor.execute(role, context, { signal: opts?.signal });
+    const resolved = modelFactory.resolve(orchestrator.provider, orchestrator.model);
 
-    // Parse the plan from the agent's output
-    const plan = this.extractPlan(result);
+    const systemPrompt = buildPlanningPrompt(issue, projectPath);
+
+    const userPrompt = `Analyze this issue and create an implementation plan. Use the tools to explore the codebase at ${projectPath}, then output your plan as a JSON block.`;
+
+    // Direct LLM call — no AgentExecutor wrapper
+    const url = `${resolved.baseURL}/chat/completions`;
+    logger.info({ url, model: resolved.modelId }, 'Planning issue with direct LLM call');
+
+    let allText = '';
+    let steps = 0;
+    const maxTurns = orchestrator.max_planning_turns;
+
+    // Simple tool definitions for exploration
+    const tools = [
+      {
+        type: 'function' as const,
+        function: {
+          name: 'bash',
+          description: 'Run a shell command. Returns stdout+stderr.',
+          parameters: {
+            type: 'object',
+            properties: {
+              command: { type: 'string', description: 'Shell command to execute' },
+            },
+            required: ['command'],
+          },
+        },
+      },
+      {
+        type: 'function' as const,
+        function: {
+          name: 'read_file',
+          description: 'Read a file. Returns numbered lines.',
+          parameters: {
+            type: 'object',
+            properties: {
+              path: { type: 'string', description: 'Relative file path' },
+            },
+            required: ['path'],
+          },
+        },
+      },
+      {
+        type: 'function' as const,
+        function: {
+          name: 'glob',
+          description: 'Find files matching a glob pattern.',
+          parameters: {
+            type: 'object',
+            properties: {
+              pattern: { type: 'string', description: 'Glob pattern (e.g., "**/*.ts")' },
+            },
+            required: ['pattern'],
+          },
+        },
+      },
+      {
+        type: 'function' as const,
+        function: {
+          name: 'grep',
+          description: 'Search file contents for a pattern.',
+          parameters: {
+            type: 'object',
+            properties: {
+              pattern: { type: 'string', description: 'Search pattern' },
+              path: { type: 'string', description: 'Directory to search in (default: ".")' },
+              file_glob: { type: 'string', description: 'File filter (e.g., "*.ts")' },
+            },
+            required: ['pattern'],
+          },
+        },
+      },
+    ];
+
+    type ChatMsg = { role: string; content: string | null; tool_calls?: any[]; tool_call_id?: string };
+    const messages: ChatMsg[] = [
+      { role: 'system', content: systemPrompt },
+      { role: 'user', content: userPrompt },
+    ];
+
+    const { readFileSync, existsSync } = await import('fs');
+    const { join } = await import('path');
+    const { execute } = await import('@funny/core/git');
+
+    while (steps < maxTurns) {
+      if (opts?.signal?.aborted) break;
+
+      console.log(`[Planner] POST ${url} model=${resolved.modelId} msgs=${messages.length} step=${steps}`);
+      const response = await fetch(url, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(resolved.apiKey ? { Authorization: `Bearer ${resolved.apiKey}` } : {}),
+        },
+        body: JSON.stringify({
+          model: resolved.modelId,
+          messages,
+          tools,
+        }),
+        signal: opts?.signal,
+      });
+
+      if (!response.ok) {
+        const errBody = await response.text().catch(() => 'Unknown');
+        logger.error({ status: response.status, body: errBody.slice(0, 300) }, 'Planner LLM call failed');
+        break;
+      }
+
+      const data = await response.json() as any;
+      const choice = data.choices?.[0];
+      if (!choice) break;
+
+      const msg = choice.message;
+      const text = msg.content ?? '';
+      if (text) {
+        allText += '\n' + text;
+        opts?.onEvent?.({ type: 'text', content: text, step: steps });
+      }
+
+      messages.push({
+        role: 'assistant',
+        content: msg.content,
+        tool_calls: msg.tool_calls,
+      });
+
+      // No tool calls → model is done
+      if (!msg.tool_calls?.length) {
+        break;
+      }
+
+      // Execute tools locally
+      for (const tc of msg.tool_calls) {
+        const args = JSON.parse(tc.function.arguments);
+        opts?.onEvent?.({ type: 'tool_call', name: tc.function.name, args, id: tc.id, step: steps });
+
+        let result: string;
+        try {
+          switch (tc.function.name) {
+            case 'bash': {
+              // Use cmd on Windows, sh on Unix
+              const isWindows = process.platform === 'win32';
+              const shell = isWindows ? 'cmd' : 'sh';
+              const shellArgs = isWindows ? ['/c', args.command] : ['-c', args.command];
+              const r = await execute(shell, shellArgs, {
+                cwd: projectPath,
+                timeout: 30_000,
+                reject: false,
+              });
+              result = [r.stdout, r.stderr ? `stderr: ${r.stderr}` : '', `exit: ${r.exitCode}`].filter(Boolean).join('\n');
+              break;
+            }
+            case 'read_file': {
+              const fp = join(projectPath, args.path);
+              if (!existsSync(fp)) {
+                result = `Error: File not found: ${args.path}`;
+              } else {
+                const content = readFileSync(fp, 'utf-8');
+                const lines = content.split('\n');
+                result = lines.slice(0, 200).map((l, i) => `${String(i + 1).padStart(6)}\t${l}`).join('\n');
+                if (lines.length > 200) result += `\n... (${lines.length - 200} more lines)`;
+              }
+              break;
+            }
+            case 'glob': {
+              const g = new Bun.Glob(args.pattern);
+              const matches: string[] = [];
+              for await (const m of g.scan({ cwd: projectPath, dot: false })) {
+                matches.push(m);
+                if (matches.length >= 200) break;
+              }
+              result = matches.join('\n') || 'No files matched.';
+              break;
+            }
+            case 'grep': {
+              const rgArgs = [args.pattern, args.path ?? '.', '--line-number', '--no-heading', '--color=never', '--max-count=50'];
+              if (args.file_glob) rgArgs.push('--glob', args.file_glob);
+              const r = await execute('rg', rgArgs, { cwd: projectPath, timeout: 15_000, reject: false });
+              result = r.stdout || 'No matches.';
+              break;
+            }
+            default:
+              result = `Unknown tool: ${tc.function.name}`;
+          }
+        } catch (err: any) {
+          result = `Error: ${err.message}`;
+        }
+
+        opts?.onEvent?.({ type: 'tool_result', id: tc.id, name: tc.function.name, result: result.slice(0, 2000), step: steps });
+
+        messages.push({
+          role: 'tool',
+          content: result,
+          tool_call_id: tc.id,
+        });
+      }
+
+      steps++;
+    }
+
+    // Parse plan from collected text
+    const plan = this.extractPlan(allText);
+    opts?.onEvent?.({ type: 'plan_ready', plan });
 
     logger.info(
       { issueNumber: issue.number, complexity: plan.estimated_complexity, files: plan.files_to_modify.length },
@@ -167,6 +360,9 @@ export class OrchestratorAgent {
 
   /**
    * Implement an issue using a coding agent in the given worktree.
+   *
+   * Uses AgentExecutor which provides tools (bash, read, edit, glob, grep)
+   * for the coding agent to modify files and commit.
    */
   async implementIssue(
     issue: IssueDetail,
@@ -210,15 +406,12 @@ export class OrchestratorAgent {
 
   // ── Plan extraction ───────────────────────────────────────────
 
-  private extractPlan(result: { findings: Array<{ description: string }>; status: string }): ImplementationPlan {
-    // Try to find JSON in the agent's output
-    for (const finding of result.findings) {
-      const plan = this.parsePlanJson(finding.description);
-      if (plan) return plan;
-    }
+  private extractPlan(rawText: string): ImplementationPlan {
+    const plan = this.parsePlanJson(rawText);
+    if (plan) return plan;
 
     // Fallback: return a generic plan
-    logger.warn('Could not parse plan from agent output — using fallback');
+    logger.warn({ textLength: rawText.length, textPreview: rawText.slice(-500) }, 'Could not parse plan from agent output — using fallback');
     return {
       summary: 'Implementation plan could not be parsed from agent output',
       approach: 'Manual review needed',
@@ -231,27 +424,39 @@ export class OrchestratorAgent {
 
   private parsePlanJson(text: string): ImplementationPlan | null {
     try {
-      // Try JSON in code block
-      const jsonMatch = text.match(/```json\s*([\s\S]*?)\s*```/)
-        ?? text.match(/(\{[\s\S]*"summary"[\s\S]*"approach"[\s\S]*\})/);
+      // Try JSON in code block first (most common)
+      const codeBlockMatch = text.match(/```json\s*([\s\S]*?)\s*```/);
+      if (codeBlockMatch) {
+        const raw = JSON.parse(codeBlockMatch[1]);
+        if (raw.summary && raw.approach) {
+          return this.normalizeplan(raw);
+        }
+      }
 
-      if (!jsonMatch) return null;
+      // Try bare JSON with plan keys
+      const bareMatch = text.match(/\{[\s\S]*?"summary"\s*:\s*"[\s\S]*?"approach"\s*:[\s\S]*?\}/);
+      if (bareMatch) {
+        const raw = JSON.parse(bareMatch[0]);
+        return this.normalizeplan(raw);
+      }
 
-      const raw = JSON.parse(jsonMatch[1] ?? jsonMatch[0]);
-
-      return {
-        summary: raw.summary ?? '',
-        approach: raw.approach ?? '',
-        files_to_modify: Array.isArray(raw.files_to_modify) ? raw.files_to_modify : [],
-        files_to_create: Array.isArray(raw.files_to_create) ? raw.files_to_create : [],
-        estimated_complexity: ['small', 'medium', 'large'].includes(raw.estimated_complexity)
-          ? raw.estimated_complexity
-          : 'medium',
-        risks: Array.isArray(raw.risks) ? raw.risks : [],
-        sub_tasks: Array.isArray(raw.sub_tasks) ? raw.sub_tasks : undefined,
-      };
+      return null;
     } catch {
       return null;
     }
+  }
+
+  private normalizeplan(raw: any): ImplementationPlan {
+    return {
+      summary: raw.summary ?? '',
+      approach: raw.approach ?? '',
+      files_to_modify: Array.isArray(raw.files_to_modify) ? raw.files_to_modify : [],
+      files_to_create: Array.isArray(raw.files_to_create) ? raw.files_to_create : [],
+      estimated_complexity: ['small', 'medium', 'large'].includes(raw.estimated_complexity)
+        ? raw.estimated_complexity
+        : 'medium',
+      risks: Array.isArray(raw.risks) ? raw.risks : [],
+      sub_tasks: Array.isArray(raw.sub_tasks) ? raw.sub_tasks : undefined,
+    };
   }
 }

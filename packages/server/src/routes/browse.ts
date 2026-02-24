@@ -126,6 +126,24 @@ app.get('/repo-name', async (c) => {
   return c.json({ name: folderName });
 });
 
+// Get git remote origin URL for a given path
+app.get('/remote-url', async (c) => {
+  const dirPathOrRes = checkRequired(c.req.query('path'), 'path query parameter');
+  if (dirPathOrRes instanceof Response) return dirPathOrRes;
+  const dirPath = dirPathOrRes;
+  const userId = c.get('userId') as string;
+
+  const denied = checkAllowedPath(dirPath, userId);
+  if (denied) return denied;
+
+  const remoteResult = await getRemoteUrl(dirPath);
+  if (remoteResult.isOk() && remoteResult.value) {
+    return c.json({ url: remoteResult.value.trim() });
+  }
+
+  return c.json({ url: null });
+});
+
 // Initialize a git repo at the given path
 app.post('/git-init', async (c) => {
   const { path: dirPath } = await c.req.json<{ path: string }>();

@@ -455,8 +455,20 @@ export const api = {
       method: 'POST',
       body: JSON.stringify({ path, editor }),
     }),
+  openDirectory: (path: string) =>
+    request<{ ok: boolean }>('/browse/open-directory', {
+      method: 'POST',
+      body: JSON.stringify({ path }),
+    }),
+  openTerminal: (path: string) =>
+    request<{ ok: boolean }>('/browse/open-terminal', {
+      method: 'POST',
+      body: JSON.stringify({ path }),
+    }),
   repoName: (path: string) =>
     request<{ name: string }>(`/browse/repo-name?path=${encodeURIComponent(path)}`),
+  remoteUrl: (path: string) =>
+    request<{ url: string | null }>(`/browse/remote-url?path=${encodeURIComponent(path)}`),
   gitInit: (path: string) =>
     request<{ ok: boolean }>('/browse/git-init', {
       method: 'POST',

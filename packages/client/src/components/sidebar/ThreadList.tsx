@@ -1,4 +1,4 @@
-import { useEffect, useMemo, startTransition } from 'react';
+import { useEffect, useMemo, useCallback, memo, startTransition } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { useThreadStore } from '@/stores/thread-store';
@@ -7,7 +7,7 @@ import { useGitStatusStore } from '@/stores/git-status-store';
 import { timeAgo } from '@/lib/thread-utils';
 import { useMinuteTick } from '@/hooks/use-minute-tick';
 import { ThreadItem } from './ThreadItem';
-import type { Thread, ThreadStatus } from '@funny/shared';
+import type { Thread, ThreadStatus, GitStatusInfo } from '@funny/shared';
 
 const RUNNING_STATUSES = new Set<ThreadStatus>(['running', 'waiting']);
 const FINISHED_STATUSES = new Set<ThreadStatus>(['completed', 'failed', 'stopped', 'interrupted']);
@@ -31,7 +31,6 @@ export function ThreadList({ onArchiveThread, onDeleteThread }: ThreadListProps)
   const threadsByProject = useThreadStore(s => s.threadsByProject);
   const selectedThreadId = useThreadStore(s => s.selectedThreadId);
   const projects = useProjectStore(s => s.projects);
-  const gitStatusByThread = useGitStatusStore(s => s.statusByThread);
 
   const { threads, totalCount } = useMemo(() => {
     const result: EnrichedThread[] = [];
@@ -65,6 +64,20 @@ export function ThreadList({ onArchiveThread, onDeleteThread }: ThreadListProps)
     return { threads: result.slice(0, 5), totalCount: result.length };
   }, [threadsByProject, projects]);
 
+  // Read the full statusByThread and pick only visible entries via useMemo.
+  // Individual GitStatusInfo references are stable (only change when that
+  // thread's status actually updates), so ThreadItem memo is not defeated.
+  const statusByThread = useGitStatusStore((s) => s.statusByThread);
+  const gitStatusByThread = useMemo(() => {
+    const result: Record<string, GitStatusInfo> = {};
+    for (const t of threads) {
+      if (t.mode === 'worktree' && statusByThread[t.id]) {
+        result[t.id] = statusByThread[t.id];
+      }
+    }
+    return result;
+  }, [threads, statusByThread]);
+
   // Eagerly fetch git status for visible worktree threads that don't have it yet.
   // This ensures icons show up in the global thread list without requiring a click.
   useEffect(() => {
@@ -76,6 +89,26 @@ export function ThreadList({ onArchiveThread, onDeleteThread }: ThreadListProps)
     }
   }, [threads]);
 
+  // Stable callbacks that avoid creating new closures per thread inside .map().
+  // ThreadItem is memo'd, so stable references prevent unnecessary re-renders.
+  const handleSelect = useCallback((threadId: string, projectId: string) => {
+    startTransition(() => {
+      const store = useThreadStore.getState();
+      if (store.selectedThreadId === threadId && (!store.activeThread || store.activeThread.id !== threadId)) {
+        store.selectThread(threadId);
+      }
+      navigate(`/projects/${projectId}/threads/${threadId}`);
+    });
+  }, [navigate]);
+
+  const handleArchive = useCallback((thread: EnrichedThread) => {
+    onArchiveThread(thread.id, thread.projectId, thread.title, thread.mode === 'worktree' && !!thread.branch && thread.provider !== 'external');
+  }, [onArchiveThread]);
+
+  const handleDelete = useCallback((thread: EnrichedThread) => {
+    onDeleteThread(thread.id, thread.projectId, thread.title, thread.mode === 'worktree' && !!thread.branch && thread.provider !== 'external');
+  }, [onDeleteThread]);
+
   if (threads.length === 0) return null;
 
   return (
@@ -83,26 +116,16 @@ export function ThreadList({ onArchiveThread, onDeleteThread }: ThreadListProps)
       {threads.map((thread) => {
         const isRunning = RUNNING_STATUSES.has(thread.status);
         return (
-          <ThreadItem
+          <ThreadListItem
             key={thread.id}
             thread={thread}
-            projectPath={thread.projectPath}
             isSelected={selectedThreadId === thread.id}
-            subtitle={thread.projectName}
-            projectColor={thread.projectColor}
-            timeValue={isRunning ? undefined : timeAgo(thread.completedAt ?? thread.createdAt, t)}
+            isRunning={isRunning}
             gitStatus={thread.mode === 'worktree' ? gitStatusByThread[thread.id] : undefined}
-            onSelect={() => {
-              startTransition(() => {
-                const store = useThreadStore.getState();
-                if (store.selectedThreadId === thread.id && (!store.activeThread || store.activeThread.id !== thread.id)) {
-                  store.selectThread(thread.id);
-                }
-                navigate(`/projects/${thread.projectId}/threads/${thread.id}`);
-              });
-            }}
-            onArchive={thread.status === 'running' ? undefined : () => onArchiveThread(thread.id, thread.projectId, thread.title, thread.mode === 'worktree' && !!thread.branch && thread.provider !== 'external')}
-            onDelete={thread.status === 'running' ? undefined : () => onDeleteThread(thread.id, thread.projectId, thread.title, thread.mode === 'worktree' && !!thread.branch && thread.provider !== 'external')}
+            onSelect={handleSelect}
+            onArchive={thread.status === 'running' ? undefined : handleArchive}
+            onDelete={thread.status === 'running' ? undefined : handleDelete}
+            t={t}
           />
         );
       })}
@@ -117,3 +140,44 @@ export function ThreadList({ onArchiveThread, onDeleteThread }: ThreadListProps)
     </div>
   );
 }
+
+// Wrapper that converts stable (threadId, projectId) callbacks into the
+// parameterless callbacks that ThreadItem expects, memoized per thread.
+const ThreadListItem = memo(function ThreadListItem({
+  thread,
+  isSelected,
+  isRunning,
+  gitStatus,
+  onSelect,
+  onArchive,
+  onDelete,
+  t,
+}: {
+  thread: EnrichedThread;
+  isSelected: boolean;
+  isRunning: boolean;
+  gitStatus?: GitStatusInfo;
+  onSelect: (threadId: string, projectId: string) => void;
+  onArchive?: (thread: EnrichedThread) => void;
+  onDelete?: (thread: EnrichedThread) => void;
+  t: ReturnType<typeof useTranslation>['t'];
+}) {
+  const handleSelect = useCallback(() => onSelect(thread.id, thread.projectId), [onSelect, thread.id, thread.projectId]);
+  const handleArchive = useMemo(() => onArchive ? () => onArchive(thread) : undefined, [onArchive, thread]);
+  const handleDelete = useMemo(() => onDelete ? () => onDelete(thread) : undefined, [onDelete, thread]);
+
+  return (
+    <ThreadItem
+      thread={thread}
+      projectPath={thread.projectPath}
+      isSelected={isSelected}
+      subtitle={thread.projectName}
+      projectColor={thread.projectColor}
+      timeValue={isRunning ? undefined : timeAgo(thread.completedAt ?? thread.createdAt, t)}
+      gitStatus={gitStatus}
+      onSelect={handleSelect}
+      onArchive={handleArchive}
+      onDelete={handleDelete}
+    />
+  );
+});

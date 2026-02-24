@@ -1,14 +1,28 @@
 import { Skeleton } from '@/components/ui/skeleton';
 
+const SIDEBAR_WIDTH_STORAGE_KEY = 'sidebar_width';
+const DEFAULT_SIDEBAR_WIDTH = 320;
+
+/** Read persisted sidebar width so the skeleton matches the real sidebar exactly. */
+function getSidebarWidth(): number {
+  try {
+    const stored = localStorage.getItem(SIDEBAR_WIDTH_STORAGE_KEY);
+    return stored ? Number(stored) : DEFAULT_SIDEBAR_WIDTH;
+  } catch {
+    return DEFAULT_SIDEBAR_WIDTH;
+  }
+}
+
 /**
  * Renders a skeleton that mirrors the real app layout (sidebar + main area).
  * Shown immediately while auth/data loads — no network dependencies.
  */
 export function AppShellSkeleton() {
+  const sidebarWidth = getSidebarWidth();
   return (
     <div className="flex h-screen overflow-hidden bg-background">
-      {/* Sidebar skeleton */}
-      <div className="w-80 border-r border-sidebar-border bg-sidebar flex flex-col">
+      {/* Sidebar skeleton — matches persisted sidebar width from ui/sidebar.tsx */}
+      <div style={{ width: sidebarWidth }} className="flex-shrink-0 border-r border-sidebar-border bg-sidebar flex flex-col">
         {/* Header — logo + action buttons */}
         <div className="px-4 py-3 flex items-center justify-between">
           <Skeleton className="h-5 w-24" />

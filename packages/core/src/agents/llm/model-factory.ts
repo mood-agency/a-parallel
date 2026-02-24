@@ -110,7 +110,10 @@ export class ModelFactory {
       }
 
       case 'funny-api-acp': {
-        const baseURL = overrides?.baseURL ?? this.config['funny-api-acp']?.baseURL ?? 'http://localhost:4002';
+        const baseURL = overrides?.baseURL
+          ?? this.config['funny-api-acp']?.baseURL
+          ?? process.env.API_ACP_URL
+          ?? 'http://localhost:4010';
         const apiKey = overrides?.apiKey ?? this.config['funny-api-acp']?.apiKey;
         return { baseURL, apiKey, modelId: resolvedId };
       }

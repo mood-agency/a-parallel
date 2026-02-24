@@ -6,7 +6,6 @@ import { useProjectStore } from '@/stores/project-store';
 import { useThreadStore } from '@/stores/thread-store';
 import { useUIStore } from '@/stores/ui-store';
 import { useAuthStore } from '@/stores/auth-store';
-import { useGitStatusStore } from '@/stores/git-status-store';
 import { SettingsPanel } from './SettingsPanel';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
@@ -231,7 +230,7 @@ export function AppSidebar() {
         useProjectStore.getState().selectProject(projectId);
         navigate(`/projects/${projectId}`);
       } else if (useProjectStore.getState().selectedProjectId !== projectId) {
-        useGitStatusStore.getState().fetchForProject(projectId);
+        // Git status fetch is already deferred inside selectProject/toggleProject
         navigate(`/projects/${projectId}`);
       }
     });
@@ -448,7 +447,6 @@ export function AppSidebar() {
               threads={filteredThreadsByProject[project.id] ?? []}
               isExpanded={expandedProjects.has(project.id)}
               isSelected={selectedProjectId === project.id}
-              selectedThreadId={selectedThreadId}
               onToggle={handleToggleProject}
               onNewThread={handleNewThread}
               onRenameProject={handleRenameProject}

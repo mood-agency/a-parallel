@@ -1,4 +1,4 @@
-import { useEffect } from 'react';
+import { useEffect, startTransition } from 'react';
 import { useAppStore } from '@/stores/app-store';
 import { useTerminalStore } from '@/stores/terminal-store';
 import { useCircuitBreakerStore } from '@/stores/circuit-breaker-store';
@@ -35,19 +35,27 @@ const FILE_MODIFYING_TOOLS = new Set(['Write', 'Edit', 'Bash']);
 function flushBatch() {
   rafId = null;
 
-  const store = useAppStore.getState();
-
-  // Flush messages (only the latest per thread — they're cumulative)
-  for (const [, entry] of pendingMessages) {
-    store.handleWSMessage(entry.threadId, entry.data);
-  }
+  // Capture batched data before clearing
+  const msgs = Array.from(pendingMessages.values());
+  const toolOutputs = pendingToolOutputs.slice();
   pendingMessages.clear();
-
-  // Flush tool outputs
-  for (const entry of pendingToolOutputs) {
-    store.handleWSToolOutput(entry.threadId, entry.data);
-  }
   pendingToolOutputs = [];
+
+  // Wrap in startTransition so React treats the resulting re-renders
+  // as low-priority — user interactions (typing, clicks) can interrupt them.
+  startTransition(() => {
+    const store = useAppStore.getState();
+
+    // Flush messages (only the latest per thread — they're cumulative)
+    for (const entry of msgs) {
+      store.handleWSMessage(entry.threadId, entry.data);
+    }
+
+    // Flush tool outputs
+    for (const entry of toolOutputs) {
+      store.handleWSToolOutput(entry.threadId, entry.data);
+    }
+  });
 }
 
 function scheduleFlush() {

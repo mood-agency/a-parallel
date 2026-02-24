@@ -2,10 +2,6 @@ import React, { lazy, Suspense, useEffect, useSyncExternalStore } from 'react';
 import ReactDOM from 'react-dom/client';
 import { BrowserRouter } from 'react-router-dom';
 import { AbbacchioProvider } from '@abbacchio/browser-transport/react';
-import { App } from './App';
-import { MobilePage } from './components/MobilePage';
-import { LoginPage } from './components/LoginPage';
-import { PreviewBrowser } from './components/PreviewBrowser';
 import { AppShellSkeleton } from './components/AppShellSkeleton';
 import { TooltipProvider } from './components/ui/tooltip';
 import { useAuthStore } from './stores/auth-store';
@@ -17,6 +13,11 @@ import './globals.css';
 import './stores/settings-store';
 import './i18n/config';
 
+// Lazy-load conditional views to reduce initial bundle (~175KB savings)
+const App = lazy(() => import('./App').then((m) => ({ default: m.App })));
+const MobilePage = lazy(() => import('./components/MobilePage').then((m) => ({ default: m.MobilePage })));
+const LoginPage = lazy(() => import('./components/LoginPage').then((m) => ({ default: m.LoginPage })));
+const PreviewBrowser = lazy(() => import('./components/PreviewBrowser').then((m) => ({ default: m.PreviewBrowser })));
 const SetupWizard = lazy(() =>
   import('./components/SetupWizard').then((m) => ({ default: m.SetupWizard }))
 );
@@ -34,7 +35,11 @@ const getSnapshot = () => mobileQuery.matches;
 
 function ResponsiveShell() {
   const isMobile = useSyncExternalStore(subscribe, getSnapshot);
-  return isMobile ? <MobilePage /> : <App />;
+  return (
+    <Suspense fallback={<AppShellSkeleton />}>
+      {isMobile ? <MobilePage /> : <App />}
+    </Suspense>
+  );
 }
 
 function AuthGate() {
@@ -54,7 +59,11 @@ function AuthGate() {
 
   // Multi mode and not authenticated -> show login page
   if (mode === 'multi' && !isAuthenticated) {
-    return <LoginPage />;
+    return (
+      <Suspense fallback={<AppShellSkeleton />}>
+        <LoginPage />
+      </Suspense>
+    );
   }
 
   // Setup not completed -> show setup wizard
@@ -90,7 +99,7 @@ ReactDOM.createRoot(document.getElementById('root')!).render(
     >
       <TooltipProvider delayDuration={300} skipDelayDuration={0}>
         {isPreviewWindow ? (
-          <PreviewBrowser />
+          <Suspense fallback={null}><PreviewBrowser /></Suspense>
         ) : (
           <AuthGate />
         )}

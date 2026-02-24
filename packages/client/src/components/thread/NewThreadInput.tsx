@@ -87,24 +87,17 @@ export function NewThreadInput() {
   };
 
   return (
-    <>
-      {/* Empty state area */}
-      <div className="flex-1 flex items-center justify-center text-muted-foreground">
-        <div className="text-center">
-          <p className="text-4xl mb-4">✨</p>
-          <p className="text-2xl font-semibold text-foreground">{t('thread.whatShouldAgentDo')}</p>
-          <p className="text-sm mt-2">{t('thread.describeTask')}</p>
-        </div>
+    <div className="flex-1 flex items-center justify-center text-muted-foreground px-4">
+      <div className="w-full max-w-3xl">
+        <PromptInput
+          key={effectiveProjectId}
+          onSubmit={handleCreate}
+          loading={creating}
+          isNewThread
+          showBacklog
+          projectId={effectiveProjectId || undefined}
+        />
       </div>
-
-      <PromptInput
-        key={effectiveProjectId}
-        onSubmit={handleCreate}
-        loading={creating}
-        isNewThread
-        showBacklog
-        projectId={effectiveProjectId || undefined}
-      />
-    </>
+    </div>
   );
 }

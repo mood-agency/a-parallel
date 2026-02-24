@@ -95,6 +95,13 @@ const SILENT_EVENT_TYPES = new Set([
   'director.integration.dispatched',
   'director.integration.pr_created',
   'director.pr.rebase_needed',
+  // Session lifecycle events — handled internally by the agent service.
+  // session.accepted creates the thread, transitions are silent.
+  'session.transition',
+  'session.plan_ready',
+  'session.plan_set',
+  'session.branch_set',
+  // session.tool_call and session.tool_result are explicitly handled below (not silent).
 ]);
 
 function getCLIState(requestId: string): CLIMessageState {
@@ -128,12 +135,33 @@ function decodeUnicodeEscapes(str: string): string {
 function resolveProjectId(workingPath: string): string | null {
   const normalised = workingPath.replace(/\\/g, '/').toLowerCase();
   const projects = pm.listProjects('__local__');
+
+  // First pass: exact prefix match (project path is prefix of working path)
   for (const project of projects) {
     const projPath = project.path.replace(/\\/g, '/').toLowerCase();
-    if (normalised.startsWith(projPath) || normalised.includes('.funny-worktrees')) {
+    if (normalised.startsWith(projPath)) {
       return project.id;
     }
   }
+
+  // Second pass: worktree match — extract the repo name from the worktree path
+  // Worktree paths look like: .../.funny-worktrees/<repo-name>/<branch-slug>/...
+  if (normalised.includes('.funny-worktrees')) {
+    const wtIdx = normalised.indexOf('.funny-worktrees/');
+    if (wtIdx !== -1) {
+      const afterWt = normalised.slice(wtIdx + '.funny-worktrees/'.length);
+      const repoName = afterWt.split('/')[0]?.toLowerCase();
+      if (repoName) {
+        for (const project of projects) {
+          const projName = project.path.replace(/\\/g, '/').split('/').pop()?.toLowerCase();
+          if (projName === repoName) {
+            return project.id;
+          }
+        }
+      }
+    }
+  }
+
   return null;
 }
 
@@ -765,6 +793,106 @@ shutdownManager.register('ingest-sweep', async () => {
   }
 }, ShutdownPhase.SERVICES);
 
+// ── Session tool call/result handlers ─────────────────────────
+
+/**
+ * Handle a session.tool_call event from the planner agent.
+ * Creates a parent assistant message (if needed), inserts a tool_call
+ * record in the DB, and emits WebSocket events.
+ */
+function onSessionToolCall(event: IngestEvent): void {
+  const state = resolveState(event);
+  if (!state) return;
+
+  const threadId = state.threadId;
+  const data = event.data;
+
+  const toolName = (data.tool_name as string) ?? 'unknown';
+  const toolInput = data.tool_input ?? {};
+  const toolCallId = (data.tool_call_id as string) ?? '';
+
+  // Ensure a parent assistant message exists for the tool call
+  const cliState = resolveCliState(event.request_id);
+
+  let parentMsgId = cliState.currentAssistantMsgId;
+  if (!parentMsgId) {
+    parentMsgId = tm.insertMessage({ threadId, role: 'assistant', content: '' });
+    emitWS(state, {
+      type: 'agent:message',
+      threadId,
+      data: { messageId: parentMsgId, role: 'assistant', content: '' },
+    });
+    cliState.currentAssistantMsgId = parentMsgId;
+  }
+
+  const inputJson = JSON.stringify(toolInput);
+  const dbToolCallId = tm.insertToolCall({
+    messageId: parentMsgId,
+    name: toolName,
+    input: inputJson,
+  });
+
+  // Map the tool_call_id from the agent to the DB ID
+  cliState.processedToolUseIds.set(toolCallId, dbToolCallId);
+
+  emitWS(state, {
+    type: 'agent:tool_call',
+    threadId,
+    data: {
+      toolCallId: dbToolCallId,
+      messageId: parentMsgId,
+      name: toolName,
+      input: toolInput,
+    },
+  });
+
+  // Reset parent message so next text starts a new message
+  cliState.currentAssistantMsgId = null;
+}
+
+/**
+ * Handle a session.tool_result event from the planner agent.
+ * Updates the matching tool_call record with the result output.
+ */
+function onSessionToolResult(event: IngestEvent): void {
+  const state = resolveState(event);
+  if (!state) return;
+
+  const data = event.data;
+  const agentToolCallId = (data.tool_call_id as string) ?? '';
+  const output = (data.output as string) ?? '';
+
+  const cliState = resolveCliState(event.request_id);
+  const dbToolCallId = cliState.processedToolUseIds.get(agentToolCallId);
+
+  if (dbToolCallId) {
+    tm.updateToolCallOutput(dbToolCallId, output);
+
+    emitWS(state, {
+      type: 'agent:tool_output',
+      threadId: state.threadId,
+      data: { toolCallId: dbToolCallId, output },
+    });
+  }
+}
+
+/**
+ * Resolve (or create) CLI-side state for a request_id.
+ * Reuses the existing cliStates map.
+ */
+function resolveCliState(requestId: string): CLIMessageState {
+  let state = cliStates.get(requestId);
+  if (!state) {
+    state = {
+      cliToDbMsgId: new Map(),
+      currentAssistantMsgId: null,
+      processedToolUseIds: new Map(),
+    };
+    cliStates.set(requestId, state);
+  }
+  return state;
+}
+
 // ── Public API ───────────────────────────────────────────────
 
 /**
@@ -804,6 +932,12 @@ export function handleIngestEvent(event: IngestEvent): IngestResult {
       return {};
     case 'message':
       onMessage(event);
+      return {};
+    case 'tool_call':
+      onSessionToolCall(event);
+      return {};
+    case 'tool_result':
+      onSessionToolResult(event);
       return {};
     default:
       // Silently ignore pipeline lifecycle events that are already

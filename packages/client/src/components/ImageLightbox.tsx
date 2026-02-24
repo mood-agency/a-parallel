@@ -1,4 +1,5 @@
 import { useState, useCallback, useEffect } from 'react';
+import { createPortal } from 'react-dom';
 import { X, ChevronLeft, ChevronRight } from 'lucide-react';
 
 interface LightboxImage {
@@ -43,7 +44,7 @@ export function ImageLightbox({ images, initialIndex = 0, open, onClose }: Image
 
   const current = images[currentIndex];
 
-  return (
+  return createPortal(
     <div
       className="fixed inset-0 z-[100] flex items-center justify-center bg-black/80 animate-in fade-in-0 duration-200"
       onClick={onClose}
@@ -90,6 +91,7 @@ export function ImageLightbox({ images, initialIndex = 0, open, onClose }: Image
           {currentIndex + 1} / {images.length}
         </div>
       )}
-    </div>
+    </div>,
+    document.body
   );
 }

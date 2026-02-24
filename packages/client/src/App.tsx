@@ -1,6 +1,6 @@
 import { lazy, Suspense, useEffect, useState, startTransition } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { AnimatePresence, motion } from 'motion/react';
+import { cn } from '@/lib/utils';
 import { useWS } from '@/hooks/use-ws';
 import { useRouteSync } from '@/hooks/use-route-sync';
 import { useProjectStore } from '@/stores/project-store';
@@ -9,12 +9,23 @@ import { useWorkflowStore } from '@/stores/workflow-store';
 import { setAppNavigate } from '@/stores/thread-store';
 import { useTerminalStore } from '@/stores/terminal-store';
 import { useInternalEditorStore } from '@/stores/internal-editor-store';
-import { AppSidebar } from '@/components/Sidebar';
-import { ThreadView } from '@/components/ThreadView';
 import { SidebarProvider, SidebarInset, useSidebar } from '@/components/ui/sidebar';
 import { Toaster } from 'sonner';
 import { TOAST_DURATION } from '@/lib/utils';
 import { PanelLeft } from 'lucide-react';
+
+const AppSidebar = lazy(() => import('@/components/Sidebar').then(m => ({ default: m.AppSidebar })));
+const ThreadView = lazy(() => import('@/components/ThreadView').then(m => ({ default: m.ThreadView })));
+
+const SIDEBAR_WIDTH_STORAGE_KEY = 'sidebar_width';
+const DEFAULT_SIDEBAR_WIDTH = 320;
+
+/** Placeholder matching the persisted sidebar width to avoid CLS during lazy load */
+function SidebarPlaceholder() {
+  let w = DEFAULT_SIDEBAR_WIDTH;
+  try { const s = localStorage.getItem(SIDEBAR_WIDTH_STORAGE_KEY); if (s) w = Number(s); } catch {}
+  return <div style={{ width: w }} className="flex-shrink-0 bg-sidebar border-r border-sidebar-border" />;
+}
 
 /** Thin vertical strip visible when the sidebar is collapsed, click to reopen */
 function CollapsedSidebarStrip() {
@@ -68,6 +79,9 @@ export function App() {
   const internalEditorContent = useInternalEditorStore(s => s.initialContent);
   const navigate = useNavigate();
   const [commandPaletteOpen, setCommandPaletteOpen] = useState(false);
+  // Track if review pane was ever opened so we keep it mounted (hidden) for fast re-toggle
+  const [reviewPaneEverOpened, setReviewPaneEverOpened] = useState(false);
+  if (reviewPaneOpen && !reviewPaneEverOpened) setReviewPaneEverOpened(true);
 
   // Register navigate so the store can trigger navigation (e.g. from toasts)
   useEffect(() => { setAppNavigate(navigate); }, [navigate]);
@@ -143,7 +157,7 @@ export function App() {
       defaultOpen={true}
       className="h-screen overflow-hidden"
     >
-      <AppSidebar />
+      <Suspense fallback={<SidebarPlaceholder />}><AppSidebar /></Suspense>
       <CollapsedSidebarStrip />
 
       <SidebarInset className="flex flex-col overflow-hidden">
@@ -157,23 +171,23 @@ export function App() {
         <Suspense><TerminalPanel /></Suspense>
       </SidebarInset>
 
-      {/* Right sidebar for review pane — animated slide in/out */}
-      <AnimatePresence>
-        {reviewPaneOpen && !settingsOpen && !allThreadsProjectId && (
-          <motion.div
-            key="review-pane"
-            initial={{ width: 0, opacity: 0 }}
-            animate={{ width: '50vw', opacity: 1 }}
-            exit={{ width: 0, opacity: 0 }}
-            transition={{ duration: 0.2, ease: [0.25, 0.1, 0.25, 1] }}
-            className="h-full overflow-hidden flex-shrink-0 border-l border-border"
-          >
-            <div className="h-full w-[50vw]">
-              <Suspense><ReviewPane /></Suspense>
-            </div>
-          </motion.div>
+      {/* Right sidebar for review pane — CSS transition slide in/out.
+          Keep ReviewPane mounted (hidden) after first open so subsequent
+          toggles don't re-mount / re-fetch, cutting INP ~500ms. */}
+      <div
+        className={cn(
+          'h-full overflow-hidden flex-shrink-0 border-l border-border transition-[width,opacity] duration-200 ease-out',
+          reviewPaneOpen && !settingsOpen && !allThreadsProjectId
+            ? 'w-[50vw] opacity-100'
+            : 'w-0 opacity-0 border-l-0'
         )}
-      </AnimatePresence>
+      >
+        {reviewPaneEverOpened && (
+          <div className="h-full w-[50vw]" style={!(reviewPaneOpen && !settingsOpen && !allThreadsProjectId) ? { visibility: 'hidden' } : undefined}>
+            <Suspense><ReviewPane /></Suspense>
+          </div>
+        )}
+      </div>
 
       <Toaster position="bottom-right" theme="dark" duration={TOAST_DURATION} />
       <Suspense><CircuitBreakerDialog /></Suspense>

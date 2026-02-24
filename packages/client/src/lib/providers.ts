@@ -83,3 +83,46 @@ export function getAllModelOptions(
     return { value: m.value, label };
   });
 }
+
+export interface UnifiedModelOption {
+  /** Combined key: `provider:model` */
+  value: string;
+  label: string;
+  provider: string;
+  providerLabel: string;
+  model: string;
+}
+
+/**
+ * Get all models from all providers as a flat list with `provider:model` combined keys,
+ * grouped by provider for display.
+ */
+export function getUnifiedModelOptions(
+  t: (key: string) => string,
+): { provider: string; providerLabel: string; models: UnifiedModelOption[] }[] {
+  return PROVIDERS.map((p) => {
+    const models = PROVIDER_MODELS[p.value] ?? [];
+    return {
+      provider: p.value,
+      providerLabel: p.label,
+      models: models.map((m) => {
+        const translated = t(`thread.model.${m.i18nKey}`);
+        const label = translated.startsWith('thread.model.') ? m.fallback : translated;
+        return {
+          value: `${p.value}:${m.value}`,
+          label,
+          provider: p.value,
+          providerLabel: p.label,
+          model: m.value,
+        };
+      }),
+    };
+  });
+}
+
+/** Parse a `provider:model` combined key back into its parts. */
+export function parseUnifiedModel(combined: string): { provider: string; model: string } {
+  const idx = combined.indexOf(':');
+  if (idx === -1) return { provider: 'claude', model: combined };
+  return { provider: combined.slice(0, idx), model: combined.slice(idx + 1) };
+}
