@@ -101,7 +101,29 @@ export type PipelineEventType =
   | 'review_loop.feedback_applied'
   | 'review_loop.push_completed'
   | 'review_loop.completed'
-  | 'review_loop.failed';
+  | 'review_loop.failed'
+  // Session lifecycle events
+  | 'session.created'
+  | 'session.transition'
+  | 'session.plan_ready'
+  | 'session.implementing'
+  | 'session.pr_created'
+  | 'session.ci_passed'
+  | 'session.ci_failed'
+  | 'session.review_requested'
+  | 'session.changes_requested'
+  | 'session.merged'
+  | 'session.failed'
+  | 'session.escalated'
+  // Reaction events
+  | 'reaction.triggered'
+  | 'reaction.agent_respawned'
+  | 'reaction.escalated'
+  | 'reaction.auto_merged'
+  // Backlog events
+  | 'backlog.scan_started'
+  | 'backlog.scan_completed'
+  | 'backlog.issue_picked';
 
 export interface PipelineEvent {
   event_type: PipelineEventType;

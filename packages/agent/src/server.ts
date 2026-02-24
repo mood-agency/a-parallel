@@ -2,7 +2,7 @@
  * Bun server bootstrap for the Pipeline Service.
  */
 
-import { app, runner, integrator, adapterManager, director } from './index.js';
+import { app, runner, integrator, adapterManager, director, reactionEngine } from './index.js';
 import { startHatchetWorker } from './hatchet/worker.js';
 
 const port = parseInt(process.env.PORT ?? '3002', 10);
@@ -10,7 +10,7 @@ const port = parseInt(process.env.PORT ?? '3002', 10);
 console.log(`[pipeline] Starting on port ${port}...`);
 
 // Start Hatchet worker (no-op if HATCHET_CLIENT_TOKEN not set)
-startHatchetWorker().catch((err) => {
+startHatchetWorker(runner).catch((err) => {
   console.error('[hatchet] Worker failed to start:', err.message);
 });
 
@@ -23,6 +23,7 @@ async function shutdown(signal: string): Promise<void> {
   shuttingDown = true;
   console.log(`[pipeline] Shutting down (${signal})...`);
   director.stopSchedule();
+  reactionEngine.stop();
   adapterManager.stop();
   await Promise.allSettled([runner.stopAll(), integrator.stopAll()]);
   console.log('[pipeline] Shutdown complete');
