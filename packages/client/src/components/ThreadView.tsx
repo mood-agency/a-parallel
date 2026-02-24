@@ -25,6 +25,7 @@ import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip
 import { ProjectHeader } from './thread/ProjectHeader';
 import { NewThreadInput } from './thread/NewThreadInput';
 import { AgentResultCard, AgentInterruptedCard, AgentStoppedCard } from './thread/AgentStatusCards';
+import { GitEventCard } from './thread/GitEventCard';
 import { TodoPanel } from './thread/TodoPanel';
 import { PromptTimeline } from './thread/PromptTimeline';
 import { parseReferencedFiles } from '@/lib/parse-referenced-files';
@@ -272,7 +273,8 @@ type ToolItem =
 type RenderItem =
   | { type: 'message'; msg: any }
   | ToolItem
-  | { type: 'toolcall-run'; items: ToolItem[] };
+  | { type: 'toolcall-run'; items: ToolItem[] }
+  | { type: 'thread-event'; event: import('@funny/shared').ThreadEvent };
 
 /** Group MCP tools by server prefix and show built-in tools individually */
 function groupTools(tools: string[]) {
@@ -347,7 +349,20 @@ function McpToolGroup({ serverName, toolNames }: { serverName: string; toolNames
   );
 }
 
-function buildGroupedRenderItems(messages: any[]): RenderItem[] {
+/** Get timestamp for a render item (used for chronological interleaving with events) */
+function getItemTimestamp(item: RenderItem): string {
+  if (item.type === 'message') return item.msg.timestamp || '';
+  if (item.type === 'thread-event') return item.event.createdAt || '';
+  if (item.type === 'toolcall') return item.tc.timestamp || '';
+  if (item.type === 'toolcall-group') return item.calls[0]?.timestamp || '';
+  if (item.type === 'toolcall-run') {
+    const first = item.items[0];
+    return first.type === 'toolcall' ? (first.tc.timestamp || '') : (first.calls[0]?.timestamp || '');
+  }
+  return '';
+}
+
+function buildGroupedRenderItems(messages: any[], threadEvents?: import('@funny/shared').ThreadEvent[]): RenderItem[] {
   // Flatten all messages into a single stream of items
   const flat: ({ type: 'message'; msg: any } | { type: 'toolcall'; tc: any })[] = [];
   for (const msg of messages) {
@@ -427,7 +442,24 @@ function buildGroupedRenderItems(messages: any[]): RenderItem[] {
     }
   }
 
-  return final;
+  // Interleave thread events (git operations) chronologically
+  if (!threadEvents?.length) return final;
+
+  const eventItems: RenderItem[] = threadEvents
+    .filter(e => e.type !== 'git:changed')
+    .map(e => ({ type: 'thread-event' as const, event: e }));
+
+  const merged = [...final, ...eventItems];
+  merged.sort((a, b) => {
+    const tsA = getItemTimestamp(a);
+    const tsB = getItemTimestamp(b);
+    if (!tsA && !tsB) return 0;
+    if (!tsA) return -1;
+    if (!tsB) return 1;
+    return tsA.localeCompare(tsB);
+  });
+
+  return merged;
 }
 
 const COLLAPSED_MAX_H = 128; // px – roughly 8 lines of text
@@ -486,6 +518,7 @@ function UserMessageContent({ content }: { content: string }) {
 /** Memoized message list to avoid rebuilding the entire list on every render */
 const MemoizedMessageList = memo(function MemoizedMessageList({
   messages,
+  threadEvents,
   threadId,
   knownIds,
   prefersReducedMotion,
@@ -494,6 +527,7 @@ const MemoizedMessageList = memo(function MemoizedMessageList({
   onOpenLightbox,
 }: {
   messages: any[];
+  threadEvents?: import('@funny/shared').ThreadEvent[];
   threadId: string;
   knownIds: Set<string>;
   prefersReducedMotion: boolean | null;
@@ -503,7 +537,7 @@ const MemoizedMessageList = memo(function MemoizedMessageList({
 }) {
   const { t } = useTranslation();
 
-  const groupedItems = useMemo(() => buildGroupedRenderItems(messages), [messages]);
+  const groupedItems = useMemo(() => buildGroupedRenderItems(messages, threadEvents), [messages, threadEvents]);
 
   const renderToolItem = useCallback((ti: ToolItem) => {
     if (ti.type === 'toolcall') {
@@ -681,6 +715,18 @@ const MemoizedMessageList = memo(function MemoizedMessageList({
             <div key={item.items[0].type === 'toolcall' ? item.items[0].tc.id : item.items[0].calls[0].id} className="space-y-1">
               {item.items.map(renderToolItem)}
             </div>
+          );
+        }
+        if (item.type === 'thread-event') {
+          return (
+            <motion.div
+              key={item.event.id}
+              initial={prefersReducedMotion ? false : { opacity: 0, y: 6 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.25, ease: 'easeOut' }}
+            >
+              <GitEventCard event={item.event} />
+            </motion.div>
           );
         }
         return null;
@@ -1134,6 +1180,7 @@ export function ThreadView() {
 
             <MemoizedMessageList
               messages={activeThread.messages ?? []}
+              threadEvents={activeThread.threadEvents}
               threadId={activeThread.id}
               knownIds={knownIdsRef.current}
               prefersReducedMotion={prefersReducedMotion}

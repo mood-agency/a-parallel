@@ -40,6 +40,7 @@ export interface AgentResultInfo {
 
 export interface ThreadWithMessages extends Thread {
   messages: (import('@funny/shared').Message & { toolCalls?: any[] })[];
+  threadEvents?: import('@funny/shared').ThreadEvent[];
   initInfo?: AgentInitInfo;
   resultInfo?: AgentResultInfo;
   waitingReason?: WaitingReason;
@@ -191,7 +192,11 @@ export const useThreadStore = create<ThreadState>((set, get) => ({
       }
     }
 
-    set({ activeThread: { ...thread, hasMore: thread.hasMore ?? false, initInfo: thread.initInfo || buffered || undefined, resultInfo, waitingReason, pendingPermission } });
+    // Load thread events (git operations)
+    const eventsResult = await api.getThreadEvents(threadId);
+    const threadEvents = eventsResult.isOk() ? eventsResult.value.events : [];
+
+    set({ activeThread: { ...thread, hasMore: thread.hasMore ?? false, threadEvents, initInfo: thread.initInfo || buffered || undefined, resultInfo, waitingReason, pendingPermission } });
     useProjectStore.setState({ selectedProjectId: projectId });
 
     // Replay any WS events that arrived while activeThread was loading
@@ -486,6 +491,9 @@ export const useThreadStore = create<ThreadState>((set, get) => ({
       ?? ((thread.status === 'completed' || thread.status === 'failed')
         ? { status: thread.status as 'completed' | 'failed', cost: thread.cost, duration: 0, error: (thread as any).error }
         : undefined);
+    // Refresh thread events
+    const eventsResult = await api.getThreadEvents(activeThread.id);
+    const threadEvents = eventsResult.isOk() ? eventsResult.value.events : activeThread.threadEvents;
     // Clear waitingReason/pendingPermission if server status is no longer waiting
     // (handles case where agent:result WS event was lost during disconnect)
     const isServerWaiting = thread.status === 'waiting';
@@ -505,6 +513,7 @@ export const useThreadStore = create<ThreadState>((set, get) => ({
         baseBranch: thread.baseBranch,
         initInfo: activeThread.initInfo,
         resultInfo,
+        threadEvents,
         waitingReason: isServerWaiting ? activeThread.waitingReason : undefined,
         pendingPermission: isServerWaiting ? activeThread.pendingPermission : undefined,
       },

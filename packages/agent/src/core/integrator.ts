@@ -103,7 +103,6 @@ ${corrections}${conflicts}
 // ── Integrator class ────────────────────────────────────────────
 
 export class Integrator {
-  private modelFactory: ModelFactory;
   private integrationPrefix: string;
   private mainBranch: string;
   private conflictModel: string;
@@ -112,21 +111,9 @@ export class Integrator {
   constructor(
     private eventBus: EventBus,
     private config: PipelineServiceConfig,
+    private modelFactory: ModelFactory,
     private circuitBreakers?: CircuitBreakers,
   ) {
-    this.modelFactory = new ModelFactory({
-      anthropic: {
-        apiKey: process.env[config.llm_providers.anthropic.api_key_env],
-        baseURL: config.llm_providers.anthropic.base_url || undefined,
-      },
-      'funny-api-acp': {
-        apiKey: process.env[config.llm_providers.funny_api_acp.api_key_env],
-        baseURL: config.llm_providers.funny_api_acp.base_url || undefined,
-      },
-      ollama: {
-        baseURL: config.llm_providers.ollama.base_url || undefined,
-      },
-    });
     this.integrationPrefix = config.branch.integration_prefix;
     this.mainBranch = config.branch.main;
     this.conflictModel = config.agents.conflict.model;

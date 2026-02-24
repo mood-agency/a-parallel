@@ -27,9 +27,16 @@ import { ManifestManager } from './core/manifest-manager.js';
 import { Integrator } from './core/integrator.js';
 import { Director } from './core/director.js';
 import { BranchCleaner } from './core/branch-cleaner.js';
+import { ModelFactory } from '@funny/core/agents';
 import { logger } from './infrastructure/logger.js';
-import type { PipelineEvent } from './core/types.js';
-import type { Tier, ManifestReadyEntry } from './core/manifest-types.js';
+import { registerManifestWriter } from './listeners/manifest-writer.js';
+import { registerIdempotencyReleaser } from './listeners/idempotency-releaser.js';
+import { registerDirectorTrigger } from './listeners/director-trigger.js';
+import { registerRebaseTrigger } from './listeners/rebase-trigger.js';
+import { registerPipelineCleanup } from './listeners/pipeline-cleanup.js';
+import { registerMergeCleanup } from './listeners/merge-cleanup.js';
+import { RateLimiter } from './infrastructure/rate-limiter.js';
+import { ServiceContainer } from './infrastructure/service-container.js';
 
 // ── Bootstrap ────────────────────────────────────────────────────
 
@@ -57,9 +64,25 @@ const requestLogger = new RequestLogger(projectPath, config.logging.level as any
 // ── Singletons ──────────────────────────────────────────────────
 
 const eventBus = new EventBus(config.events.path ?? undefined);
-const runner = new PipelineRunner(eventBus, config, circuitBreakers, requestLogger);
+
+// Create shared ModelFactory (used by PipelineRunner and Integrator)
+const modelFactory = new ModelFactory({
+  anthropic: {
+    apiKey: process.env[config.llm_providers.anthropic.api_key_env],
+    baseURL: config.llm_providers.anthropic.base_url || undefined,
+  },
+  'funny-api-acp': {
+    apiKey: process.env[config.llm_providers.funny_api_acp.api_key_env],
+    baseURL: config.llm_providers.funny_api_acp.base_url || undefined,
+  },
+  ollama: {
+    baseURL: config.llm_providers.ollama.base_url || undefined,
+  },
+});
+
+const runner = new PipelineRunner(eventBus, config, modelFactory, circuitBreakers, requestLogger);
 const manifestManager = new ManifestManager(projectPath);
-const integrator = new Integrator(eventBus, config, circuitBreakers);
+const integrator = new Integrator(eventBus, config, modelFactory, circuitBreakers);
 const director = new Director(manifestManager, integrator, eventBus, projectPath, requestLogger);
 const branchCleaner = new BranchCleaner(eventBus, config.cleanup);
 
@@ -86,135 +109,19 @@ director.startSchedule(config.director.schedule_interval_ms);
 
 // ── Event-driven wiring ─────────────────────────────────────────
 
-// Manifest Writer: when pipeline completes, add branch to ready[]
-eventBus.on('event', async (event: PipelineEvent) => {
-  if (event.event_type !== 'pipeline.completed') return;
+registerManifestWriter({ eventBus, manifestManager, config });
+registerIdempotencyReleaser({ eventBus, idempotencyGuard });
+registerDirectorTrigger({ eventBus, director, config });
+registerRebaseTrigger({ eventBus, manifestManager, integrator, projectPath });
+registerPipelineCleanup({ eventBus, branchCleaner, config, projectPath });
+registerMergeCleanup({ eventBus, manifestManager, branchCleaner, config, projectPath });
 
-  const { branch, pipeline_branch, worktree_path, tier, base_branch, skip_merge } = event.data as Record<string, any>;
-  if (!branch) return;
+// ── Rate limiters ──────────────────────────────────────────────
 
-  try {
-    const entry: ManifestReadyEntry = {
-      branch,
-      pipeline_branch: pipeline_branch ?? `${config.branch.pipeline_prefix}${branch}`,
-      worktree_path: worktree_path ?? '',
-      request_id: event.request_id,
-      tier: (tier as Tier) ?? 'medium',
-      pipeline_result: (event.data.result as any) ?? {},
-      corrections_applied: (event.data.corrections_applied as string[]) ?? [],
-      ready_at: new Date().toISOString(),
-      priority: (event.metadata?.priority as number) ?? config.director.default_priority,
-      depends_on: (event.metadata?.depends_on as string[]) ?? [],
-      base_main_sha: '',
-      base_branch: (base_branch as string) ?? undefined,
-      skip_merge: !!skip_merge,
-      metadata: event.metadata,
-    };
-    await manifestManager.addToReady(entry);
-  } catch (err: any) {
-    logger.error({ err: err.message, branch }, 'Manifest Writer: failed to add to ready[]');
-  }
-});
-
-// Idempotency release: when pipeline completes or fails, release the branch
-eventBus.on('event', (event: PipelineEvent) => {
-  if (
-    event.event_type !== 'pipeline.completed' &&
-    event.event_type !== 'pipeline.failed' &&
-    event.event_type !== 'pipeline.stopped'
-  ) return;
-
-  const branch = (event.data as Record<string, any>).branch;
-  if (branch) {
-    idempotencyGuard.release(branch);
-  }
-});
-
-// Director auto-trigger: when pipeline completes, run a director cycle
-eventBus.on('event', async (event: PipelineEvent) => {
-  if (event.event_type !== 'pipeline.completed') return;
-  if (director.isRunning()) return;
-
-  // Configurable delay to ensure manifest write completes first
-  setTimeout(() => {
-    director.runCycle('event').catch((err) => {
-      logger.error({ err: err.message }, 'Director auto-cycle failed');
-    });
-  }, config.director.auto_trigger_delay_ms);
-});
-
-// Stale PR rebase: when Director detects base SHA mismatch, trigger rebase
-eventBus.on('event', async (event: PipelineEvent) => {
-  if (event.event_type !== 'director.pr.rebase_needed') return;
-
-  const { branch, new_base } = event.data as Record<string, any>;
-  if (!branch) return;
-
-  const pendingEntry = await manifestManager.findPendingMerge(branch);
-  if (!pendingEntry) return;
-
-  try {
-    const result = await integrator.rebase(pendingEntry, projectPath, new_base as string);
-    if (result.success) {
-      await manifestManager.updatePendingMergeBaseSha(branch, new_base as string);
-    }
-  } catch (err: any) {
-    logger.error({ err: err.message, branch }, 'Rebase handler failed');
-  }
-});
-
-// Branch cleanup: when pipeline completes, delete pipeline branch
-eventBus.on('event', async (event: PipelineEvent) => {
-  if (event.event_type !== 'pipeline.completed') return;
-
-  const { pipeline_branch } = event.data as Record<string, any>;
-  if (!pipeline_branch) return;
-
-  // Small delay to let manifest write complete first
-  setTimeout(() => {
-    branchCleaner.cleanupAfterPipelineApproved(projectPath, pipeline_branch, event.request_id).catch((err) => {
-      logger.error({ err: err.message, pipeline_branch }, 'Pipeline branch cleanup failed');
-    });
-  }, config.director.auto_trigger_delay_ms);
-});
-
-// Branch cleanup: when pipeline fails, conditionally delete pipeline branch
-eventBus.on('event', async (event: PipelineEvent) => {
-  if (event.event_type !== 'pipeline.failed') return;
-
-  const { pipeline_branch } = event.data as Record<string, any>;
-  if (!pipeline_branch) return;
-
-  branchCleaner.handleFailedPipeline(projectPath, pipeline_branch, event.request_id).catch((err) => {
-    logger.error({ err: err.message, pipeline_branch }, 'Failed pipeline branch cleanup failed');
-  });
-});
-
-// Branch cleanup: when PR is merged (via GitHub webhook), delete branches + move to history
-eventBus.on('event', async (event: PipelineEvent) => {
-  if (event.event_type !== 'integration.pr.merged') return;
-
-  const { branch, pipeline_branch, integration_branch } = event.data as Record<string, any>;
-  if (!branch) return;
-
-  try {
-    await manifestManager.moveToMergeHistory(branch);
-  } catch (err: any) {
-    logger.error({ err: err.message, branch }, 'Failed to move branch to merge_history');
-  }
-
-  try {
-    await branchCleaner.cleanupAfterMerge(
-      projectPath,
-      branch,
-      pipeline_branch ?? `${config.branch.pipeline_prefix}${branch}`,
-      integration_branch ?? `${config.branch.integration_prefix}${branch}`,
-      event.request_id,
-    );
-  } catch (err: any) {
-    logger.error({ err: err.message, branch }, 'Post-merge branch cleanup failed');
-  }
-});
+// Pipeline runs: 10 per minute (expensive LLM operations)
+const pipelineRunLimiter = new RateLimiter({ max: 10, windowMs: 60_000 });
+// Webhooks: 60 per minute (GitHub can burst events)
+const webhookLimiter = new RateLimiter({ max: 60, windowMs: 60_000 });
 
 // ── Hono app ────────────────────────────────────────────────────
 
@@ -226,17 +133,41 @@ app.use('*', honoLogger());
 // Health check
 app.get('/health', (c) => c.json({ status: 'ok', service: 'pipeline' }));
 
+// Rate-limit mutation endpoints
+app.use('/pipeline/run', pipelineRunLimiter.middleware());
+app.use('/director/run', pipelineRunLimiter.middleware());
+app.use('/webhooks/*', webhookLimiter.middleware());
+
 // Mount route groups
 app.route('/pipeline', createPipelineRoutes(runner, eventBus, idempotencyGuard));
 app.route('/director', createDirectorRoutes(director, manifestManager));
 app.route('/webhooks', createWebhookRoutes(eventBus, config));
 app.route('/logs', createLogRoutes(requestLogger));
 
+// ── Service container ──────────────────────────────────────────
+
+const container = new ServiceContainer();
+container.registerInstance('config', config);
+container.registerInstance('eventBus', eventBus);
+container.registerInstance('modelFactory', modelFactory);
+container.registerInstance('runner', runner);
+container.registerInstance('manifestManager', manifestManager);
+container.registerInstance('integrator', integrator);
+container.registerInstance('director', director, () => director.stopSchedule());
+container.registerInstance('branchCleaner', branchCleaner);
+container.registerInstance('idempotencyGuard', idempotencyGuard);
+container.registerInstance('dlq', dlq);
+container.registerInstance('adapterManager', adapterManager, () => adapterManager.stop());
+container.registerInstance('requestLogger', requestLogger);
+container.registerInstance('pipelineRunLimiter', pipelineRunLimiter, () => pipelineRunLimiter.dispose());
+container.registerInstance('webhookLimiter', webhookLimiter, () => webhookLimiter.dispose());
+
 // ── Exports ─────────────────────────────────────────────────────
 
-export { app, runner, eventBus, director, manifestManager, integrator, config, idempotencyGuard, dlq, branchCleaner, adapterManager, requestLogger };
+export { app, container, runner, eventBus, director, manifestManager, integrator, config, idempotencyGuard, dlq, branchCleaner, adapterManager, requestLogger };
 export type { PipelineRequest, PipelineEvent, PipelineEventType, PipelineState, Tier, AgentName } from './core/types.js';
 export type { Manifest, IntegratorResult, DirectorStatus } from './core/manifest-types.js';
 export type { PipelineServiceConfig } from './config/schema.js';
+export { ServiceContainer } from './infrastructure/service-container.js';
 export { isHatchetEnabled } from './hatchet/client.js';
 export { startHatchetWorker } from './hatchet/worker.js';

@@ -1,0 +1,17 @@
+{
+  "name": "@funny/chrome-extension",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "bun run build.ts",
+    "watch": "bun run build.ts --watch"
+  },
+  "dependencies": {
+    "@funny/funny-client": "workspace:*"
+  },
+  "devDependencies": {
+    "chrome-types": "^0.1.325",
+    "esbuild": "^0.24.0"
+  }
+}

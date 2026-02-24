@@ -187,7 +187,7 @@ export const api = {
     return request<PaginatedMessages>(`/threads/${threadId}/messages?${params.toString()}`);
   },
   getThreadEvents: (threadId: string) => {
-    return request<Array<import('@funny/shared').ThreadEvent>>(`/threads/${threadId}/events`);
+    return request<{ events: Array<import('@funny/shared').ThreadEvent> }>(`/threads/${threadId}/events`);
   },
   createThread: (data: {
     projectId: string;

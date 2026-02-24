@@ -74,6 +74,7 @@ export async function getThreadEvents(threadId: string): Promise<ThreadEvent[]> 
       threadId: row.threadId,
       type: row.eventType,
       data: JSON.parse(row.data),
+      createdAt: row.createdAt,
     }));
   } catch (error) {
     log.error('[thread-event-service] Failed to retrieve events', {

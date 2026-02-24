@@ -9,12 +9,14 @@
  */
 
 import { AgentExecutor, ModelFactory } from '@funny/core/agents';
-import type { AgentContext, AgentResult, DiffStats, StepInfo } from '@funny/core/agents';
+import type { AgentContext, AgentResult, DiffStats } from '@funny/core/agents';
 import type { PipelineRequest, AgentName, Tier } from './types.js';
 import type { EventBus } from '../infrastructure/event-bus.js';
 import type { PipelineServiceConfig } from '../config/schema.js';
+import { MessagePublisher } from '../infrastructure/message-publisher.js';
 import { resolveAgentRole } from './agent-roles.js';
 import { logger } from '../infrastructure/logger.js';
+import { errorMessage } from './errors.js';
 import { nanoid } from 'nanoid';
 
 // ── Result type ─────────────────────────────────────────────────
@@ -28,28 +30,17 @@ export interface QualityPipelineResult {
 // ── QualityPipeline ─────────────────────────────────────────────
 
 export class QualityPipeline {
-  private modelFactory: ModelFactory;
   /** Metadata from the pipeline request (carries projectId, userId, etc.) */
   private requestMetadata?: Record<string, unknown>;
+  private messagePublisher: MessagePublisher;
 
   constructor(
     private eventBus: EventBus,
     private config: PipelineServiceConfig,
+    private modelFactory: ModelFactory,
     private signal?: AbortSignal,
   ) {
-    this.modelFactory = new ModelFactory({
-      anthropic: {
-        apiKey: process.env[config.llm_providers.anthropic.api_key_env],
-        baseURL: config.llm_providers.anthropic.base_url || undefined,
-      },
-      'funny-api-acp': {
-        apiKey: process.env[config.llm_providers.funny_api_acp.api_key_env],
-        baseURL: config.llm_providers.funny_api_acp.base_url || undefined,
-      },
-      ollama: {
-        baseURL: config.llm_providers.ollama.base_url || undefined,
-      },
-    });
+    this.messagePublisher = new MessagePublisher(eventBus);
   }
 
   /**
@@ -87,9 +78,11 @@ export class QualityPipeline {
     // Wave 1: run all agents in parallel
     let results = await this.runAgentWave(requestId, agents, context);
 
-    // Correction cycles
+    // Correction cycles with exponential backoff
     const correctionsApplied: string[] = [];
     const maxCorrections = this.config.auto_correction.max_attempts;
+    const backoffBaseMs = this.config.auto_correction.backoff_base_ms;
+    const backoffFactor = this.config.auto_correction.backoff_factor;
 
     for (let cycle = 0; cycle < maxCorrections; cycle++) {
       // Check for abort
@@ -97,6 +90,18 @@ export class QualityPipeline {
 
       const failed = results.filter((r) => r.status === 'failed');
       if (failed.length === 0) break;
+
+      // Exponential backoff: base * factor^cycle (e.g. 1s, 2s, 4s, ...)
+      if (backoffBaseMs > 0) {
+        const delayMs = backoffBaseMs * Math.pow(backoffFactor, cycle);
+        logger.info({ requestId, cycle: cycle + 1, delayMs }, 'Correction backoff delay');
+        await new Promise<void>((resolve) => {
+          const timer = setTimeout(resolve, delayMs);
+          // Allow abort to cancel the wait
+          this.signal?.addEventListener('abort', () => { clearTimeout(timer); resolve(); }, { once: true });
+        });
+        if (this.signal?.aborted) break;
+      }
 
       const failedNames = failed.map((r) => r.agent);
       correctionsApplied.push(`cycle-${cycle + 1}: ${failedNames.join(',')}`);
@@ -159,107 +164,17 @@ export class QualityPipeline {
     };
   }
 
-  // ── CLI message emission ─────────────────────────────────────
+  // ── CLI message emission (delegated to MessagePublisher) ─────
 
   /**
-   * Emit a pipeline.cli_message event wrapping a CLIMessage-shaped payload.
-   * The ingest-mapper on the server side processes these to populate the thread
-   * with assistant text, tool calls, tool results, and final status.
+   * Emit a structured CLI message via the shared MessagePublisher.
    */
   private async emitCLIMessage(
     requestId: string,
     cliMessage: Record<string, unknown>,
     author?: string,
   ): Promise<void> {
-    await this.eventBus.publish({
-      event_type: 'pipeline.cli_message',
-      request_id: requestId,
-      timestamp: new Date().toISOString(),
-      data: { cli_message: { ...cliMessage, author }, author },
-      metadata: this.requestMetadata,
-    });
-  }
-
-  /**
-   * Build an onStepFinish callback that translates agent steps
-   * into pipeline.cli_message events (CLIMessage format).
-   *
-   * Now receives StepInfo with both toolCalls AND toolResults populated.
-   */
-  private createStepCallback(
-    requestId: string,
-    agentName: string,
-  ): (step: StepInfo) => Promise<void> {
-    /** Monotonically increasing message ID for this agent's messages */
-    let msgCounter = 0;
-
-    return async (step: StepInfo) => {
-      const msgId = `${agentName}-msg-${++msgCounter}`;
-
-      logger.info(
-        {
-          requestId,
-          agent: agentName,
-          stepNumber: step.stepNumber,
-          hasText: !!step.text,
-          textLen: step.text?.length ?? 0,
-          toolCalls: step.toolCalls?.length ?? 0,
-          toolCallNames: step.toolCalls?.map((tc) => tc.function.name) ?? [],
-          toolResults: step.toolResults?.length ?? 0,
-          finishReason: step.finishReason,
-        },
-        'onStepFinish fired',
-      );
-
-      try {
-        // Build content blocks from the step
-        const contentBlocks: Array<Record<string, unknown>> = [];
-
-        // Add text if present — prefix with agent name so user knows which agent is speaking
-        if (step.text) {
-          contentBlocks.push({ type: 'text', text: step.text });
-        }
-
-        // Add tool calls
-        if (step.toolCalls && step.toolCalls.length > 0) {
-          for (const tc of step.toolCalls) {
-            contentBlocks.push({
-              type: 'tool_use',
-              id: tc.id,
-              name: tc.function.name,
-              input: JSON.parse(tc.function.arguments),
-            });
-          }
-        }
-
-        // Emit assistant message with text + tool_use blocks (must complete first)
-        if (contentBlocks.length > 0) {
-          await this.emitCLIMessage(requestId, {
-            type: 'assistant',
-            message: {
-              id: msgId,
-              content: contentBlocks,
-            },
-          }, agentName);
-        }
-
-        // Emit tool results as user message (after assistant is delivered)
-        if (step.toolResults && step.toolResults.length > 0) {
-          const resultBlocks = step.toolResults.map((tr) => ({
-            type: 'tool_result',
-            tool_use_id: tr.toolCallId,
-            content: tr.result,
-          }));
-
-          await this.emitCLIMessage(requestId, {
-            type: 'user',
-            message: { content: resultBlocks },
-          }, agentName);
-        }
-      } catch (err: any) {
-        logger.error({ err: err.message, requestId, agent: agentName }, 'Failed to emit CLI step messages');
-      }
-    };
+    await this.messagePublisher.emitMessage(requestId, cliMessage, this.requestMetadata, author);
   }
 
   // ── Agent wave execution ──────────────────────────────────────
@@ -314,7 +229,7 @@ export class QualityPipeline {
 
         const result = await executor.execute(role, context, {
           signal: this.signal,
-          onStepFinish: this.createStepCallback(requestId, agentName),
+          onStepFinish: this.messagePublisher.createStepCallback(requestId, agentName, this.requestMetadata),
         });
 
         // Emit a final assistant message with the agent's summary
@@ -370,11 +285,12 @@ export class QualityPipeline {
         );
 
         return result;
-      } catch (err: any) {
+      } catch (err: unknown) {
         const durationMs = Date.now() - startTime;
+        const msg = errorMessage(err);
 
         logger.error(
-          { requestId, agent: agentName, err: err.message, durationMs },
+          { requestId, agent: agentName, err: msg, durationMs },
           'Agent execution failed',
         );
 
@@ -385,7 +301,7 @@ export class QualityPipeline {
           timestamp: new Date().toISOString(),
           data: {
             agent_name: agentName,
-            error: err.message,
+            error: msg,
             duration_ms: durationMs,
           },
           metadata: this.requestMetadata,
@@ -398,7 +314,7 @@ export class QualityPipeline {
           findings: [
             {
               severity: 'critical',
-              description: `Agent execution error: ${err.message}`,
+              description: `Agent execution error: ${msg}`,
               fix_applied: false,
             },
           ],

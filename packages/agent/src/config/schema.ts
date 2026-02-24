@@ -70,7 +70,12 @@ export const PipelineServiceConfigSchema = z.object({
 
   auto_correction: z.object({
     max_attempts: z.number().int().min(0).default(2),
+    backoff_base_ms: z.number().int().min(0).default(1000),
+    backoff_factor: z.number().min(1).default(2),
   }).default({}),
+
+  /** Maximum pipeline execution time in ms. 0 = no timeout (default). */
+  pipeline_timeout_ms: z.number().int().min(0).default(0),
 
   resilience: z.object({
     circuit_breaker: z.object({

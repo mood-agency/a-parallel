@@ -179,6 +179,21 @@ function handleMessage(e: MessageEvent) {
       });
       break;
     }
+    case 'thread:event': {
+      import('@/stores/thread-store').then(({ useThreadStore }) => {
+        const active = useThreadStore.getState().activeThread;
+        if (active && active.id === threadId) {
+          useThreadStore.setState({
+            activeThread: {
+              ...active,
+              messages: active.messages,
+              threadEvents: [...(active.threadEvents ?? []), data.event],
+            },
+          });
+        }
+      });
+      break;
+    }
     case 'pty:data': {
       const termStore = useTerminalStore.getState();
       termStore.emitPtyData(data.ptyId, data.data);

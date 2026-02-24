@@ -10,6 +10,7 @@
  */
 
 import { execute } from '@funny/core/git';
+import type { ModelFactory } from '@funny/core/agents';
 import type {
   PipelineRequest,
   PipelineState,
@@ -23,8 +24,10 @@ import { StateMachine, PIPELINE_TRANSITIONS } from './state-machine.js';
 import type { EventBus } from '../infrastructure/event-bus.js';
 import type { CircuitBreakers } from '../infrastructure/circuit-breaker.js';
 import type { RequestLogger } from '../infrastructure/request-logger.js';
+import { MessagePublisher } from '../infrastructure/message-publisher.js';
 import type { PipelineServiceConfig } from '../config/schema.js';
 import { logger } from '../infrastructure/logger.js';
+import { errorMessage } from './errors.js';
 import { nanoid } from 'nanoid';
 
 // ── PipelineRunner ──────────────────────────────────────────────
@@ -36,17 +39,25 @@ export class PipelineRunner {
   private abortControllers = new Map<string, AbortController>();
   /** Per-request message counters for unique CLI message IDs */
   private msgCounters = new Map<string, number>();
+  /** Timers scheduled for deferred state cleanup */
+  private cleanupTimers = new Map<string, ReturnType<typeof setTimeout>>();
+  private messagePublisher: MessagePublisher;
+
+  private static readonly MAX_COMPLETED_ENTRIES = 500;
 
   constructor(
     private eventBus: EventBus,
     private config: PipelineServiceConfig,
+    private modelFactory: ModelFactory,
     private circuitBreakers?: CircuitBreakers,
     private requestLogger?: RequestLogger,
-  ) {}
+  ) {
+    this.messagePublisher = new MessagePublisher(eventBus);
+  }
 
   /**
    * Emit a pipeline.cli_message event with an assistant text message.
-   * Used by PipelineRunner stages to send user-visible status updates.
+   * Uses MessagePublisher for the actual event emission.
    */
   private async emitCLIText(
     requestId: string,
@@ -56,29 +67,14 @@ export class PipelineRunner {
   ): Promise<void> {
     const count = (this.msgCounters.get(requestId) ?? 0) + 1;
     this.msgCounters.set(requestId, count);
-
-    await this.eventBus.publish({
-      event_type: 'pipeline.cli_message',
-      request_id: requestId,
-      timestamp: new Date().toISOString(),
-      data: {
-        cli_message: {
-          type: 'assistant',
-          message: {
-            id: `pipeline-msg-${count}`,
-            content: [{ type: 'text', text }],
-          },
-          author: author ?? 'pipeline',
-        },
-        author: author ?? 'pipeline',
-      },
-      metadata,
-    });
+    await this.messagePublisher.emitText(requestId, text, `pipeline-msg-${count}`, metadata, author);
   }
 
   // ── Public API ──────────────────────────────────────────────────
 
   async run(request: PipelineRequest): Promise<void> {
+    this.pruneStaleEntries();
+
     const { request_id } = request;
     const baseBranch = request.base_branch ?? this.config.branch.main;
     const pipelinePrefix = this.config.branch.pipeline_prefix;
@@ -101,6 +97,16 @@ export class PipelineRunner {
     // Create abort controller for this run
     const abortController = new AbortController();
     this.abortControllers.set(request_id, abortController);
+
+    // Set up pipeline timeout if configured (0 = disabled)
+    const timeoutMs = this.config.pipeline_timeout_ms;
+    let timeoutHandle: ReturnType<typeof setTimeout> | undefined;
+    if (timeoutMs > 0) {
+      timeoutHandle = setTimeout(() => {
+        logger.warn({ requestId: request_id, timeoutMs }, 'Pipeline timeout reached, aborting');
+        abortController.abort(new Error(`Pipeline timeout after ${timeoutMs}ms`));
+      }, timeoutMs);
+    }
 
     // Publish accepted event (metadata carries projectId for thread creation)
     await this.eventBus.publish({
@@ -201,7 +207,7 @@ export class PipelineRunner {
       );
 
       // 5. Create and run QualityPipeline
-      const pipeline = new QualityPipeline(this.eventBus, this.config, abortController.signal);
+      const pipeline = new QualityPipeline(this.eventBus, this.config, this.modelFactory, abortController.signal);
       this.activePipelines.set(request_id, pipeline);
 
       const runPipeline = async () => {
@@ -257,33 +263,51 @@ export class PipelineRunner {
       } else {
         await runPipeline();
       }
-    } catch (err: any) {
+    } catch (err: unknown) {
+      const msg = errorMessage(err);
+
       if (abortController.signal.aborted) {
-        // Stopped by user
+        const isTimeout = msg.includes('Pipeline timeout');
         this.updateStatus(request_id, 'failed');
         await this.eventBus.publish({
-          event_type: 'pipeline.stopped',
+          event_type: isTimeout ? 'pipeline.failed' : 'pipeline.stopped',
           request_id,
           timestamp: new Date().toISOString(),
-          data: {},
+          data: {
+            ...(isTimeout ? { reason: 'timeout', timeout_ms: timeoutMs } : {}),
+            branch: request.branch,
+          },
           metadata: request.metadata,
         });
         return;
       }
 
-      logger.error({ requestId: request_id, err: err.message }, 'Pipeline execution failed');
-      this.requestLogger?.error('pipeline.runner', request_id, 'execution_failed', err.message, { error: err.message });
+      logger.error({ requestId: request_id, err: msg }, 'Pipeline execution failed');
+      this.requestLogger?.error('pipeline.runner', request_id, 'execution_failed', msg, { error: msg });
       this.updateStatus(request_id, 'error');
       await this.eventBus.publish({
         event_type: 'pipeline.failed',
         request_id,
         timestamp: new Date().toISOString(),
-        data: { error: err.message },
+        data: { error: msg },
         metadata: request.metadata,
       });
     } finally {
-      this.activePipelines.delete(request_id);
-      this.abortControllers.delete(request_id);
+      // Clear timeout if set
+      if (timeoutHandle) clearTimeout(timeoutHandle);
+
+      // Clean up active run resources immediately
+      try { this.activePipelines.delete(request_id); } catch { /* swallow */ }
+      try { this.abortControllers.delete(request_id); } catch { /* swallow */ }
+      try { this.msgCounters.delete(request_id); } catch { /* swallow */ }
+
+      // Keep states/machines queryable for 60s after completion, then auto-delete
+      const timer = setTimeout(() => {
+        this.states.delete(request_id);
+        this.machines.delete(request_id);
+        this.cleanupTimers.delete(request_id);
+      }, 60_000);
+      this.cleanupTimers.set(request_id, timer);
     }
   }
 
@@ -307,9 +331,37 @@ export class PipelineRunner {
     for (const controller of this.abortControllers.values()) {
       controller.abort();
     }
+    // Clear all deferred cleanup timers
+    for (const timer of this.cleanupTimers.values()) {
+      clearTimeout(timer);
+    }
+    this.cleanupTimers.clear();
   }
 
   // ── Internal helpers ────────────────────────────────────────────
+
+  /**
+   * Prune oldest completed entries when Maps exceed the safety cap.
+   * Prevents unbounded memory growth if deferred cleanup timers fail.
+   */
+  private pruneStaleEntries(): void {
+    if (this.states.size <= PipelineRunner.MAX_COMPLETED_ENTRIES) return;
+
+    for (const [id] of this.states) {
+      if (this.states.size <= PipelineRunner.MAX_COMPLETED_ENTRIES) break;
+      // Only prune entries that are NOT actively running
+      if (!this.activePipelines.has(id)) {
+        this.states.delete(id);
+        this.machines.delete(id);
+        this.msgCounters.delete(id);
+        const timer = this.cleanupTimers.get(id);
+        if (timer) {
+          clearTimeout(timer);
+          this.cleanupTimers.delete(id);
+        }
+      }
+    }
+  }
 
   private async getChangedFiles(worktreePath: string, baseBranch: string): Promise<string[]> {
     try {

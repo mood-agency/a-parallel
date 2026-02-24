@@ -60,7 +60,7 @@ export function ThreadEventsPanel({ threadId }: ThreadEventsPanelProps) {
       setLoading(true);
       const result = await api.getThreadEvents(threadId);
       if (mounted && result.isOk()) {
-        setEvents(result.value);
+        setEvents(result.value.events);
       }
       if (mounted) {
         setLoading(false);

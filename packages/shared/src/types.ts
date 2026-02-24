@@ -348,6 +348,10 @@ export interface WSAutomationRunUpdatedData {
   status?: string;
 }
 
+export interface WSThreadEventData {
+  event: ThreadEvent;
+}
+
 export type WSEvent =
   | { type: 'agent:init'; threadId: string; data: WSInitData }
   | { type: 'agent:message'; threadId: string; data: WSMessageData }
@@ -369,7 +373,8 @@ export type WSEvent =
   | { type: 'thread:updated'; threadId: string; data: WSThreadUpdatedData }
   | { type: 'thread:queue_update'; threadId: string; data: WSQueueUpdateData }
   | { type: 'workflow:step'; threadId: string; data: WSWorkflowStepData }
-  | { type: 'workflow:status'; threadId: string; data: WSWorkflowStatusData };
+  | { type: 'workflow:status'; threadId: string; data: WSWorkflowStatusData }
+  | { type: 'thread:event'; threadId: string; data: WSThreadEventData };
 
 export type WSEventType = WSEvent['type'];
 

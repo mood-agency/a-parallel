@@ -8,7 +8,8 @@
 import EventEmitter from 'eventemitter3';
 import { join } from 'path';
 import { mkdirSync, existsSync } from 'fs';
-import type { PipelineEvent } from '../core/types.js';
+import { appendFile } from 'fs/promises';
+import type { PipelineEvent, PipelineEventType } from '../core/types.js';
 import { logger } from './logger.js';
 
 const DEFAULT_EVENTS_PATH = join(
@@ -42,15 +43,41 @@ export class EventBus extends EventEmitter<EventBusEvents> {
     const line = JSON.stringify(event) + '\n';
 
     try {
-      // Append to JSONL file
-      const file = Bun.file(filePath);
-      const existing = await file.exists() ? await file.text() : '';
-      await Bun.write(filePath, existing + line);
+      await appendFile(filePath, line, 'utf-8');
     } catch (err) {
       logger.error({ err, requestId: event.request_id }, 'Failed to persist event');
     }
 
     this.emit('event', event);
+  }
+
+  /**
+   * Subscribe to a specific event type. Returns an unsubscribe function.
+   */
+  onEventType(
+    eventType: PipelineEventType,
+    handler: (event: PipelineEvent) => void,
+  ): () => void {
+    const wrappedHandler = (event: PipelineEvent) => {
+      if (event.event_type === eventType) handler(event);
+    };
+    this.on('event', wrappedHandler);
+    return () => this.off('event', wrappedHandler);
+  }
+
+  /**
+   * Subscribe to multiple event types with a single handler. Returns an unsubscribe function.
+   */
+  onEventTypes(
+    eventTypes: PipelineEventType[],
+    handler: (event: PipelineEvent) => void,
+  ): () => void {
+    const typeSet = new Set(eventTypes);
+    const wrappedHandler = (event: PipelineEvent) => {
+      if (typeSet.has(event.event_type)) handler(event);
+    };
+    this.on('event', wrappedHandler);
+    return () => this.off('event', wrappedHandler);
   }
 
   /**

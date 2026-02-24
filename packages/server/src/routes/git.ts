@@ -15,6 +15,7 @@ import { getGitIdentity, getGithubToken } from '../services/profile-service.js';
 import type { HonoEnv } from '../types/hono-env.js';
 import { wsBroker } from '../services/ws-broker.js';
 import { threadEventBus } from '../services/thread-event-bus.js';
+import { saveThreadEvent } from '../services/thread-event-service.js';
 
 export const gitRoutes = new Hono<HonoEnv>();
 
@@ -334,7 +335,25 @@ gitRoutes.post('/:threadId/pr', async (c) => {
   const identity = resolveIdentity(userId);
   const result = await createPR(cwd, parsed.value.title, parsed.value.body, thread?.baseBranch ?? undefined, identity);
   if (result.isErr()) return resultToResponse(c, result);
-  return c.json({ ok: true, url: result.value });
+
+  const prUrl = result.value;
+  const prData = { title: parsed.value.title, url: prUrl };
+  await saveThreadEvent(threadId, 'git:pr_created', prData);
+  wsBroker.emitToUser(userId, {
+    type: 'thread:event',
+    threadId,
+    data: {
+      event: {
+        id: crypto.randomUUID(),
+        threadId,
+        type: 'git:pr_created',
+        data: JSON.stringify(prData),
+        createdAt: new Date().toISOString(),
+      },
+    },
+  });
+
+  return c.json({ ok: true, url: prUrl });
 });
 
 // POST /api/git/:threadId/generate-commit-message

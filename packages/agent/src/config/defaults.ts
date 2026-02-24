@@ -49,7 +49,11 @@ export const DEFAULT_CONFIG = {
 
   auto_correction: {
     max_attempts: 2,
+    backoff_base_ms: 1000,
+    backoff_factor: 2,
   },
+
+  pipeline_timeout_ms: 0,  // 0 = no timeout
 
   resilience: {
     circuit_breaker: {
