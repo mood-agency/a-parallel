@@ -96,26 +96,35 @@ function handleMessage(e: MessageEvent) {
       });
       break;
     case 'agent:result': {
-      // Flush any pending messages before result so ordering is preserved,
-      // then dispatch result — all inside one transition so React can yield
-      // to user interactions (clicks, keypress) instead of blocking.
-      const hasPendingResult = pendingMessages.size > 0 || pendingToolOutputs.length > 0;
-      if (hasPendingResult && rafId !== null) {
+      // Flush any pending batched messages synchronously (outside
+      // startTransition) so React commits them immediately.  Then
+      // defer the result dispatch to the next animation frame — this
+      // guarantees all prior startTransition updates (from
+      // agent:tool_call, agent:status, etc.) have been committed
+      // before the UI transitions to "completed".
+      if (rafId !== null) {
         cancelAnimationFrame(rafId);
         rafId = null;
       }
-      startTransition(() => {
-        if (hasPendingResult) {
-          const msgs = Array.from(pendingMessages.values());
-          const toolOutputs = pendingToolOutputs.slice();
-          pendingMessages.clear();
-          pendingToolOutputs = [];
-          const store = useAppStore.getState();
-          for (const entry of msgs) store.handleWSMessage(entry.threadId, entry.data);
-          for (const entry of toolOutputs) store.handleWSToolOutput(entry.threadId, entry.data);
-        }
-        useAppStore.getState().handleWSResult(threadId, data);
+      const msgs = Array.from(pendingMessages.values());
+      const toolOutputs = pendingToolOutputs.slice();
+      pendingMessages.clear();
+      pendingToolOutputs = [];
+
+      // Flush pending messages/tool outputs synchronously
+      if (msgs.length > 0 || toolOutputs.length > 0) {
+        const store = useAppStore.getState();
+        for (const entry of msgs) store.handleWSMessage(entry.threadId, entry.data);
+        for (const entry of toolOutputs) store.handleWSToolOutput(entry.threadId, entry.data);
+      }
+
+      // Defer result dispatch so prior transitions settle first
+      requestAnimationFrame(() => {
+        startTransition(() => {
+          useAppStore.getState().handleWSResult(threadId, data);
+        });
       });
+
       // Final review pane refresh when agent finishes
       import('@/stores/review-pane-store').then(({ useReviewPaneStore }) => {
         useReviewPaneStore.getState().notifyDirty(threadId);

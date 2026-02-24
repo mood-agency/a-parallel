@@ -21,9 +21,11 @@ interface ToolCallCardProps {
   onRespond?: (answer: string) => void;
   /** When true, hides the tool label (used inside ToolCallGroup to avoid redundancy) */
   hideLabel?: boolean;
+  /** Plan text from the parent assistant message (for ExitPlanMode) */
+  planText?: string;
 }
 
-export const ToolCallCard = memo(function ToolCallCard({ name, input, output, onRespond, hideLabel }: ToolCallCardProps) {
+export const ToolCallCard = memo(function ToolCallCard({ name, input, output, onRespond, hideLabel, planText }: ToolCallCardProps) {
   const { t } = useTranslation();
   const isTodo = name === 'TodoWrite';
   const [expanded, setExpanded] = useState(!!onRespond || isTodo);
@@ -54,9 +56,9 @@ export const ToolCallCard = memo(function ToolCallCard({ name, input, output, on
   }, [output, expanded]);
 
   // Specialized cards
-  // ExitPlanMode must be checked before isPlan — its input contains a `plan` field
-  // but needs approval buttons, which PlanCard doesn't provide.
-  if (name === 'ExitPlanMode') return <ExitPlanModeCard plan={typeof parsed.plan === 'string' ? parsed.plan : undefined} onRespond={output ? undefined : onRespond} output={output} />;
+  // ExitPlanMode: use plan from input if available, otherwise fall back to the
+  // parent assistant message content (the SDK sends ExitPlanMode with empty input)
+  if (name === 'ExitPlanMode') return <ExitPlanModeCard plan={typeof parsed.plan === 'string' ? parsed.plan : planText} onRespond={output ? undefined : onRespond} output={output} />;
   if (isPlan) return <PlanCard parsed={parsed} output={output} hideLabel={hideLabel} />;
   if (name === 'Bash') return <BashCard parsed={parsed} output={output} hideLabel={hideLabel} />;
   if (name === 'Read') return <ReadFileCard parsed={parsed} output={output} hideLabel={hideLabel} />;
@@ -175,5 +177,5 @@ export const ToolCallCard = memo(function ToolCallCard({ name, input, output, on
     </div>
   );
 }, (prev, next) => {
-  return prev.name === next.name && prev.input === next.input && prev.output === next.output && prev.hideLabel === next.hideLabel && !!prev.onRespond === !!next.onRespond;
+  return prev.name === next.name && prev.input === next.input && prev.output === next.output && prev.hideLabel === next.hideLabel && !!prev.onRespond === !!next.onRespond && prev.planText === next.planText;
 });

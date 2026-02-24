@@ -1261,55 +1261,55 @@ export const PromptInput = memo(function PromptInput({
           </div>
           {/* Separator + Bottom bar — different content for new thread vs follow-up */}
           <div className="border-t border-border px-2 py-1.5">
-            <div className="flex items-center gap-1 overflow-x-auto no-scrollbar">
-              {isNewThread ? (
-                <>
-                  {remoteUrl && (
-                    <span className="flex items-center gap-1 px-2 py-1 text-xs text-muted-foreground truncate max-w-[200px] shrink-0">
-                      {remoteUrl.includes('github.com') ? (
-                        <Github className="h-3 w-3 shrink-0" />
-                      ) : (
-                        <Globe className="h-3 w-3 shrink-0" />
-                      )}
-                      <span className="truncate font-mono">{formatRemoteUrl(remoteUrl)}</span>
-                    </span>
-                  )}
-                  {newThreadBranches.length > 0 && (
-                    <BranchPicker
-                      branches={newThreadBranches}
-                      selected={selectedBranch}
-                      onChange={setSelectedBranch}
-                    />
-                  )}
-                  <label className="flex items-center gap-1.5 text-xs text-muted-foreground shrink-0 cursor-pointer">
-                    <Switch
-                      checked={createWorktree}
-                      onCheckedChange={setCreateWorktree}
-                      tabIndex={-1}
-                      className="h-4 w-7 data-[state=checked]:bg-primary data-[state=unchecked]:bg-input [&>span]:h-3 [&>span]:w-3 [&>span]:data-[state=checked]:translate-x-3"
-                    />
-                    <span>{t('thread.mode.worktree')}</span>
-                  </label>
-                  {showBacklog && (
-                    <button
-                      onClick={() => setSendToBacklog((v) => !v)}
-                      tabIndex={-1}
-                      className={cn(
-                        'flex items-center gap-1 px-2 py-1 text-xs rounded transition-colors shrink-0 ml-auto',
-                        sendToBacklog
-                          ? 'bg-primary/10 text-primary'
-                          : 'text-muted-foreground hover:text-foreground hover:bg-muted'
-                      )}
-                      title={t('prompt.sendToBacklog')}
-                    >
-                      <Inbox className="h-3 w-3" />
-                      {t('prompt.backlog')}
-                    </button>
-                  )}
-                </>
-              ) : (
-                <>
-                  {effectiveCwd && (
+            {isNewThread ? (
+              <div className="flex items-center gap-1 overflow-x-auto no-scrollbar">
+                {remoteUrl && (
+                  <span className="flex items-center gap-1 px-2 py-1 text-xs text-muted-foreground truncate max-w-[200px] shrink-0">
+                    {remoteUrl.includes('github.com') ? (
+                      <Github className="h-3 w-3 shrink-0" />
+                    ) : (
+                      <Globe className="h-3 w-3 shrink-0" />
+                    )}
+                    <span className="truncate font-mono">{formatRemoteUrl(remoteUrl)}</span>
+                  </span>
+                )}
+                {newThreadBranches.length > 0 && (
+                  <BranchPicker
+                    branches={newThreadBranches}
+                    selected={selectedBranch}
+                    onChange={setSelectedBranch}
+                  />
+                )}
+                <label className="flex items-center gap-1.5 text-xs text-muted-foreground shrink-0 cursor-pointer">
+                  <Switch
+                    checked={createWorktree}
+                    onCheckedChange={setCreateWorktree}
+                    tabIndex={-1}
+                    className="h-4 w-7 data-[state=checked]:bg-primary data-[state=unchecked]:bg-input [&>span]:h-3 [&>span]:w-3 [&>span]:data-[state=checked]:translate-x-3"
+                  />
+                  <span>{t('thread.mode.worktree')}</span>
+                </label>
+                {showBacklog && (
+                  <button
+                    onClick={() => setSendToBacklog((v) => !v)}
+                    tabIndex={-1}
+                    className={cn(
+                      'flex items-center gap-1 px-2 py-1 text-xs rounded transition-colors shrink-0 ml-auto',
+                      sendToBacklog
+                        ? 'bg-primary/10 text-primary'
+                        : 'text-muted-foreground hover:text-foreground hover:bg-muted'
+                    )}
+                    title={t('prompt.sendToBacklog')}
+                  >
+                    <Inbox className="h-3 w-3" />
+                    {t('prompt.backlog')}
+                  </button>
+                )}
+              </div>
+            ) : (
+              <div className="flex flex-col gap-1">
+                {effectiveCwd && (
+                  <div className="flex items-center gap-1 overflow-x-auto no-scrollbar">
                     <span className="group/cwd flex items-center gap-1 px-2 py-1 text-xs text-muted-foreground truncate max-w-[400px] shrink-0">
                       <FolderOpen className="h-3 w-3 shrink-0" />
                       <span className="truncate font-mono">{effectiveCwd}</span>
@@ -1321,42 +1321,46 @@ export const PromptInput = memo(function PromptInput({
                         <Copy className="h-3 w-3" />
                       </button>
                     </span>
-                  )}
-                  {followUpBranches.length > 0 && (
-                    <span className="group/base flex items-center gap-1 shrink-0">
-                      <BranchPicker
-                        branches={followUpBranches}
-                        selected={followUpSelectedBranch}
-                        onChange={setFollowUpSelectedBranch}
-                      />
-                      <button
-                        type="button"
-                        className="shrink-0 text-muted-foreground hover:text-foreground transition-colors opacity-0 group-hover/base:opacity-100"
-                        onClick={() => { navigator.clipboard.writeText(followUpSelectedBranch); toast.success('Branch copied'); }}
-                      >
-                        <Copy className="h-3 w-3" />
-                      </button>
-                    </span>
-                  )}
-                  {activeThreadBranch && followUpBranches.length > 0 && (
-                    <ArrowLeft className="h-3 w-3 text-muted-foreground shrink-0" />
-                  )}
-                  {activeThreadBranch && (
-                    <span className="group/src flex items-center gap-1 px-2 py-1 text-xs text-muted-foreground shrink-0">
-                      <GitBranch className="h-3 w-3 shrink-0" />
-                      <span className="font-mono font-medium text-foreground">{activeThreadBranch}</span>
-                      <button
-                        type="button"
-                        className="shrink-0 hover:text-foreground transition-colors opacity-0 group-hover/src:opacity-100"
-                        onClick={() => { navigator.clipboard.writeText(activeThreadBranch); toast.success('Branch copied'); }}
-                      >
-                        <Copy className="h-3 w-3" />
-                      </button>
-                    </span>
-                  )}
-                </>
-              )}
-            </div>
+                  </div>
+                )}
+                {(followUpBranches.length > 0 || activeThreadBranch) && (
+                  <div className="flex items-center gap-1 overflow-x-auto no-scrollbar">
+                    {followUpBranches.length > 0 && (
+                      <span className="group/base flex items-center gap-1 shrink-0">
+                        <BranchPicker
+                          branches={followUpBranches}
+                          selected={followUpSelectedBranch}
+                          onChange={setFollowUpSelectedBranch}
+                        />
+                        <button
+                          type="button"
+                          className="shrink-0 text-muted-foreground hover:text-foreground transition-colors opacity-0 group-hover/base:opacity-100"
+                          onClick={() => { navigator.clipboard.writeText(followUpSelectedBranch); toast.success('Branch copied'); }}
+                        >
+                          <Copy className="h-3 w-3" />
+                        </button>
+                      </span>
+                    )}
+                    {activeThreadBranch && followUpBranches.length > 0 && (
+                      <ArrowLeft className="h-3 w-3 text-muted-foreground shrink-0" />
+                    )}
+                    {activeThreadBranch && (
+                      <span className="group/src flex items-center gap-1 px-2 py-1 text-xs text-muted-foreground shrink-0">
+                        <GitBranch className="h-3 w-3 shrink-0" />
+                        <span className="font-mono font-medium text-foreground">{activeThreadBranch}</span>
+                        <button
+                          type="button"
+                          className="shrink-0 hover:text-foreground transition-colors opacity-0 group-hover/src:opacity-100"
+                          onClick={() => { navigator.clipboard.writeText(activeThreadBranch); toast.success('Branch copied'); }}
+                        >
+                          <Copy className="h-3 w-3" />
+                        </button>
+                      </span>
+                    )}
+                  </div>
+                )}
+              </div>
+            )}
           </div>
         </div>
       </div>

@@ -460,7 +460,7 @@ function ChatView({
               )}
 
               {activeThread.messages?.flatMap((msg) => [
-                msg.content && (
+                msg.content && !msg.toolCalls?.some((tc: any) => tc.name === 'ExitPlanMode') && (
                   <div
                     key={msg.id}
                     className={cn(
@@ -525,6 +525,7 @@ function ChatView({
                     name={tc.name}
                     input={tc.input}
                     output={tc.output}
+                    planText={tc.name === 'ExitPlanMode' && msg.content?.trim() ? msg.content.trim() : undefined}
                     onRespond={
                       (tc.name === 'AskUserQuestion' || tc.name === 'ExitPlanMode')
                         ? (answer: string) => handleSend(answer, { model: '', mode: '' })

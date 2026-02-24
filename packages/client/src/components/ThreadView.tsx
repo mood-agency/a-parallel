@@ -366,12 +366,18 @@ function buildGroupedRenderItems(messages: any[], threadEvents?: import('@funny/
   // Flatten all messages into a single stream of items
   const flat: ({ type: 'message'; msg: any } | { type: 'toolcall'; tc: any })[] = [];
   for (const msg of messages) {
-    // Only add message bubble if there's actual text content
-    // Tool calls are handled separately below
-    if (msg.content && msg.content.trim()) {
+    const hasExitPlanMode = msg.toolCalls?.some((tc: any) => tc.name === 'ExitPlanMode');
+    // Only add message bubble if there's actual text content.
+    // Skip if the message has an ExitPlanMode tool call — the plan text
+    // will be shown inside the ExitPlanModeCard instead.
+    if (msg.content && msg.content.trim() && !hasExitPlanMode) {
       flat.push({ type: 'message', msg });
     }
     for (const tc of msg.toolCalls ?? []) {
+      // Attach parent message content as plan text for ExitPlanMode
+      if (tc.name === 'ExitPlanMode' && msg.content?.trim()) {
+        tc._planText = msg.content.trim();
+      }
       flat.push({ type: 'toolcall', tc });
     }
   }
@@ -557,6 +563,7 @@ const MemoizedMessageList = memo(function MemoizedMessageList({
             name={tc.name}
             input={tc.input}
             output={tc.output}
+            planText={tc._planText}
             onRespond={(tc.name === 'AskUserQuestion' || tc.name === 'ExitPlanMode') ? (answer: string) => {
               useAppStore.getState().handleWSToolOutput(threadId, { toolCallId: tc.id, output: answer });
               onSend(answer, { model: '', mode: '' });

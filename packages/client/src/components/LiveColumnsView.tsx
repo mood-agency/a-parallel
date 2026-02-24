@@ -104,10 +104,14 @@ type RenderItem =
 function buildGroupedRenderItems(messages: any[]): RenderItem[] {
   const flat: ({ type: 'message'; msg: any } | { type: 'toolcall'; tc: any })[] = [];
   for (const msg of messages) {
-    if (msg.content && msg.content.trim()) {
+    const hasExitPlanMode = msg.toolCalls?.some((tc: any) => tc.name === 'ExitPlanMode');
+    if (msg.content && msg.content.trim() && !hasExitPlanMode) {
       flat.push({ type: 'message', msg });
     }
     for (const tc of msg.toolCalls ?? []) {
+      if (tc.name === 'ExitPlanMode' && msg.content?.trim()) {
+        tc._planText = msg.content.trim();
+      }
       flat.push({ type: 'toolcall', tc });
     }
   }
@@ -355,6 +359,7 @@ const ThreadColumn = memo(function ThreadColumn({ threadId }: { threadId: string
                       name={ti.tc.name}
                       input={ti.tc.input}
                       output={ti.tc.output}
+                      planText={ti.tc._planText}
                     />
                   </div>
                 );
