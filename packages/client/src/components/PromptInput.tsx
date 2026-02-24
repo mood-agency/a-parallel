@@ -1,7 +1,7 @@
 import { useState, useRef, useEffect, useCallback, useMemo, memo } from 'react';
 import { useTranslation } from 'react-i18next';
 import { toast } from 'sonner';
-import { ArrowUp, Square, Loader2, Paperclip, X, Zap, GitBranch, Check, Inbox, FileText, Globe } from 'lucide-react';
+import { ArrowUp, Square, Loader2, Paperclip, X, Zap, GitBranch, Check, Inbox, FileText, Globe, Github } from 'lucide-react';
 import { Switch } from '@/components/ui/switch';
 import { Button } from '@/components/ui/button';
 import {
@@ -1255,7 +1255,11 @@ export const PromptInput = memo(function PromptInput({
             <div className="flex items-center gap-1 overflow-x-auto no-scrollbar">
               {remoteUrl && (
                 <span className="flex items-center gap-1 px-2 py-1 text-xs text-muted-foreground truncate max-w-[200px] shrink-0">
-                  <Globe className="h-3 w-3 shrink-0" />
+                  {remoteUrl.includes('github.com') ? (
+                    <Github className="h-3 w-3 shrink-0" />
+                  ) : (
+                    <Globe className="h-3 w-3 shrink-0" />
+                  )}
                   <span className="truncate font-mono">{formatRemoteUrl(remoteUrl)}</span>
                 </span>
               )}
