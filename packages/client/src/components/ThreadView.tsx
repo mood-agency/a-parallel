@@ -2,7 +2,6 @@ import { useState, useRef, useEffect, useLayoutEffect, useCallback, useMemo, mem
 import { useTranslation } from 'react-i18next';
 import { toast } from 'sonner';
 import { motion, AnimatePresence, useReducedMotion } from 'motion/react';
-import { useVirtualizer } from '@tanstack/react-virtual';
 import { useUIStore } from '@/stores/ui-store';
 import { cn } from '@/lib/utils';
 import { Input } from '@/components/ui/input';
@@ -537,7 +536,7 @@ function getItemKey(item: RenderItem): string {
   return '';
 }
 
-/** Virtualized + memoized message list for long threads */
+/** Memoized message list to avoid rebuilding on unrelated state changes */
 const MemoizedMessageList = memo(function MemoizedMessageList({
   messages,
   threadEvents,
@@ -547,7 +546,6 @@ const MemoizedMessageList = memo(function MemoizedMessageList({
   snapshotMap,
   onSend,
   onOpenLightbox,
-  scrollContainerRef,
 }: {
   messages: any[];
   threadEvents?: import('@funny/shared').ThreadEvent[];
@@ -557,19 +555,10 @@ const MemoizedMessageList = memo(function MemoizedMessageList({
   snapshotMap: Map<string, number>;
   onSend: (prompt: string, opts: { model: string; mode: string }) => void;
   onOpenLightbox: (images: { src: string; alt: string }[], index: number) => void;
-  scrollContainerRef: React.RefObject<HTMLDivElement | null>;
 }) {
   const { t } = useTranslation();
 
   const groupedItems = useMemo(() => buildGroupedRenderItems(messages, threadEvents), [messages, threadEvents]);
-
-  const virtualizer = useVirtualizer({
-    count: groupedItems.length,
-    getScrollElement: () => scrollContainerRef.current,
-    estimateSize: () => 60,
-    overscan: 10,
-    getItemKey: (index) => getItemKey(groupedItems[index]),
-  });
 
   const renderToolItem = useCallback((ti: ToolItem) => {
     if (ti.type === 'toolcall') {
@@ -625,158 +614,146 @@ const MemoizedMessageList = memo(function MemoizedMessageList({
     return null;
   }, [snapshotMap, threadId, onSend]);
 
-  const renderItem = useCallback((item: RenderItem) => {
-    if (item.type === 'message') {
-      const msg = item.msg;
-      return (
-        <div
-          className={cn(
-            'relative group text-sm',
-            msg.role === 'user'
-              ? 'max-w-[80%] ml-auto rounded-lg px-3 py-2 bg-foreground text-background'
-              : 'w-full text-foreground'
-          )}
-          {...(msg.role === 'user' ? { 'data-user-msg': msg.id } : {})}
-        >
-          {msg.images && msg.images.length > 0 && (() => {
-            const allImages = msg.images!.map((i: any, j: number) => ({
-              src: `data:${i.source.media_type};base64,${i.source.data}`,
-              alt: `Attachment ${j + 1}`,
-            }));
-            return (
-              <div className="flex flex-wrap gap-2 mb-2">
-                {msg.images!.map((img: any, idx: number) => (
-                  <img
-                    key={idx}
-                    src={`data:${img.source.media_type};base64,${img.source.data}`}
-                    alt={`Attachment ${idx + 1}`}
-                    width={160}
-                    height={160}
-                    loading="lazy"
-                    className="max-h-40 rounded border border-border cursor-pointer hover:opacity-80 transition-opacity"
-                    onClick={() => onOpenLightbox(allImages, idx)}
-                  />
-                ))}
-              </div>
-            );
-          })()}
-          {msg.role === 'user' ? (
-            (() => {
-              const { files, cleanContent } = parseReferencedFiles(msg.content);
-              return (
-                <>
-                  {files.length > 0 && (
-                    <div className="flex flex-wrap gap-1 mb-1.5">
-                      {files.map((file) => (
-                        <span
-                          key={file}
-                          className="inline-flex items-center gap-1 px-1.5 py-0.5 text-xs font-mono bg-background/20 rounded text-background/70"
-                          title={file}
-                        >
-                          <FileText className="h-3 w-3 shrink-0" />
-                          {file.split('/').pop()}
-                        </span>
-                      ))}
-                    </div>
-                  )}
-                  <UserMessageContent content={cleanContent.trim()} />
-                  {(msg.model || msg.permissionMode) && (
-                    <div className="flex gap-1 mt-1.5">
-                      {msg.model && (
-                        <Badge variant="outline" className="text-[10px] px-1.5 py-0 h-4 font-medium bg-background/10 text-background/60 border-background/20">
-                          {resolveModelLabel(msg.model, t)}
-                        </Badge>
-                      )}
-                      {msg.permissionMode && (
-                        <Badge variant="outline" className="text-[10px] px-1.5 py-0 h-4 font-medium bg-background/10 text-background/60 border-background/20">
-                          {t(`prompt.${msg.permissionMode}`)}
-                        </Badge>
-                      )}
-                    </div>
-                  )}
-                </>
-              );
-            })()
-          ) : (
-            <div className="text-sm leading-relaxed break-words overflow-x-auto">
-              <div className="flex items-start gap-2">
-                {msg.author && (
-                  <Tooltip>
-                    <TooltipTrigger asChild>
-                      <Avatar className="mt-0.5">
-                        <AvatarFallback className="text-xs font-medium bg-primary/10 text-primary">
-                          {msg.author.slice(0, 2).toUpperCase()}
-                        </AvatarFallback>
-                      </Avatar>
-                    </TooltipTrigger>
-                    <TooltipContent side="top">
-                      {msg.author}
-                    </TooltipContent>
-                  </Tooltip>
-                )}
-                <div className="flex-1 min-w-0">
-                  <MessageContent content={msg.content.trim()} />
-                </div>
-                <CopyButton content={msg.content} />
-              </div>
-              <div className="mt-1">
-                <span className="text-[10px] text-muted-foreground/60 select-none">
-                  {timeAgo(msg.timestamp, t)}
-                </span>
-              </div>
-            </div>
-          )}
-        </div>
-      );
-    }
-    if (item.type === 'toolcall' || item.type === 'toolcall-group') {
-      return renderToolItem(item);
-    }
-    if (item.type === 'toolcall-run') {
-      return (
-        <div className="space-y-1">
-          {item.items.map(renderToolItem)}
-        </div>
-      );
-    }
-    if (item.type === 'thread-event') {
-      return <GitEventCard event={item.event} />;
-    }
-    return null;
-  }, [renderToolItem, onOpenLightbox, t]);
-
-  const virtualItems = virtualizer.getVirtualItems();
-
   return (
-    <div
-      style={{
-        height: virtualizer.getTotalSize(),
-        width: '100%',
-        position: 'relative',
-      }}
-    >
-      {virtualItems.map((virtualRow) => {
-        const item = groupedItems[virtualRow.index];
-        return (
-          <div
-            key={virtualRow.key}
-            data-index={virtualRow.index}
-            ref={virtualizer.measureElement}
-            style={{
-              position: 'absolute',
-              top: 0,
-              left: 0,
-              width: '100%',
-              transform: `translateY(${virtualRow.start}px)`,
-            }}
-          >
-            <div className="pb-4">
-              {renderItem(item)}
+    <>
+      {groupedItems.map((item) => {
+        const key = getItemKey(item);
+
+        if (item.type === 'message') {
+          const msg = item.msg;
+          return (
+            <div
+              key={key}
+              style={{ contentVisibility: 'auto', containIntrinsicSize: 'auto 60px' }}
+              className={cn(
+                'relative group text-sm',
+                msg.role === 'user'
+                  ? 'max-w-[80%] ml-auto rounded-lg px-3 py-2 bg-foreground text-background'
+                  : 'w-full text-foreground'
+              )}
+              {...(msg.role === 'user' ? { 'data-user-msg': msg.id } : {})}
+            >
+              {msg.images && msg.images.length > 0 && (() => {
+                const allImages = msg.images!.map((i: any, j: number) => ({
+                  src: `data:${i.source.media_type};base64,${i.source.data}`,
+                  alt: `Attachment ${j + 1}`,
+                }));
+                return (
+                  <div className="flex flex-wrap gap-2 mb-2">
+                    {msg.images!.map((img: any, idx: number) => (
+                      <img
+                        key={idx}
+                        src={`data:${img.source.media_type};base64,${img.source.data}`}
+                        alt={`Attachment ${idx + 1}`}
+                        width={160}
+                        height={160}
+                        loading="lazy"
+                        className="max-h-40 rounded border border-border cursor-pointer hover:opacity-80 transition-opacity"
+                        onClick={() => onOpenLightbox(allImages, idx)}
+                      />
+                    ))}
+                  </div>
+                );
+              })()}
+              {msg.role === 'user' ? (
+                (() => {
+                  const { files, cleanContent } = parseReferencedFiles(msg.content);
+                  return (
+                    <>
+                      {files.length > 0 && (
+                        <div className="flex flex-wrap gap-1 mb-1.5">
+                          {files.map((file) => (
+                            <span
+                              key={file}
+                              className="inline-flex items-center gap-1 px-1.5 py-0.5 text-xs font-mono bg-background/20 rounded text-background/70"
+                              title={file}
+                            >
+                              <FileText className="h-3 w-3 shrink-0" />
+                              {file.split('/').pop()}
+                            </span>
+                          ))}
+                        </div>
+                      )}
+                      <UserMessageContent content={cleanContent.trim()} />
+                      {(msg.model || msg.permissionMode) && (
+                        <div className="flex gap-1 mt-1.5">
+                          {msg.model && (
+                            <Badge variant="outline" className="text-[10px] px-1.5 py-0 h-4 font-medium bg-background/10 text-background/60 border-background/20">
+                              {resolveModelLabel(msg.model, t)}
+                            </Badge>
+                          )}
+                          {msg.permissionMode && (
+                            <Badge variant="outline" className="text-[10px] px-1.5 py-0 h-4 font-medium bg-background/10 text-background/60 border-background/20">
+                              {t(`prompt.${msg.permissionMode}`)}
+                            </Badge>
+                          )}
+                        </div>
+                      )}
+                    </>
+                  );
+                })()
+              ) : (
+                <div className="text-sm leading-relaxed break-words overflow-x-auto">
+                  <div className="flex items-start gap-2">
+                    {msg.author && (
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <Avatar className="mt-0.5">
+                            <AvatarFallback className="text-xs font-medium bg-primary/10 text-primary">
+                              {msg.author.slice(0, 2).toUpperCase()}
+                            </AvatarFallback>
+                          </Avatar>
+                        </TooltipTrigger>
+                        <TooltipContent side="top">
+                          {msg.author}
+                        </TooltipContent>
+                      </Tooltip>
+                    )}
+                    <div className="flex-1 min-w-0">
+                      <MessageContent content={msg.content.trim()} />
+                    </div>
+                    <CopyButton content={msg.content} />
+                  </div>
+                  <div className="mt-1">
+                    <span className="text-[10px] text-muted-foreground/60 select-none">
+                      {timeAgo(msg.timestamp, t)}
+                    </span>
+                  </div>
+                </div>
+              )}
             </div>
-          </div>
-        );
+          );
+        }
+
+        if (item.type === 'toolcall' || item.type === 'toolcall-group') {
+          return (
+            <div key={key} style={{ contentVisibility: 'auto', containIntrinsicSize: 'auto 40px' }}>
+              {renderToolItem(item)}
+            </div>
+          );
+        }
+
+        if (item.type === 'toolcall-run') {
+          return (
+            <div key={key} style={{ contentVisibility: 'auto', containIntrinsicSize: 'auto 40px' }}>
+              <div className="space-y-1">
+                {item.items.map(renderToolItem)}
+              </div>
+            </div>
+          );
+        }
+
+        if (item.type === 'thread-event') {
+          return (
+            <div key={key} style={{ contentVisibility: 'auto', containIntrinsicSize: 'auto 32px' }}>
+              <GitEventCard event={item.event} />
+            </div>
+          );
+        }
+
+        return null;
       })}
-    </div>
+    </>
   );
 });
 
@@ -1233,7 +1210,6 @@ export function ThreadView() {
               snapshotMap={snapshotMap}
               onSend={handleSend}
               onOpenLightbox={openLightbox}
-              scrollContainerRef={scrollViewportRef}
             />
 
             {isRunning && !isExternal && (
