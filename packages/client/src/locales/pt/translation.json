@@ -512,7 +512,8 @@
     "threadDeleted": "Thread \"{{title}}\" excluída",
     "threadCreated": "Thread \"{{title}}\" criada",
     "projectRenamed": "Projeto renomeado para \"{{name}}\"",
-    "projectDeleted": "Projeto \"{{name}}\" excluído"
+    "projectDeleted": "Projeto \"{{name}}\" excluído",
+    "threadMoved": "\"{{title}}\" movido de {{from}} para {{to}}"
   },
   "confirm": {
     "notGitRepo": "\"{{path}}\" não é um repositório git.\n\nDeseja inicializá-lo com git init?",
