@@ -568,6 +568,15 @@ export function ReviewPane() {
   const handleCreatePROnly = async () => {
     if (!effectiveThreadId || prInProgress || !prDialog) return;
     setPrInProgress(true);
+    // Push first if there are unpushed commits
+    if (gitStatus && gitStatus.unpushedCommitCount > 0) {
+      const pushResult = await api.push(effectiveThreadId);
+      if (pushResult.isErr()) {
+        toast.error(t('review.pushFailed', { message: pushResult.error.message }));
+        setPrInProgress(false);
+        return;
+      }
+    }
     const prResult = await api.createPR(effectiveThreadId, prDialog.title.trim(), prDialog.body.trim());
     if (prResult.isErr()) {
       toast.error(t('review.prFailed', { message: prResult.error.message }));
@@ -1296,25 +1305,23 @@ export function ReviewPane() {
                     <TooltipContent side="top">{t('review.agentRunningTooltip')}</TooltipContent>
                   )}
                 </Tooltip>
-                {gitStatus?.hasRemoteBranch && (
-                  <Tooltip>
-                    <TooltipTrigger asChild>
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        onClick={() => setPrDialog({ title: threadBranch || '', body: '' })}
-                        disabled={!!isAgentRunning}
-                      >
-                        <GitPullRequest className="h-3.5 w-3.5" />
-                      </Button>
-                    </TooltipTrigger>
-                    <TooltipContent side="top">
-                      {isAgentRunning
-                        ? t('review.agentRunningTooltip')
-                        : t('review.createPRTooltip', { branch: threadBranch, target: baseBranch || 'base' })}
-                    </TooltipContent>
-                  </Tooltip>
-                )}
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={() => setPrDialog({ title: threadBranch || '', body: '' })}
+                      disabled={!!isAgentRunning}
+                    >
+                      <GitPullRequest className="h-3.5 w-3.5" />
+                    </Button>
+                  </TooltipTrigger>
+                  <TooltipContent side="top">
+                    {isAgentRunning
+                      ? t('review.agentRunningTooltip')
+                      : t('review.createPRTooltip', { branch: threadBranch, target: baseBranch || 'base' })}
+                  </TooltipContent>
+                </Tooltip>
               </div>
             </div>
           )}
