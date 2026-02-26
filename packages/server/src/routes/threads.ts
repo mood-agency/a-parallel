@@ -127,7 +127,7 @@ threadRoutes.post('/idle', async (c) => {
   const raw = await c.req.json();
   const parsed = validate(createIdleThreadSchema, raw);
   if (parsed.isErr()) return resultToResponse(c, parsed);
-  const { projectId, title, mode, source, baseBranch, prompt, stage } = parsed.value;
+  const { projectId, title, mode, source, baseBranch, prompt, images, stage } = parsed.value;
 
   const projectResult = requireProject(projectId);
   if (projectResult.isErr()) return resultToResponse(c, projectResult);
@@ -180,6 +180,16 @@ threadRoutes.post('/idle', async (c) => {
   };
 
   tm.createThread(thread);
+
+  // Create a draft user message so prompt+images survive page refresh
+  if (prompt) {
+    tm.insertMessage({
+      threadId,
+      role: 'user',
+      content: prompt,
+      images: images?.length ? JSON.stringify(images) : null,
+    });
+  }
 
   threadEventBus.emit('thread:created', {
     threadId,
@@ -404,6 +414,7 @@ threadRoutes.post('/:id/message', async (c) => {
   }
 
   // Auto-move idle backlog threads to in_progress when a message is sent
+  let hasDraftMessage = false;
   if (thread.status === 'idle' && thread.stage === 'backlog') {
     const stageUpdates: Record<string, any> = { stage: 'in_progress' };
     // Update title if the prompt changed from the original initialPrompt
@@ -412,6 +423,17 @@ threadRoutes.post('/:id/message', async (c) => {
       stageUpdates.initialPrompt = content;
     }
     tm.updateThread(id, stageUpdates);
+
+    // Update existing draft message (created when idle thread was added to backlog)
+    const { messages: draftMessages } = tm.getThreadMessages({ threadId: id, limit: 1 });
+    const draftMsg = draftMessages[0];
+    if (draftMsg && draftMsg.role === 'user') {
+      tm.updateMessage(draftMsg.id, {
+        content,
+        images: images?.length ? JSON.stringify(images) : null,
+      });
+      hasDraftMessage = true;
+    }
   }
 
   // If the thread was waiting for user input (question/plan), persist the answer
@@ -472,6 +494,14 @@ threadRoutes.post('/:id/message', async (c) => {
     return c.json({ ok: true, queued: true, queuedCount: qCount, queuedMessageId: queued.id });
   }
 
+  // When sending to an idle thread that had a draft, update draft with augmented content
+  if (hasDraftMessage) {
+    const { messages: draftMsgs } = tm.getThreadMessages({ threadId: id, limit: 1 });
+    if (draftMsgs[0]) {
+      tm.updateMessage(draftMsgs[0].id, { content: augmentedContent });
+    }
+  }
+
   // Default interrupt behavior — start agent (kills existing if running)
   try {
     await startAgent(
@@ -484,6 +514,8 @@ threadRoutes.post('/:id/message', async (c) => {
       disallowedTools,
       allowedTools,
       effectiveProvider,
+      undefined, // systemPrompt
+      hasDraftMessage, // skipMessageInsert — draft already exists
     );
   } catch (err: any) {
     log.error('Failed to start agent', { namespace: 'agent', threadId: id, error: err });
@@ -720,19 +752,25 @@ threadRoutes.patch('/:id', async (c) => {
   if (parsed.value.stage === 'in_progress' && thread.status === 'idle' && thread.initialPrompt) {
     if (project) {
       const cwd = thread.worktreePath || project.path;
-      // Start agent with the saved initial prompt
+      // Read the draft message to get images (if any)
+      const { messages: draftMessages } = tm.getThreadMessages({ threadId: id, limit: 1 });
+      const draftMsg = draftMessages[0];
+      const draftImages = draftMsg?.images ? JSON.parse(draftMsg.images as string) : undefined;
+      // Start agent — skip inserting user message since draft already exists
       startAgent(
         id,
         thread.initialPrompt,
         cwd,
         (thread.model || project.defaultModel || 'sonnet') as import('@funny/shared').AgentModel,
         (thread.permissionMode || 'autoEdit') as import('@funny/shared').PermissionMode,
-        undefined,
+        draftImages,
         undefined,
         undefined,
         (thread.provider ||
           project.defaultProvider ||
           'claude') as import('@funny/shared').AgentProvider,
+        undefined,
+        !!draftMsg, // skipMessageInsert — draft already exists
       ).catch((err) => {
         log.error('Failed to auto-start agent for idle thread', {
           namespace: 'agent',

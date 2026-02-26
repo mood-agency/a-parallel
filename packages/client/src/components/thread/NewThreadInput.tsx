@@ -55,6 +55,7 @@ export function NewThreadInput() {
         mode: threadMode,
         baseBranch: opts.baseBranch,
         prompt,
+        images,
       });
 
       if (result.isErr()) {

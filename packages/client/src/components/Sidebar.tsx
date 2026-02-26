@@ -307,7 +307,7 @@ export function AppSidebar() {
   const handleShowAllThreads = useCallback(
     (projectId: string) => {
       showGlobalSearch();
-      navigate(`/search?project=${projectId}`);
+      navigate(`/list?project=${projectId}`);
     },
     [showGlobalSearch, navigate],
   );
@@ -356,8 +356,7 @@ export function AppSidebar() {
                 variant="ghost"
                 size="icon-xs"
                 onClick={() => {
-                  showGlobalSearch();
-                  navigate('/search');
+                  navigate('/list');
                 }}
                 className="text-muted-foreground"
               >
@@ -372,9 +371,7 @@ export function AppSidebar() {
                 variant="ghost"
                 size="icon-xs"
                 onClick={() => {
-                  localStorage.setItem('threadViewMode', 'board');
-                  showGlobalSearch();
-                  navigate('/search?view=board');
+                  navigate('/kanban');
                 }}
                 className="text-muted-foreground"
               >

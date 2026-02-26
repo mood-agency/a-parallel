@@ -181,6 +181,7 @@ export class AgentRunner {
     allowedTools?: string[],
     provider: AgentProvider = 'claude',
     mcpServers?: Record<string, any>,
+    skipMessageInsert?: boolean,
   ): Promise<void> {
     // Clear stale DB-mapping state from previous runs
     this.state.clearRunState(threadId);
@@ -217,15 +218,17 @@ export class AgentRunner {
       });
     }
 
-    // Save user message in DB
-    this.threadManager.insertMessage({
-      threadId,
-      role: 'user',
-      content: prompt,
-      images: images ? JSON.stringify(images) : null,
-      model,
-      permissionMode,
-    });
+    // Save user message in DB (skip when a draft message already exists, e.g. idle threads)
+    if (!skipMessageInsert) {
+      this.threadManager.insertMessage({
+        threadId,
+        role: 'user',
+        content: prompt,
+        images: images ? JSON.stringify(images) : null,
+        model,
+        permissionMode,
+      });
+    }
 
     // Read session ID from DB for resume
     const thread = this.threadManager.getThread(threadId);

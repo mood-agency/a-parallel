@@ -13,7 +13,7 @@ import {
 } from 'lucide-react';
 import { useState, useMemo, useEffect, useRef, startTransition } from 'react';
 import { useTranslation } from 'react-i18next';
-import { useNavigate, useSearchParams } from 'react-router-dom';
+import { useLocation, useNavigate, useSearchParams } from 'react-router-dom';
 
 import { KanbanView } from '@/components/KanbanView';
 import { ThreadListView } from '@/components/ThreadListView';
@@ -110,34 +110,28 @@ function FilterDropdown({
 export function AllThreadsView() {
   const { t } = useTranslation();
   const navigate = useNavigate();
+  const location = useLocation();
   const [searchParams, setSearchParams] = useSearchParams();
   const allThreadsProjectId = useUIStore((s) => s.allThreadsProjectId);
   const threadsByProject = useThreadStore((s) => s.threadsByProject);
   const projects = useProjectStore((s) => s.projects);
   const statusByThread = useGitStatusStore((s) => s.statusByThread);
 
+  // View mode derived from pathname: /kanban = board, /list (or anything else) = list
+  // When ?status= param is present, force list view
+  const viewMode: 'list' | 'board' =
+    searchParams.get('status') ? 'list' : location.pathname === '/kanban' ? 'board' : 'list';
+
   // Project filter from URL query param ?project=<id>
   const [projectFilter, setProjectFilter] = useState<string | null>(() => {
     return searchParams.get('project') || null;
   });
 
-  // View mode from URL query param ?view=list|board, fallback to localStorage
-  // When ?status= param is present, force list view
-  const [viewMode, setViewMode] = useState<'list' | 'board'>(() => {
-    if (searchParams.get('status')) return 'list';
-    const param = searchParams.get('view');
-    if (param === 'list' || param === 'board') return param;
-    const saved = localStorage.getItem('threadViewMode');
-    return saved === 'board' || saved === 'list' ? saved : 'list';
-  });
-
   // Build search params from current filter state (preserves status param if present)
-  const buildSearchParams = (overrides?: { project?: string | null; view?: string }) => {
+  const buildSearchParams = (overrides?: { project?: string | null }) => {
     const params: Record<string, string> = {};
     const proj = overrides?.project !== undefined ? overrides.project : projectFilter;
-    const v = overrides?.view ?? viewMode;
     if (proj) params.project = proj;
-    if (v === 'board') params.view = 'board';
     const statusParam = searchParams.get('status');
     if (statusParam) params.status = statusParam;
     return params;
@@ -146,7 +140,6 @@ export function AllThreadsView() {
   // Sync URL query params → local state when URL changes (e.g. browser back/forward)
   useEffect(() => {
     const paramProject = searchParams.get('project') || null;
-    const paramView = searchParams.get('view');
     const paramStatus = searchParams.get('status');
 
     if (paramProject !== projectFilter) {
@@ -157,11 +150,8 @@ export function AllThreadsView() {
     if (paramStatus) {
       const statuses = paramStatus.split(',').filter(Boolean);
       setStatusFilter(new Set(statuses));
-      setViewMode('list');
-    } else if (paramView === 'list' || paramView === 'board') {
-      if (paramView !== viewMode) setViewMode(paramView);
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- intentionally syncs URL → state only when searchParams changes; adding viewMode/projectFilter would loop
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- intentionally syncs URL → state only when searchParams changes; adding projectFilter would loop
   }, [searchParams]);
 
   const filteredProject = projectFilter ? projects.find((p) => p.id === projectFilter) : null;
@@ -173,9 +163,11 @@ export function AllThreadsView() {
   };
 
   const handleViewModeChange = (mode: 'list' | 'board') => {
-    setViewMode(mode);
-    localStorage.setItem('threadViewMode', mode);
-    setSearchParams(buildSearchParams({ view: mode }), { replace: true });
+    // Navigate to the appropriate route instead of using query params
+    const params = buildSearchParams();
+    const qs = new URLSearchParams(params).toString();
+    const path = mode === 'board' ? '/kanban' : '/list';
+    navigate(qs ? `${path}?${qs}` : path, { replace: true });
   };
 
   const [search, setSearch] = useState('');
@@ -427,7 +419,7 @@ export function AllThreadsView() {
           <h2 className="text-sm font-medium">
             {projectFilter && filteredProject ? t('allThreads.title') : t('allThreads.globalTitle')}
           </h2>
-          <p className="text-xs text-muted-foreground">
+          <p className="text-sm text-muted-foreground">
             {projectFilter && filteredProject
               ? `${filteredProject.name} · ${allThreads.length} ${t('allThreads.threads')}`
               : `${projects.length} ${t('allThreads.projects')} · ${allThreads.length} ${t('allThreads.threads')}`}

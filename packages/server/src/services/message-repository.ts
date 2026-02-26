@@ -132,10 +132,14 @@ export function insertMessage(data: {
   return id;
 }
 
-/** Update message content */
-export function updateMessage(id: string, content: string) {
-  db.update(schema.messages)
-    .set({ content, timestamp: new Date().toISOString() })
-    .where(eq(schema.messages.id, id))
-    .run();
+/** Update message content (and optionally images) */
+export function updateMessage(
+  id: string,
+  data: string | { content: string; images?: string | null },
+) {
+  const updates =
+    typeof data === 'string'
+      ? { content: data, timestamp: new Date().toISOString() }
+      : { content: data.content, images: data.images ?? null, timestamp: new Date().toISOString() };
+  db.update(schema.messages).set(updates).where(eq(schema.messages.id, id)).run();
 }

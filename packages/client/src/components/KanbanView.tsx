@@ -572,6 +572,7 @@ export function KanbanView({
           baseBranch: opts.baseBranch,
           prompt,
           stage: slideUpStage === 'planning' ? 'planning' : undefined,
+          images,
         });
 
         if (result.isErr()) {

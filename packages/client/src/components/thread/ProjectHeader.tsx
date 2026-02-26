@@ -186,7 +186,7 @@ const MoreActionsMenu = memo(function MoreActionsMenu() {
               <DropdownMenuItem
                 onClick={() => {
                   setReviewPaneOpen(false);
-                  navigate(`/search?view=board&project=${threadProjectId}&highlight=${threadId}`);
+                  navigate(`/kanban?project=${threadProjectId}&highlight=${threadId}`);
                 }}
                 className="cursor-pointer"
               >
@@ -409,20 +409,19 @@ export const ProjectHeader = memo(function ProjectHeader() {
     if (!kanbanContext) return;
 
     const targetProjectId = kanbanContext.projectId || '__all__';
-    const searchParam = kanbanContext.search
-      ? `&search=${encodeURIComponent(kanbanContext.search)}`
-      : '';
-    const highlightParam = kanbanContext.threadId ? `&highlight=${kanbanContext.threadId}` : '';
 
     // Close the review pane when returning to Kanban
     setReviewPaneOpen(false);
 
-    // Navigate to search view with board mode.
-    // kanbanContext is cleared by useRouteSync when it detects the /search route,
+    // Navigate to kanban view.
+    // kanbanContext is cleared by useRouteSync when it detects the /kanban route,
     // ensuring both allThreadsProjectId and kanbanContext update in the same render.
-    navigate(
-      `/search?view=board${targetProjectId !== '__all__' ? `&project=${targetProjectId}` : ''}${searchParam}${highlightParam}`,
-    );
+    const params = new URLSearchParams();
+    if (targetProjectId !== '__all__') params.set('project', targetProjectId);
+    if (kanbanContext.search) params.set('search', kanbanContext.search);
+    if (kanbanContext.threadId) params.set('highlight', kanbanContext.threadId);
+    const qs = params.toString();
+    navigate(qs ? `/kanban?${qs}` : '/kanban');
   }, [kanbanContext, navigate, setReviewPaneOpen]);
 
   return (

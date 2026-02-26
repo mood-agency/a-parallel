@@ -117,6 +117,7 @@ export const useUIStore = create<UIState>((set) => ({
       addProjectOpen: false,
       settingsOpen: false,
       analyticsOpen: false,
+      liveColumnsOpen: false,
       reviewPaneOpen: false,
     });
   },

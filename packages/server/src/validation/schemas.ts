@@ -99,6 +99,7 @@ export const createIdleThreadSchema = z.object({
   source: threadSourceSchema.optional().default('web'),
   baseBranch: z.string().optional(),
   prompt: z.string().optional(),
+  images: z.array(imageAttachmentSchema).optional(),
   stage: z.enum(['backlog', 'planning']).optional().default('backlog'),
 });
 

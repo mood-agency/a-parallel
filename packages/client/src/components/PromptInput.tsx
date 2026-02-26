@@ -406,6 +406,7 @@ export const PromptInput = memo(function PromptInput({
   const activeThreadBranch = useThreadStore((s) => s.activeThread?.branch);
   const activeThreadBaseBranch = useThreadStore((s) => s.activeThread?.baseBranch);
   const [newThreadBranches, setNewThreadBranches] = useState<string[]>([]);
+  const [newThreadBranchesLoading, setNewThreadBranchesLoading] = useState(false);
   const [selectedBranch, setSelectedBranch] = useState<string>('');
   const [images, setImages] = useState<ImageAttachment[]>([]);
   const [sendToBacklog, setSendToBacklog] = useState(false);
@@ -556,6 +557,7 @@ export const PromptInput = memo(function PromptInput({
   const effectiveProjectId = propProjectId || selectedProjectId;
   useEffect(() => {
     if (isNewThread && effectiveProjectId) {
+      setNewThreadBranchesLoading(true);
       (async () => {
         const result = await api.listBranches(effectiveProjectId);
         if (result.isOk()) {
@@ -569,6 +571,7 @@ export const PromptInput = memo(function PromptInput({
         } else {
           setNewThreadBranches([]);
         }
+        setNewThreadBranchesLoading(false);
       })();
     }
   }, [isNewThread, effectiveProjectId]);
@@ -1300,12 +1303,19 @@ export const PromptInput = memo(function PromptInput({
                     <span className="truncate font-mono">{formatRemoteUrl(remoteUrl)}</span>
                   </span>
                 )}
-                {newThreadBranches.length > 0 && (
-                  <BranchPicker
-                    branches={newThreadBranches}
-                    selected={selectedBranch}
-                    onChange={setSelectedBranch}
-                  />
+                {newThreadBranchesLoading ? (
+                  <span className="flex items-center gap-1 px-2 py-1 text-xs text-muted-foreground">
+                    <GitBranch className="h-3 w-3 shrink-0" />
+                    <Loader2 className="h-3 w-3 animate-spin" />
+                  </span>
+                ) : (
+                  newThreadBranches.length > 0 && (
+                    <BranchPicker
+                      branches={newThreadBranches}
+                      selected={selectedBranch}
+                      onChange={setSelectedBranch}
+                    />
+                  )
                 )}
                 <label className="flex shrink-0 cursor-pointer items-center gap-1.5 text-xs text-muted-foreground">
                   <Switch

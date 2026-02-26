@@ -162,7 +162,7 @@ export function ThreadList({ onArchiveThread, onDeleteThread }: ThreadListProps)
       })}
       {totalCount > 5 && (
         <button
-          onClick={() => navigate('/search?status=completed,failed,stopped,interrupted')}
+          onClick={() => navigate('/list?status=completed,failed,stopped,interrupted')}
           className="px-2 py-1.5 text-sm text-muted-foreground transition-colors hover:text-foreground"
         >
           {t('sidebar.viewAll')}

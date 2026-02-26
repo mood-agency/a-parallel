@@ -73,8 +73,21 @@ function parseRoute(pathname: string) {
     };
   }
 
-  // Search: /search (with optional ?project=<id> query param)
-  if (pathname === '/search') {
+  // List view: /list (with optional ?project=<id> query param)
+  if (pathname === '/list') {
+    return {
+      settingsPage: null,
+      projectId: null,
+      threadId: null,
+      globalSearch: true,
+      inbox: false,
+      analytics: false,
+      liveColumns: false,
+    };
+  }
+
+  // Kanban view: /kanban (with optional ?project=<id> query param)
+  if (pathname === '/kanban') {
     return {
       settingsPage: null,
       projectId: null,
@@ -216,20 +229,17 @@ export function useRouteSync() {
       uiStore.setLiveColumnsOpen(false);
     }
 
-    // Search view: /search (with optional ?project= query param)
+    // List/Kanban view: /list or /kanban (with optional ?project= query param)
     if (globalSearch) {
-      if (uiStore.allThreadsProjectId !== '__all__') {
-        uiStore.showGlobalSearch();
-      }
-      // Clear kanban context when arriving at /search so both state changes
+      // Always ensure search state is active — this handles both fresh navigation
+      // and cases where state was cleared by another view
+      uiStore.showGlobalSearch();
+      // Clear kanban context when arriving at /list so both state changes
       // (allThreadsProjectId + kanbanContext) happen in the same effect tick,
       // preventing the back arrow from flashing in ProjectHeader.
       if (uiStore.kanbanContext) {
         uiStore.setKanbanContext(null);
       }
-      // Clear other views when entering search
-      if (uiStore.analyticsOpen) uiStore.setAnalyticsOpen(false);
-      if (uiStore.liveColumnsOpen) uiStore.setLiveColumnsOpen(false);
       return;
     }
 
@@ -263,5 +273,5 @@ export function useRouteSync() {
       if (threadStore.selectedThreadId) threadStore.selectThread(null);
       if (projectStore.selectedProjectId) projectStore.selectProject(null);
     }
-  }, [location.pathname, initialized]);
+  }, [location.pathname, location.search, initialized]);
 }

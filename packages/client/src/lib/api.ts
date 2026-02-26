@@ -237,6 +237,7 @@ export const api = {
     baseBranch?: string;
     prompt?: string;
     stage?: string;
+    images?: ImageAttachment[];
   }) => request<Thread>('/threads/idle', { method: 'POST', body: JSON.stringify(data) }),
   sendMessage: (
     threadId: string,

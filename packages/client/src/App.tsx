@@ -167,7 +167,7 @@ export function App() {
       if (e.ctrlKey && e.shiftKey && e.key === 'F') {
         e.preventDefault();
         e.stopPropagation();
-        navigate('/search');
+        navigate('/list');
         return;
       }
 

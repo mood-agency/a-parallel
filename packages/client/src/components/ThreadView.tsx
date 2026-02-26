@@ -897,6 +897,10 @@ export function ThreadView() {
   const scrollViewportRef = useRef<HTMLDivElement>(null);
   const userHasScrolledUp = useRef(false);
   const smoothScrollPending = useRef(false);
+  // Tracks the thread ID for which we've already forced a scroll-to-bottom.
+  // Used by the fingerprint effect to force one extra scroll after the thread
+  // switch effect, catching content that renders after the initial commit.
+  const scrolledThreadRef = useRef<string | null>(null);
   const prevOldestIdRef = useRef<string | null>(null);
   const prevScrollHeightRef = useRef(0);
   const [_showScrollDown, setShowScrollDown] = useState(false);
@@ -956,12 +960,22 @@ export function ThreadView() {
     userHasScrolledUp.current = false;
     prevOldestIdRef.current = null;
     prevScrollHeightRef.current = 0;
+    // Mark that the fingerprint effect should also force-scroll for this thread,
+    // covering content that renders after the initial commit (e.g. deferred
+    // markdown rendering, syntax highlighting, lazy images).
+    scrolledThreadRef.current = null;
     // Scroll immediately (before paint) to prevent layout shift
     viewport.scrollTop = viewport.scrollHeight;
     // Also scroll after the browser finishes layout/paint to catch any
     // content that rendered asynchronously (e.g. images, animations).
     const rafId = requestAnimationFrame(() => {
       viewport.scrollTop = viewport.scrollHeight;
+      // A second rAF covers deferred renders (syntax highlighting, lazy
+      // components) that only update the DOM in the frame *after* the first
+      // post-commit paint.
+      requestAnimationFrame(() => {
+        viewport.scrollTop = viewport.scrollHeight;
+      });
     });
     return () => cancelAnimationFrame(rafId);
     // eslint-disable-next-line react-hooks/exhaustive-deps -- only scroll on thread switch; activeThread is used for null check but changes on every message
@@ -1100,6 +1114,17 @@ export function ThreadView() {
   useLayoutEffect(() => {
     const viewport = scrollViewportRef.current;
     if (!viewport) return;
+
+    // Force scroll when this is the first fingerprint change for a newly
+    // opened thread.  The thread-switch effect sets scrolledThreadRef to null;
+    // here we detect that the current thread hasn't been "claimed" yet and
+    // force-scroll regardless of the userHasScrolledUp flag.
+    const forceScroll =
+      activeThread?.id != null && scrolledThreadRef.current !== activeThread.id;
+    if (forceScroll && activeThread?.id) {
+      scrolledThreadRef.current = activeThread.id;
+      userHasScrolledUp.current = false;
+    }
 
     if (!userHasScrolledUp.current) {
       if (smoothScrollPending.current) {

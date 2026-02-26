@@ -595,6 +595,8 @@ export function LiveColumnsView() {
           title: prompt.slice(0, 200),
           mode: threadMode,
           baseBranch: opts.baseBranch,
+          prompt,
+          images,
         });
         if (result.isErr()) {
           toast.error(result.error.message);
