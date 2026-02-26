@@ -132,95 +132,97 @@ export function AnalyticsView() {
           <Loader2 className="h-5 w-5 animate-spin" />
         </div>
       ) : (
-      <ScrollArea className="min-h-0 flex-1">
-        <div className="mx-auto max-w-4xl space-y-6 px-6 py-6">
-          {!overview ? (
-            <div className="py-16 text-center text-sm text-muted-foreground">
-              {t('analytics.noData')}
-            </div>
-          ) : (
-            <>
-              {/* Metric Cards */}
-              <div className="grid grid-cols-2 gap-3 lg:grid-cols-3">
-                <MetricCard
-                  title={t('analytics.tasksCreated')}
-                  value={overview.createdCount}
-                  icon={<Plus className="h-3.5 w-3.5" />}
-                  color="blue"
-                />
-                <MetricCard
-                  title={t('analytics.tasksCompleted')}
-                  value={overview.completedCount}
-                  icon={<CheckCircle2 className="h-3.5 w-3.5" />}
-                  color="green"
-                />
-                <MetricCard
-                  title={t('analytics.movedToPlanning')}
-                  value={overview.movedToPlanningCount}
-                  icon={<ClipboardList className="h-3.5 w-3.5" />}
-                  color="violet"
-                />
-                <MetricCard
-                  title={t('analytics.movedToReview')}
-                  value={overview.movedToReviewCount}
-                  icon={<Eye className="h-3.5 w-3.5" />}
-                  color="amber"
-                />
-                <MetricCard
-                  title={t('analytics.movedToDone')}
-                  value={overview.movedToDoneCount}
-                  icon={<LayoutList className="h-3.5 w-3.5" />}
-                  color="violet"
-                />
-                <MetricCard
-                  title={t('analytics.movedToArchived')}
-                  value={overview.movedToArchivedCount}
-                  icon={<Archive className="h-3.5 w-3.5" />}
-                  color="red"
-                />
+        <ScrollArea className="min-h-0 flex-1">
+          <div className="mx-auto max-w-4xl space-y-6 px-6 py-6">
+            {!overview ? (
+              <div className="py-16 text-center text-sm text-muted-foreground">
+                {t('analytics.noData')}
               </div>
-
-              {/* Cost card */}
-              {overview.totalCost > 0 && (
-                <div className="flex items-center justify-between rounded-lg border border-border p-4">
-                  <div>
-                    <p className="text-xs text-muted-foreground">{t('analytics.totalCost')}</p>
-                    <p className="mt-1 text-xl font-bold">${overview.totalCost.toFixed(4)}</p>
-                  </div>
-                  <div className="rounded-md bg-status-success/10 p-2 text-status-success/80">
-                    <DollarSign className="h-4 w-4" />
-                  </div>
-                </div>
-              )}
-
-              {/* Stage Distribution */}
-              <div className="rounded-lg border border-border p-5">
-                <h3 className="mb-4 text-sm font-semibold">{t('analytics.currentDistribution')}</h3>
-                <StageDistributionChart data={overview.currentStageDistribution} />
-              </div>
-
-              {/* Timeline */}
-              {timeline && (
-                <div className="rounded-lg border border-border p-5">
-                  <div className="mb-4 flex items-center justify-between">
-                    <h3 className="text-sm font-semibold">{t('analytics.timeline')}</h3>
-                    <GroupBySelector value={groupBy} onChange={setGroupBy} />
-                  </div>
-                  <TimelineChart
-                    created={timeline.createdByDate}
-                    completed={timeline.completedByDate}
-                    movedToPlanning={timeline.movedToPlanningByDate ?? []}
-                    movedToReview={timeline.movedToReviewByDate}
-                    movedToDone={timeline.movedToDoneByDate}
-                    movedToArchived={timeline.movedToArchivedByDate ?? []}
-                    groupBy={groupBy}
+            ) : (
+              <>
+                {/* Metric Cards */}
+                <div className="grid grid-cols-2 gap-3 lg:grid-cols-3">
+                  <MetricCard
+                    title={t('analytics.tasksCreated')}
+                    value={overview.createdCount}
+                    icon={<Plus className="h-3.5 w-3.5" />}
+                    color="blue"
+                  />
+                  <MetricCard
+                    title={t('analytics.tasksCompleted')}
+                    value={overview.completedCount}
+                    icon={<CheckCircle2 className="h-3.5 w-3.5" />}
+                    color="green"
+                  />
+                  <MetricCard
+                    title={t('analytics.movedToPlanning')}
+                    value={overview.movedToPlanningCount}
+                    icon={<ClipboardList className="h-3.5 w-3.5" />}
+                    color="violet"
+                  />
+                  <MetricCard
+                    title={t('analytics.movedToReview')}
+                    value={overview.movedToReviewCount}
+                    icon={<Eye className="h-3.5 w-3.5" />}
+                    color="amber"
+                  />
+                  <MetricCard
+                    title={t('analytics.movedToDone')}
+                    value={overview.movedToDoneCount}
+                    icon={<LayoutList className="h-3.5 w-3.5" />}
+                    color="violet"
+                  />
+                  <MetricCard
+                    title={t('analytics.movedToArchived')}
+                    value={overview.movedToArchivedCount}
+                    icon={<Archive className="h-3.5 w-3.5" />}
+                    color="red"
                   />
                 </div>
-              )}
-            </>
-          )}
-        </div>
-      </ScrollArea>
+
+                {/* Cost card */}
+                {overview.totalCost > 0 && (
+                  <div className="flex items-center justify-between rounded-lg border border-border p-4">
+                    <div>
+                      <p className="text-xs text-muted-foreground">{t('analytics.totalCost')}</p>
+                      <p className="mt-1 text-xl font-bold">${overview.totalCost.toFixed(4)}</p>
+                    </div>
+                    <div className="rounded-md bg-status-success/10 p-2 text-status-success/80">
+                      <DollarSign className="h-4 w-4" />
+                    </div>
+                  </div>
+                )}
+
+                {/* Stage Distribution */}
+                <div className="rounded-lg border border-border p-5">
+                  <h3 className="mb-4 text-sm font-semibold">
+                    {t('analytics.currentDistribution')}
+                  </h3>
+                  <StageDistributionChart data={overview.currentStageDistribution} />
+                </div>
+
+                {/* Timeline */}
+                {timeline && (
+                  <div className="rounded-lg border border-border p-5">
+                    <div className="mb-4 flex items-center justify-between">
+                      <h3 className="text-sm font-semibold">{t('analytics.timeline')}</h3>
+                      <GroupBySelector value={groupBy} onChange={setGroupBy} />
+                    </div>
+                    <TimelineChart
+                      created={timeline.createdByDate}
+                      completed={timeline.completedByDate}
+                      movedToPlanning={timeline.movedToPlanningByDate ?? []}
+                      movedToReview={timeline.movedToReviewByDate}
+                      movedToDone={timeline.movedToDoneByDate}
+                      movedToArchived={timeline.movedToArchivedByDate ?? []}
+                      groupBy={groupBy}
+                    />
+                  </div>
+                )}
+              </>
+            )}
+          </div>
+        </ScrollArea>
       )}
     </div>
   );

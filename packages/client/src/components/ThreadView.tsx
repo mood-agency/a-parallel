@@ -361,7 +361,11 @@ function groupTools(tools: string[]) {
   return { builtIn, mcpGroups };
 }
 
-const InitInfoCard = memo(function InitInfoCard({ initInfo }: { initInfo: { tools: string[]; cwd: string; model: string } }) {
+const InitInfoCard = memo(function InitInfoCard({
+  initInfo,
+}: {
+  initInfo: { tools: string[]; cwd: string; model: string };
+}) {
   const { t } = useTranslation();
   const { builtIn, mcpGroups } = useMemo(() => groupTools(initInfo.tools), [initInfo.tools]);
 
@@ -395,7 +399,13 @@ const InitInfoCard = memo(function InitInfoCard({ initInfo }: { initInfo: { tool
   );
 });
 
-const McpToolGroup = memo(function McpToolGroup({ serverName, toolNames }: { serverName: string; toolNames: string[] }) {
+const McpToolGroup = memo(function McpToolGroup({
+  serverName,
+  toolNames,
+}: {
+  serverName: string;
+  toolNames: string[];
+}) {
   const [open, setOpen] = useState(false);
 
   return (
@@ -649,365 +659,383 @@ interface MemoizedMessageListHandle {
 /** Memoized message list with windowed rendering — only mounts the last
  *  INITIAL_WINDOW items on first render, expanding progressively on scroll-up.
  *  Items are never un-mounted; contentVisibility:'auto' handles paint cost. */
-const MemoizedMessageList = memo(forwardRef<MemoizedMessageListHandle, {
-  messages: any[];
-  threadEvents?: import('@funny/shared').ThreadEvent[];
-  threadId: string;
-  knownIds: Set<string>;
-  prefersReducedMotion: boolean | null;
-  snapshotMap: Map<string, number>;
-  onSend: (prompt: string, opts: { model: string; mode: string }) => void;
-  onOpenLightbox: (images: { src: string; alt: string }[], index: number) => void;
-  scrollRef: React.RefObject<HTMLElement | null>;
-}>(function MemoizedMessageList({
-  messages,
-  threadEvents,
-  threadId,
-  knownIds: _knownIds,
-  prefersReducedMotion: _prefersReducedMotion,
-  snapshotMap,
-  onSend,
-  onOpenLightbox,
-  scrollRef,
-}, ref) {
-  const { t } = useTranslation();
-
-  const groupedItems = useMemo(
-    () => buildGroupedRenderItems(messages, threadEvents),
-    [messages, threadEvents],
-  );
-
-  /* ── Windowed rendering ──────────────────────────────────────────── */
-  const [renderCount, setRenderCount] = useState(INITIAL_WINDOW);
-
-  // Reset render window when switching threads (synchronous state reset
-  // during render — standard React derived-state-from-props pattern).
-  const prevThreadIdRef = useRef(threadId);
-  if (prevThreadIdRef.current !== threadId) {
-    prevThreadIdRef.current = threadId;
-    setRenderCount(INITIAL_WINDOW);
-  }
-
-  const windowStart = Math.max(0, groupedItems.length - renderCount);
-  const visibleItems = groupedItems.slice(windowStart);
-  const hasHiddenItems = windowStart > 0;
-
-  // ID → index map for expandToItem (scroll-to-message support)
-  const itemIndexMap = useMemo(() => {
-    const map = new Map<string, number>();
-    groupedItems.forEach((item, index) => {
-      if (item.type === 'message') map.set(item.msg.id, index);
-      else if (item.type === 'toolcall') map.set(item.tc.id, index);
-      else if (item.type === 'toolcall-group')
-        item.calls.forEach((c: any) => map.set(c.id, index));
-      else if (item.type === 'toolcall-run') {
-        for (const ti of item.items) {
-          if (ti.type === 'toolcall') map.set(ti.tc.id, index);
-          else if (ti.type === 'toolcall-group')
-            ti.calls.forEach((c: any) => map.set(c.id, index));
-        }
-      } else if (item.type === 'thread-event') map.set(item.event.id, index);
-    });
-    return map;
-  }, [groupedItems]);
-
-  // Expose expandToItem so ThreadView can expand the window before scrolling
-  useImperativeHandle(
-    ref,
-    () => ({
-      expandToItem: (id: string) => {
-        const index = itemIndexMap.get(id);
-        if (index !== undefined) {
-          const needed = groupedItems.length - index + 5;
-          if (needed > renderCount) {
-            flushSync(() => setRenderCount(Math.min(groupedItems.length, needed)));
-          }
-        }
-      },
-    }),
-    [itemIndexMap, renderCount, groupedItems.length],
-  );
-
-  // Estimated spacer height for items above the render window
-  const spacerHeight = useMemo(() => {
-    let h = 0;
-    for (let i = 0; i < windowStart; i++) {
-      h += estimateItemHeight(groupedItems[i]);
-      if (i < windowStart - 1) h += 16; // space-y-4 gap
+const MemoizedMessageList = memo(
+  forwardRef<
+    MemoizedMessageListHandle,
+    {
+      messages: any[];
+      threadEvents?: import('@funny/shared').ThreadEvent[];
+      threadId: string;
+      knownIds: Set<string>;
+      prefersReducedMotion: boolean | null;
+      snapshotMap: Map<string, number>;
+      onSend: (prompt: string, opts: { model: string; mode: string }) => void;
+      onOpenLightbox: (images: { src: string; alt: string }[], index: number) => void;
+      scrollRef: React.RefObject<HTMLElement | null>;
     }
-    return h;
-  }, [groupedItems, windowStart]);
-
-  // Refs so the scroll listener always reads fresh values without re-attaching
-  const spacerHeightRef = useRef(spacerHeight);
-  spacerHeightRef.current = spacerHeight;
-  const windowStartRef = useRef(windowStart);
-  windowStartRef.current = windowStart;
-  const groupedLenRef = useRef(groupedItems.length);
-  groupedLenRef.current = groupedItems.length;
-
-  // Scroll-based window expansion — fires on every scroll event so fast
-  // mouse-wheel scrolling is always caught (IntersectionObserver can miss it).
-  useEffect(() => {
-    const scrollEl = scrollRef.current;
-    if (!scrollEl) return;
-
-    const onScroll = () => {
-      if (windowStartRef.current <= 0) return;
-      if (scrollEl.scrollTop < spacerHeightRef.current + 600) {
-        setRenderCount((prev) => Math.min(groupedLenRef.current, prev + EXPAND_BATCH));
-      }
-    };
-
-    scrollEl.addEventListener('scroll', onScroll, { passive: true });
-    return () => scrollEl.removeEventListener('scroll', onScroll);
-  }, [scrollRef]);
-
-  // After each expansion, check if the user has already scrolled past the
-  // newly rendered items (fast-scroll catch-up).  Runs once per frame via
-  // rAF and chains until the spacer is far enough from the viewport.
-  useEffect(() => {
-    if (windowStart <= 0) return;
-    const scrollEl = scrollRef.current;
-    if (!scrollEl) return;
-
-    const rafId = requestAnimationFrame(() => {
-      if (scrollEl.scrollTop < spacerHeightRef.current + 600) {
-        setRenderCount((prev) => Math.min(groupedLenRef.current, prev + EXPAND_BATCH));
-      }
-    });
-    return () => cancelAnimationFrame(rafId);
-  }, [windowStart, scrollRef]);
-
-  const renderToolItem = useCallback(
-    (ti: ToolItem) => {
-      if (ti.type === 'toolcall') {
-        const tc = ti.tc;
-        return (
-          <div
-            key={tc.id}
-            className={
-              tc.name === 'AskUserQuestion' ||
-              tc.name === 'ExitPlanMode' ||
-              tc.name === 'TodoWrite' ||
-              tc.name === 'Edit'
-                ? 'rounded-lg border border-border'
-                : undefined
-            }
-            data-tool-call-id={tc.id}
-            {...(snapshotMap.has(tc.id) ? { 'data-todo-snapshot': snapshotMap.get(tc.id) } : {})}
-          >
-            <ToolCallCard
-              name={tc.name}
-              input={tc.input}
-              output={tc.output}
-              planText={tc._planText}
-              onRespond={
-                tc.name === 'AskUserQuestion' || tc.name === 'ExitPlanMode'
-                  ? (answer: string) => {
-                      useThreadStore
-                        .getState()
-                        .handleWSToolOutput(threadId, { toolCallId: tc.id, output: answer });
-                      onSend(answer, { model: '', mode: '' });
-                    }
-                  : undefined
-              }
-            />
-          </div>
-        );
-      }
-      if (ti.type === 'toolcall-group') {
-        const groupSnapshotIdx =
-          ti.name === 'TodoWrite'
-            ? Math.max(...ti.calls.map((c: any) => snapshotMap.get(c.id) ?? -1))
-            : -1;
-        return (
-          <div
-            key={ti.calls[0].id}
-            className={
-              ti.name === 'AskUserQuestion' ||
-              ti.name === 'ExitPlanMode' ||
-              ti.name === 'TodoWrite' ||
-              ti.name === 'Edit'
-                ? 'rounded-lg border border-border'
-                : undefined
-            }
-            data-tool-call-id={ti.calls[0].id}
-            {...(groupSnapshotIdx >= 0 ? { 'data-todo-snapshot': groupSnapshotIdx } : {})}
-          >
-            <ToolCallGroup
-              name={ti.name}
-              calls={ti.calls}
-              onRespond={
-                ti.name === 'AskUserQuestion' || ti.name === 'ExitPlanMode'
-                  ? (answer: string) => {
-                      for (const call of ti.calls) {
-                        if (!call.output) {
-                          useThreadStore
-                            .getState()
-                            .handleWSToolOutput(threadId, { toolCallId: call.id, output: answer });
-                        }
-                      }
-                      onSend(answer, { model: '', mode: '' });
-                    }
-                  : undefined
-              }
-            />
-          </div>
-        );
-      }
-      return null;
+  >(function MemoizedMessageList(
+    {
+      messages,
+      threadEvents,
+      threadId,
+      knownIds: _knownIds,
+      prefersReducedMotion: _prefersReducedMotion,
+      snapshotMap,
+      onSend,
+      onOpenLightbox,
+      scrollRef,
     },
-    [snapshotMap, threadId, onSend],
-  );
+    ref,
+  ) {
+    const { t } = useTranslation();
 
-  return (
-    <>
-      {hasHiddenItems && <div style={{ height: spacerHeight }} aria-hidden="true" />}
-      {visibleItems.map((item) => {
-        const key = getItemKey(item);
+    const groupedItems = useMemo(
+      () => buildGroupedRenderItems(messages, threadEvents),
+      [messages, threadEvents],
+    );
 
-        if (item.type === 'message') {
-          const msg = item.msg;
+    /* ── Windowed rendering ──────────────────────────────────────────── */
+    const [renderCount, setRenderCount] = useState(INITIAL_WINDOW);
+
+    // Reset render window when switching threads (synchronous state reset
+    // during render — standard React derived-state-from-props pattern).
+    const prevThreadIdRef = useRef(threadId);
+    if (prevThreadIdRef.current !== threadId) {
+      prevThreadIdRef.current = threadId;
+      setRenderCount(INITIAL_WINDOW);
+    }
+
+    const windowStart = Math.max(0, groupedItems.length - renderCount);
+    const visibleItems = groupedItems.slice(windowStart);
+    const hasHiddenItems = windowStart > 0;
+
+    // ID → index map for expandToItem (scroll-to-message support)
+    const itemIndexMap = useMemo(() => {
+      const map = new Map<string, number>();
+      groupedItems.forEach((item, index) => {
+        if (item.type === 'message') map.set(item.msg.id, index);
+        else if (item.type === 'toolcall') map.set(item.tc.id, index);
+        else if (item.type === 'toolcall-group')
+          item.calls.forEach((c: any) => map.set(c.id, index));
+        else if (item.type === 'toolcall-run') {
+          for (const ti of item.items) {
+            if (ti.type === 'toolcall') map.set(ti.tc.id, index);
+            else if (ti.type === 'toolcall-group')
+              ti.calls.forEach((c: any) => map.set(c.id, index));
+          }
+        } else if (item.type === 'thread-event') map.set(item.event.id, index);
+      });
+      return map;
+    }, [groupedItems]);
+
+    // Expose expandToItem so ThreadView can expand the window before scrolling
+    useImperativeHandle(
+      ref,
+      () => ({
+        expandToItem: (id: string) => {
+          const index = itemIndexMap.get(id);
+          if (index !== undefined) {
+            const needed = groupedItems.length - index + 5;
+            if (needed > renderCount) {
+              flushSync(() => setRenderCount(Math.min(groupedItems.length, needed)));
+            }
+          }
+        },
+      }),
+      [itemIndexMap, renderCount, groupedItems.length],
+    );
+
+    // Estimated spacer height for items above the render window
+    const spacerHeight = useMemo(() => {
+      let h = 0;
+      for (let i = 0; i < windowStart; i++) {
+        h += estimateItemHeight(groupedItems[i]);
+        if (i < windowStart - 1) h += 16; // space-y-4 gap
+      }
+      return h;
+    }, [groupedItems, windowStart]);
+
+    // Refs so the scroll listener always reads fresh values without re-attaching
+    const spacerHeightRef = useRef(spacerHeight);
+    spacerHeightRef.current = spacerHeight;
+    const windowStartRef = useRef(windowStart);
+    windowStartRef.current = windowStart;
+    const groupedLenRef = useRef(groupedItems.length);
+    groupedLenRef.current = groupedItems.length;
+
+    // Scroll-based window expansion — fires on every scroll event so fast
+    // mouse-wheel scrolling is always caught (IntersectionObserver can miss it).
+    useEffect(() => {
+      const scrollEl = scrollRef.current;
+      if (!scrollEl) return;
+
+      const onScroll = () => {
+        if (windowStartRef.current <= 0) return;
+        if (scrollEl.scrollTop < spacerHeightRef.current + 600) {
+          setRenderCount((prev) => Math.min(groupedLenRef.current, prev + EXPAND_BATCH));
+        }
+      };
+
+      scrollEl.addEventListener('scroll', onScroll, { passive: true });
+      return () => scrollEl.removeEventListener('scroll', onScroll);
+    }, [scrollRef]);
+
+    // After each expansion, check if the user has already scrolled past the
+    // newly rendered items (fast-scroll catch-up).  Runs once per frame via
+    // rAF and chains until the spacer is far enough from the viewport.
+    useEffect(() => {
+      if (windowStart <= 0) return;
+      const scrollEl = scrollRef.current;
+      if (!scrollEl) return;
+
+      const rafId = requestAnimationFrame(() => {
+        if (scrollEl.scrollTop < spacerHeightRef.current + 600) {
+          setRenderCount((prev) => Math.min(groupedLenRef.current, prev + EXPAND_BATCH));
+        }
+      });
+      return () => cancelAnimationFrame(rafId);
+    }, [windowStart, scrollRef]);
+
+    const renderToolItem = useCallback(
+      (ti: ToolItem) => {
+        if (ti.type === 'toolcall') {
+          const tc = ti.tc;
           return (
             <div
-              key={key}
-              style={{ contentVisibility: 'auto', containIntrinsicSize: 'auto 60px' }}
-              className={cn(
-                'relative group text-sm',
-                msg.role === 'user'
-                  ? 'max-w-[80%] ml-auto rounded-lg px-3 py-2 bg-foreground text-background'
-                  : 'w-full text-foreground',
-              )}
-              {...(msg.role === 'user' ? { 'data-user-msg': msg.id } : {})}
+              key={tc.id}
+              className={
+                tc.name === 'AskUserQuestion' ||
+                tc.name === 'ExitPlanMode' ||
+                tc.name === 'TodoWrite' ||
+                tc.name === 'Edit'
+                  ? 'rounded-lg border border-border'
+                  : undefined
+              }
+              data-tool-call-id={tc.id}
+              {...(snapshotMap.has(tc.id) ? { 'data-todo-snapshot': snapshotMap.get(tc.id) } : {})}
             >
-              {msg.images &&
-                msg.images.length > 0 &&
-                (() => {
-                  const allImages = msg.images!.map((i: any, j: number) => ({
-                    src: `data:${i.source.media_type};base64,${i.source.data}`,
-                    alt: `Attachment ${j + 1}`,
-                  }));
-                  return (
-                    <div className="mb-2 flex flex-wrap gap-2">
-                      {msg.images!.map((img: any, idx: number) => (
-                        <img
-                          key={`attachment-${idx}`}
-                          src={`data:${img.source.media_type};base64,${img.source.data}`}
-                          alt={`Attachment ${idx + 1}`}
-                          width={160}
-                          height={160}
-                          loading="lazy"
-                          className="max-h-40 cursor-pointer rounded border border-border transition-opacity hover:opacity-80"
-                          onClick={() => onOpenLightbox(allImages, idx)}
-                        />
-                      ))}
-                    </div>
-                  );
-                })()}
-              {msg.role === 'user' ? (
-                (() => {
-                  const { files, cleanContent } = parseReferencedFiles(msg.content);
-                  return (
-                    <>
-                      {files.length > 0 && (
-                        <div className="mb-1.5 flex flex-wrap gap-1">
-                          {files.map((file) => (
-                            <span
-                              key={file}
-                              className="inline-flex items-center gap-1 rounded bg-background/20 px-1.5 py-0.5 font-mono text-xs text-background/70"
-                              title={file}
-                            >
-                              <FileText className="h-3 w-3 shrink-0" />
-                              {file.split('/').pop()}
-                            </span>
-                          ))}
-                        </div>
-                      )}
-                      <UserMessageContent content={cleanContent.trim()} />
-                      {(msg.model || msg.permissionMode) && (
-                        <div className="mt-1.5 flex gap-1">
-                          {msg.model && (
-                            <Badge
-                              variant="outline"
-                              className="h-4 border-background/20 bg-background/10 px-1.5 py-0 text-[10px] font-medium text-background/60"
-                            >
-                              {resolveModelLabel(msg.model, t)}
-                            </Badge>
-                          )}
-                          {msg.permissionMode && (
-                            <Badge
-                              variant="outline"
-                              className="h-4 border-background/20 bg-background/10 px-1.5 py-0 text-[10px] font-medium text-background/60"
-                            >
-                              {t(`prompt.${msg.permissionMode}`)}
-                            </Badge>
-                          )}
-                        </div>
-                      )}
-                    </>
-                  );
-                })()
-              ) : (
-                <div className="overflow-x-auto break-words text-sm leading-relaxed">
-                  <div className="flex items-start gap-2">
-                    {msg.author && (
-                      <Tooltip>
-                        <TooltipTrigger asChild>
-                          <Avatar className="mt-0.5">
-                            <AvatarFallback className="bg-primary/10 text-xs font-medium text-primary">
-                              {msg.author.slice(0, 2).toUpperCase()}
-                            </AvatarFallback>
-                          </Avatar>
-                        </TooltipTrigger>
-                        <TooltipContent side="top">{msg.author}</TooltipContent>
-                      </Tooltip>
-                    )}
-                    <div className="min-w-0 flex-1">
-                      <MessageContent content={msg.content.trim()} />
-                    </div>
-                    <CopyButton content={msg.content} />
-                  </div>
-                  <div className="mt-1">
-                    <span className="select-none text-[10px] text-muted-foreground/60">
-                      {timeAgo(msg.timestamp, t)}
-                    </span>
-                  </div>
-                </div>
-              )}
+              <ToolCallCard
+                name={tc.name}
+                input={tc.input}
+                output={tc.output}
+                planText={tc._planText}
+                onRespond={
+                  tc.name === 'AskUserQuestion' || tc.name === 'ExitPlanMode'
+                    ? (answer: string) => {
+                        useThreadStore
+                          .getState()
+                          .handleWSToolOutput(threadId, { toolCallId: tc.id, output: answer });
+                        onSend(answer, { model: '', mode: '' });
+                      }
+                    : undefined
+                }
+              />
             </div>
           );
         }
-
-        if (item.type === 'toolcall' || item.type === 'toolcall-group') {
+        if (ti.type === 'toolcall-group') {
+          const groupSnapshotIdx =
+            ti.name === 'TodoWrite'
+              ? Math.max(...ti.calls.map((c: any) => snapshotMap.get(c.id) ?? -1))
+              : -1;
           return (
-            <div key={key} style={{ contentVisibility: 'auto', containIntrinsicSize: 'auto 40px' }}>
-              {renderToolItem(item)}
+            <div
+              key={ti.calls[0].id}
+              className={
+                ti.name === 'AskUserQuestion' ||
+                ti.name === 'ExitPlanMode' ||
+                ti.name === 'TodoWrite' ||
+                ti.name === 'Edit'
+                  ? 'rounded-lg border border-border'
+                  : undefined
+              }
+              data-tool-call-id={ti.calls[0].id}
+              {...(groupSnapshotIdx >= 0 ? { 'data-todo-snapshot': groupSnapshotIdx } : {})}
+            >
+              <ToolCallGroup
+                name={ti.name}
+                calls={ti.calls}
+                onRespond={
+                  ti.name === 'AskUserQuestion' || ti.name === 'ExitPlanMode'
+                    ? (answer: string) => {
+                        for (const call of ti.calls) {
+                          if (!call.output) {
+                            useThreadStore.getState().handleWSToolOutput(threadId, {
+                              toolCallId: call.id,
+                              output: answer,
+                            });
+                          }
+                        }
+                        onSend(answer, { model: '', mode: '' });
+                      }
+                    : undefined
+                }
+              />
             </div>
           );
         }
-
-        if (item.type === 'toolcall-run') {
-          return (
-            <div key={key} style={{ contentVisibility: 'auto', containIntrinsicSize: 'auto 40px' }}>
-              <div className="space-y-1">{item.items.map(renderToolItem)}</div>
-            </div>
-          );
-        }
-
-        if (item.type === 'thread-event') {
-          return (
-            <div key={key} style={{ contentVisibility: 'auto', containIntrinsicSize: 'auto 32px' }}>
-              <GitEventCard event={item.event} />
-            </div>
-          );
-        }
-
         return null;
-      })}
-    </>
-  );
-}));
+      },
+      [snapshotMap, threadId, onSend],
+    );
+
+    return (
+      <>
+        {hasHiddenItems && <div style={{ height: spacerHeight }} aria-hidden="true" />}
+        {visibleItems.map((item) => {
+          const key = getItemKey(item);
+
+          if (item.type === 'message') {
+            const msg = item.msg;
+            return (
+              <div
+                key={key}
+                style={{ contentVisibility: 'auto', containIntrinsicSize: 'auto 60px' }}
+                className={cn(
+                  'relative group text-sm',
+                  msg.role === 'user'
+                    ? 'max-w-[80%] ml-auto rounded-lg px-3 py-2 bg-foreground text-background'
+                    : 'w-full text-foreground',
+                )}
+                {...(msg.role === 'user' ? { 'data-user-msg': msg.id } : {})}
+              >
+                {msg.images &&
+                  msg.images.length > 0 &&
+                  (() => {
+                    const allImages = msg.images!.map((i: any, j: number) => ({
+                      src: `data:${i.source.media_type};base64,${i.source.data}`,
+                      alt: `Attachment ${j + 1}`,
+                    }));
+                    return (
+                      <div className="mb-2 flex flex-wrap gap-2">
+                        {msg.images!.map((img: any, idx: number) => (
+                          <img
+                            key={`attachment-${idx}`}
+                            src={`data:${img.source.media_type};base64,${img.source.data}`}
+                            alt={`Attachment ${idx + 1}`}
+                            width={160}
+                            height={160}
+                            loading="lazy"
+                            className="max-h-40 cursor-pointer rounded border border-border transition-opacity hover:opacity-80"
+                            onClick={() => onOpenLightbox(allImages, idx)}
+                          />
+                        ))}
+                      </div>
+                    );
+                  })()}
+                {msg.role === 'user' ? (
+                  (() => {
+                    const { files, cleanContent } = parseReferencedFiles(msg.content);
+                    return (
+                      <>
+                        {files.length > 0 && (
+                          <div className="mb-1.5 flex flex-wrap gap-1">
+                            {files.map((file) => (
+                              <span
+                                key={file}
+                                className="inline-flex items-center gap-1 rounded bg-background/20 px-1.5 py-0.5 font-mono text-xs text-background/70"
+                                title={file}
+                              >
+                                <FileText className="h-3 w-3 shrink-0" />
+                                {file.split('/').pop()}
+                              </span>
+                            ))}
+                          </div>
+                        )}
+                        <UserMessageContent content={cleanContent.trim()} />
+                        {(msg.model || msg.permissionMode) && (
+                          <div className="mt-1.5 flex gap-1">
+                            {msg.model && (
+                              <Badge
+                                variant="outline"
+                                className="h-4 border-background/20 bg-background/10 px-1.5 py-0 text-[10px] font-medium text-background/60"
+                              >
+                                {resolveModelLabel(msg.model, t)}
+                              </Badge>
+                            )}
+                            {msg.permissionMode && (
+                              <Badge
+                                variant="outline"
+                                className="h-4 border-background/20 bg-background/10 px-1.5 py-0 text-[10px] font-medium text-background/60"
+                              >
+                                {t(`prompt.${msg.permissionMode}`)}
+                              </Badge>
+                            )}
+                          </div>
+                        )}
+                      </>
+                    );
+                  })()
+                ) : (
+                  <div className="overflow-x-auto break-words text-sm leading-relaxed">
+                    <div className="flex items-start gap-2">
+                      {msg.author && (
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <Avatar className="mt-0.5">
+                              <AvatarFallback className="bg-primary/10 text-xs font-medium text-primary">
+                                {msg.author.slice(0, 2).toUpperCase()}
+                              </AvatarFallback>
+                            </Avatar>
+                          </TooltipTrigger>
+                          <TooltipContent side="top">{msg.author}</TooltipContent>
+                        </Tooltip>
+                      )}
+                      <div className="min-w-0 flex-1">
+                        <MessageContent content={msg.content.trim()} />
+                      </div>
+                      <CopyButton content={msg.content} />
+                    </div>
+                    <div className="mt-1">
+                      <span className="select-none text-[10px] text-muted-foreground/60">
+                        {timeAgo(msg.timestamp, t)}
+                      </span>
+                    </div>
+                  </div>
+                )}
+              </div>
+            );
+          }
+
+          if (item.type === 'toolcall' || item.type === 'toolcall-group') {
+            return (
+              <div
+                key={key}
+                style={{ contentVisibility: 'auto', containIntrinsicSize: 'auto 40px' }}
+              >
+                {renderToolItem(item)}
+              </div>
+            );
+          }
+
+          if (item.type === 'toolcall-run') {
+            return (
+              <div
+                key={key}
+                style={{ contentVisibility: 'auto', containIntrinsicSize: 'auto 40px' }}
+              >
+                <div className="space-y-1">{item.items.map(renderToolItem)}</div>
+              </div>
+            );
+          }
+
+          if (item.type === 'thread-event') {
+            return (
+              <div
+                key={key}
+                style={{ contentVisibility: 'auto', containIntrinsicSize: 'auto 32px' }}
+              >
+                <GitEventCard event={item.event} />
+              </div>
+            );
+          }
+
+          return null;
+        })}
+      </>
+    );
+  }),
+);
 
 export function ThreadView() {
   const { t } = useTranslation();
@@ -1122,9 +1150,11 @@ export function ThreadView() {
   // Ref tracking the last user message ID (avoids DOM queries in scroll handler)
   const lastUserMsgIdRef = useRef<string | null>(null);
   useEffect(() => {
-    const last = activeThread?.messages?.filter((m: any) => m.role === 'user' && m.content?.trim()).at(-1);
+    const last = activeThread?.messages
+      ?.filter((m: any) => m.role === 'user' && m.content?.trim())
+      .at(-1);
     lastUserMsgIdRef.current = last?.id ?? null;
-  }, [activeThread?.messages?.length]);
+  }, [activeThread?.messages]);
 
   useEffect(() => {
     const viewport = scrollViewportRef.current;

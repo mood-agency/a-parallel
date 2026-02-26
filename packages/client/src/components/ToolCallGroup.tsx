@@ -20,7 +20,11 @@ interface ToolCallGroupProps {
   onRespond?: (answer: string) => void;
 }
 
-export const ToolCallGroup = memo(function ToolCallGroup({ name, calls, onRespond }: ToolCallGroupProps) {
+export const ToolCallGroup = memo(function ToolCallGroup({
+  name,
+  calls,
+  onRespond,
+}: ToolCallGroupProps) {
   const { t } = useTranslation();
   const [expanded, setExpanded] = useState(false);
   const label = getToolLabel(name, t);
