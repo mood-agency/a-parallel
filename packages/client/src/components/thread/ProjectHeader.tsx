@@ -13,6 +13,14 @@ import { Button } from '@/components/ui/button';
 import { api } from '@/lib/api';
 import { toast } from 'sonner';
 import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
+import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
@@ -70,6 +78,9 @@ const MoreActionsMenu = memo(function MoreActionsMenu() {
   const navigate = useNavigate();
   const threadId = useThreadStore(s => s.activeThread?.id);
   const threadProjectId = useThreadStore(s => s.activeThread?.projectId);
+  const threadTitle = useThreadStore(s => s.activeThread?.title);
+  const threadMode = useThreadStore(s => s.activeThread?.mode);
+  const threadBranch = useThreadStore(s => s.activeThread?.branch);
   const threadPinned = useThreadStore(s => s.activeThread?.pinned);
   const hasMessages = useThreadStore(s => (s.activeThread?.messages?.length ?? 0) > 0);
   const pinThread = useThreadStore(s => s.pinThread);
@@ -77,6 +88,19 @@ const MoreActionsMenu = memo(function MoreActionsMenu() {
   const setReviewPaneOpen = useUIStore(s => s.setReviewPaneOpen);
   const [copiedText, setCopiedText] = useState(false);
   const [copiedTools, setCopiedTools] = useState(false);
+  const [deleteOpen, setDeleteOpen] = useState(false);
+  const [deleteLoading, setDeleteLoading] = useState(false);
+  const isWorktree = threadMode === 'worktree' && !!threadBranch;
+
+  const handleDeleteConfirm = useCallback(async () => {
+    if (!threadId || !threadProjectId) return;
+    setDeleteLoading(true);
+    await deleteThread(threadId, threadProjectId);
+    setDeleteLoading(false);
+    setDeleteOpen(false);
+    toast.success(t('toast.threadDeleted', { title: threadTitle }));
+    navigate(`/projects/${threadProjectId}`);
+  }, [threadId, threadProjectId, threadTitle, deleteThread, navigate, t]);
 
   const handleCopy = useCallback((includeToolCalls: boolean) => {
     const messages = useThreadStore.getState().activeThread?.messages;
@@ -93,6 +117,7 @@ const MoreActionsMenu = memo(function MoreActionsMenu() {
   }, []);
 
   return (
+    <>
     <DropdownMenu>
       <Tooltip>
         <TooltipTrigger asChild>
@@ -149,10 +174,7 @@ const MoreActionsMenu = memo(function MoreActionsMenu() {
             </DropdownMenuItem>
             <DropdownMenuSeparator />
             <DropdownMenuItem
-              onClick={() => {
-                deleteThread(threadId!, threadProjectId!);
-                navigate(`/projects/${threadProjectId}`);
-              }}
+              onClick={() => setDeleteOpen(true)}
               className="text-status-error focus:text-status-error cursor-pointer"
             >
               <Trash2 className="h-4 w-4 mr-2" />
@@ -162,6 +184,30 @@ const MoreActionsMenu = memo(function MoreActionsMenu() {
         )}
       </DropdownMenuContent>
     </DropdownMenu>
+    <Dialog open={deleteOpen} onOpenChange={(open) => { if (!open) setDeleteOpen(false); }}>
+      <DialogContent className="max-w-sm">
+        <DialogHeader>
+          <DialogTitle>{t('dialog.deleteThread')}</DialogTitle>
+          <DialogDescription className="break-all">
+            {t('dialog.deleteThreadDesc', { title: threadTitle && threadTitle.length > 80 ? threadTitle.slice(0, 80) + '…' : threadTitle })}
+          </DialogDescription>
+        </DialogHeader>
+        {isWorktree && (
+          <p className="text-xs text-status-warning/80 bg-status-warning/10 rounded-md px-3 py-2">
+            {t('dialog.worktreeWarning')}
+          </p>
+        )}
+        <DialogFooter>
+          <Button variant="outline" size="sm" onClick={() => setDeleteOpen(false)}>
+            {t('common.cancel')}
+          </Button>
+          <Button variant="destructive" size="sm" onClick={handleDeleteConfirm} loading={deleteLoading}>
+            {t('common.delete')}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+    </>
   );
 });
 
