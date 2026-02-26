@@ -21,10 +21,13 @@ import {
   useCallback,
   useMemo,
   memo,
+  forwardRef,
+  useImperativeHandle,
   startTransition,
   lazy,
   Suspense,
 } from 'react';
+import { flushSync } from 'react-dom';
 import { useTranslation } from 'react-i18next';
 import { toast } from 'sonner';
 
@@ -358,7 +361,7 @@ function groupTools(tools: string[]) {
   return { builtIn, mcpGroups };
 }
 
-function InitInfoCard({ initInfo }: { initInfo: { tools: string[]; cwd: string; model: string } }) {
+const InitInfoCard = memo(function InitInfoCard({ initInfo }: { initInfo: { tools: string[]; cwd: string; model: string } }) {
   const { t } = useTranslation();
   const { builtIn, mcpGroups } = useMemo(() => groupTools(initInfo.tools), [initInfo.tools]);
 
@@ -390,9 +393,9 @@ function InitInfoCard({ initInfo }: { initInfo: { tools: string[]; cwd: string; 
       </div>
     </div>
   );
-}
+});
 
-function McpToolGroup({ serverName, toolNames }: { serverName: string; toolNames: string[] }) {
+const McpToolGroup = memo(function McpToolGroup({ serverName, toolNames }: { serverName: string; toolNames: string[] }) {
   const [open, setOpen] = useState(false);
 
   return (
@@ -410,7 +413,7 @@ function McpToolGroup({ serverName, toolNames }: { serverName: string; toolNames
       </CollapsibleContent>
     </Collapsible>
   );
-}
+});
 
 /** Get timestamp for a render item (used for chronological interleaving with events) */
 function getItemTimestamp(item: RenderItem): string {
@@ -626,17 +629,27 @@ function getItemKey(item: RenderItem): string {
   return '';
 }
 
-/** Memoized message list to avoid rebuilding on unrelated state changes */
-const MemoizedMessageList = memo(function MemoizedMessageList({
-  messages,
-  threadEvents,
-  threadId,
-  knownIds: _knownIds,
-  prefersReducedMotion: _prefersReducedMotion,
-  snapshotMap,
-  onSend,
-  onOpenLightbox,
-}: {
+/* ── Windowed rendering constants ─────────────────────────────────── */
+const INITIAL_WINDOW = 30;
+const EXPAND_BATCH = 20;
+
+function estimateItemHeight(item: RenderItem): number {
+  if (item.type === 'message') return item.msg.role === 'user' ? 80 : 120;
+  if (item.type === 'toolcall') return 44;
+  if (item.type === 'toolcall-group') return 44;
+  if (item.type === 'toolcall-run') return 44 * item.items.length;
+  if (item.type === 'thread-event') return 32;
+  return 60;
+}
+
+interface MemoizedMessageListHandle {
+  expandToItem: (id: string) => void;
+}
+
+/** Memoized message list with windowed rendering — only mounts the last
+ *  INITIAL_WINDOW items on first render, expanding progressively on scroll-up.
+ *  Items are never un-mounted; contentVisibility:'auto' handles paint cost. */
+const MemoizedMessageList = memo(forwardRef<MemoizedMessageListHandle, {
   messages: any[];
   threadEvents?: import('@funny/shared').ThreadEvent[];
   threadId: string;
@@ -645,13 +658,126 @@ const MemoizedMessageList = memo(function MemoizedMessageList({
   snapshotMap: Map<string, number>;
   onSend: (prompt: string, opts: { model: string; mode: string }) => void;
   onOpenLightbox: (images: { src: string; alt: string }[], index: number) => void;
-}) {
+  scrollRef: React.RefObject<HTMLElement | null>;
+}>(function MemoizedMessageList({
+  messages,
+  threadEvents,
+  threadId,
+  knownIds: _knownIds,
+  prefersReducedMotion: _prefersReducedMotion,
+  snapshotMap,
+  onSend,
+  onOpenLightbox,
+  scrollRef,
+}, ref) {
   const { t } = useTranslation();
 
   const groupedItems = useMemo(
     () => buildGroupedRenderItems(messages, threadEvents),
     [messages, threadEvents],
   );
+
+  /* ── Windowed rendering ──────────────────────────────────────────── */
+  const [renderCount, setRenderCount] = useState(INITIAL_WINDOW);
+
+  // Reset render window when switching threads (synchronous state reset
+  // during render — standard React derived-state-from-props pattern).
+  const prevThreadIdRef = useRef(threadId);
+  if (prevThreadIdRef.current !== threadId) {
+    prevThreadIdRef.current = threadId;
+    setRenderCount(INITIAL_WINDOW);
+  }
+
+  const windowStart = Math.max(0, groupedItems.length - renderCount);
+  const visibleItems = groupedItems.slice(windowStart);
+  const hasHiddenItems = windowStart > 0;
+
+  // ID → index map for expandToItem (scroll-to-message support)
+  const itemIndexMap = useMemo(() => {
+    const map = new Map<string, number>();
+    groupedItems.forEach((item, index) => {
+      if (item.type === 'message') map.set(item.msg.id, index);
+      else if (item.type === 'toolcall') map.set(item.tc.id, index);
+      else if (item.type === 'toolcall-group')
+        item.calls.forEach((c: any) => map.set(c.id, index));
+      else if (item.type === 'toolcall-run') {
+        for (const ti of item.items) {
+          if (ti.type === 'toolcall') map.set(ti.tc.id, index);
+          else if (ti.type === 'toolcall-group')
+            ti.calls.forEach((c: any) => map.set(c.id, index));
+        }
+      } else if (item.type === 'thread-event') map.set(item.event.id, index);
+    });
+    return map;
+  }, [groupedItems]);
+
+  // Expose expandToItem so ThreadView can expand the window before scrolling
+  useImperativeHandle(
+    ref,
+    () => ({
+      expandToItem: (id: string) => {
+        const index = itemIndexMap.get(id);
+        if (index !== undefined) {
+          const needed = groupedItems.length - index + 5;
+          if (needed > renderCount) {
+            flushSync(() => setRenderCount(Math.min(groupedItems.length, needed)));
+          }
+        }
+      },
+    }),
+    [itemIndexMap, renderCount, groupedItems.length],
+  );
+
+  // Estimated spacer height for items above the render window
+  const spacerHeight = useMemo(() => {
+    let h = 0;
+    for (let i = 0; i < windowStart; i++) {
+      h += estimateItemHeight(groupedItems[i]);
+      if (i < windowStart - 1) h += 16; // space-y-4 gap
+    }
+    return h;
+  }, [groupedItems, windowStart]);
+
+  // Refs so the scroll listener always reads fresh values without re-attaching
+  const spacerHeightRef = useRef(spacerHeight);
+  spacerHeightRef.current = spacerHeight;
+  const windowStartRef = useRef(windowStart);
+  windowStartRef.current = windowStart;
+  const groupedLenRef = useRef(groupedItems.length);
+  groupedLenRef.current = groupedItems.length;
+
+  // Scroll-based window expansion — fires on every scroll event so fast
+  // mouse-wheel scrolling is always caught (IntersectionObserver can miss it).
+  useEffect(() => {
+    const scrollEl = scrollRef.current;
+    if (!scrollEl) return;
+
+    const onScroll = () => {
+      if (windowStartRef.current <= 0) return;
+      if (scrollEl.scrollTop < spacerHeightRef.current + 600) {
+        setRenderCount((prev) => Math.min(groupedLenRef.current, prev + EXPAND_BATCH));
+      }
+    };
+
+    scrollEl.addEventListener('scroll', onScroll, { passive: true });
+    return () => scrollEl.removeEventListener('scroll', onScroll);
+  }, [scrollRef]);
+
+  // After each expansion, check if the user has already scrolled past the
+  // newly rendered items (fast-scroll catch-up).  Runs once per frame via
+  // rAF and chains until the spacer is far enough from the viewport.
+  useEffect(() => {
+    if (windowStart <= 0) return;
+    const scrollEl = scrollRef.current;
+    if (!scrollEl) return;
+
+    const rafId = requestAnimationFrame(() => {
+      if (scrollEl.scrollTop < spacerHeightRef.current + 600) {
+        setRenderCount((prev) => Math.min(groupedLenRef.current, prev + EXPAND_BATCH));
+      }
+    });
+    return () => cancelAnimationFrame(rafId);
+  }, [windowStart, scrollRef]);
 
   const renderToolItem = useCallback(
     (ti: ToolItem) => {
@@ -737,7 +863,8 @@ const MemoizedMessageList = memo(function MemoizedMessageList({
 
   return (
     <>
-      {groupedItems.map((item) => {
+      {hasHiddenItems && <div style={{ height: spacerHeight }} aria-hidden="true" />}
+      {visibleItems.map((item) => {
         const key = getItemKey(item);
 
         if (item.type === 'message') {
@@ -880,7 +1007,7 @@ const MemoizedMessageList = memo(function MemoizedMessageList({
       })}
     </>
   );
-});
+}));
 
 export function ThreadView() {
   const { t } = useTranslation();
@@ -903,16 +1030,12 @@ export function ThreadView() {
   const scrolledThreadRef = useRef<string | null>(null);
   const prevOldestIdRef = useRef<string | null>(null);
   const prevScrollHeightRef = useRef(0);
-  const [_showScrollDown, setShowScrollDown] = useState(false);
   const scrollDownRef = useRef<HTMLDivElement>(null);
-  const todoThrottleRef = useRef(0);
+  const messageListRef = useRef<MemoizedMessageListHandle>(null);
   const [visibleMessageId, setVisibleMessageId] = useState<string | null>(null);
-  const visibleMsgThrottleRef = useRef(0);
   const [lightboxOpen, setLightboxOpen] = useState(false);
   const [lightboxImages, setLightboxImages] = useState<{ src: string; alt: string }[]>([]);
   const [lightboxIndex, setLightboxIndex] = useState(0);
-  const [_todoPanelDismissed, setTodoPanelDismissed] = useState(false);
-  const [currentSnapshotIdx, setCurrentSnapshotIdx] = useState(-1);
   const prefersReducedMotion = useReducedMotion();
   // Track which message/tool-call IDs existed when the thread was loaded.
   // Messages in this set skip entrance animations to prevent CLS.
@@ -943,12 +1066,6 @@ export function ThreadView() {
     snapshots.forEach((s, i) => map.set(s.toolCallId, i));
     return map;
   }, [snapshots]);
-
-  // Reset dismissed state and snapshot index when switching threads
-  useEffect(() => {
-    setTodoPanelDismissed(false);
-    setCurrentSnapshotIdx(-1);
-  }, [activeThread?.id]);
 
   // Scroll to bottom when opening or switching threads.
   // useLayoutEffect fires before browser paint, preventing CLS from scroll jumps.
@@ -981,12 +1098,6 @@ export function ThreadView() {
     // eslint-disable-next-line react-hooks/exhaustive-deps -- only scroll on thread switch; activeThread is used for null check but changes on every message
   }, [activeThread?.id]);
 
-  // Derive displayed snapshot — only when scroll handler has detected a position
-  const _currentSnapshot =
-    currentSnapshotIdx >= 0 && currentSnapshotIdx < snapshots.length
-      ? snapshots[currentSnapshotIdx]
-      : null;
-
   const openLightbox = useCallback((images: { src: string; alt: string }[], index: number) => {
     setLightboxImages(images);
     setLightboxIndex(index);
@@ -999,51 +1110,25 @@ export function ThreadView() {
     lastMessage?.content?.length,
     lastMessage?.toolCalls?.length,
     activeThread?.status,
+    !!activeThread?.initInfo, // trigger scroll-to-bottom when initInfo arrives (prevents CLS)
   ].join(':');
+
+  // Helper: schedule a non-critical state update during idle time
+  const scheduleIdle = useCallback((fn: () => void) => {
+    if (typeof requestIdleCallback === 'function') requestIdleCallback(fn);
+    else setTimeout(fn, 0);
+  }, []);
+
+  // Ref tracking the last user message ID (avoids DOM queries in scroll handler)
+  const lastUserMsgIdRef = useRef<string | null>(null);
+  useEffect(() => {
+    const last = activeThread?.messages?.filter((m: any) => m.role === 'user' && m.content?.trim()).at(-1);
+    lastUserMsgIdRef.current = last?.id ?? null;
+  }, [activeThread?.messages?.length]);
 
   useEffect(() => {
     const viewport = scrollViewportRef.current;
     if (!viewport) return;
-
-    // Expensive: queries DOM for todo-snapshot elements and measures layout.
-    // Throttled to run at most every 150ms to avoid blocking the main thread.
-    const updateTodoSnapshot = (isAtBottom: boolean) => {
-      const now = performance.now();
-      if (now - todoThrottleRef.current < 150) return;
-      todoThrottleRef.current = now;
-
-      const todoEls = viewport.querySelectorAll<HTMLElement>('[data-todo-snapshot]');
-      if (todoEls.length === 0) {
-        setCurrentSnapshotIdx(-1);
-        return;
-      }
-      if (isAtBottom) {
-        let maxIdx = -1;
-        todoEls.forEach((el) => {
-          const idx = parseInt(el.dataset.todoSnapshot!, 10);
-          if (idx > maxIdx) maxIdx = idx;
-        });
-        setCurrentSnapshotIdx(maxIdx);
-      } else {
-        const viewportRect = viewport.getBoundingClientRect();
-        const threshold = viewportRect.top + viewportRect.height * 0.5;
-        const firstRect = todoEls[0].getBoundingClientRect();
-        const lastRect = todoEls[todoEls.length - 1].getBoundingClientRect();
-        if (threshold < firstRect.top || threshold > lastRect.bottom + 150) {
-          setCurrentSnapshotIdx(-1);
-        } else {
-          let latestIdx = -1;
-          todoEls.forEach((el) => {
-            const rect = el.getBoundingClientRect();
-            if (rect.top <= threshold) {
-              const idx = parseInt(el.dataset.todoSnapshot!, 10);
-              if (idx > latestIdx) latestIdx = idx;
-            }
-          });
-          setCurrentSnapshotIdx(latestIdx >= 0 ? latestIdx : -1);
-        }
-      }
-    };
 
     const handleScroll = () => {
       const { scrollTop, scrollHeight, clientHeight } = viewport;
@@ -1051,62 +1136,67 @@ export function ThreadView() {
       const isAtBottom = scrollHeight - scrollTop - clientHeight <= 80;
       userHasScrolledUp.current = !isAtBottom;
 
-      // Update scroll-to-bottom button visibility via DOM (fast path)
+      // Update scroll-to-bottom button visibility via DOM (fast path, no React state)
       const shouldShow = hasOverflow && !isAtBottom;
       if (scrollDownRef.current) {
         scrollDownRef.current.style.display = shouldShow ? '' : 'none';
       }
-      // Update React state only when the value actually changes (for PromptTimeline)
-      setShowScrollDown((prev) => (prev !== shouldShow ? shouldShow : prev));
 
       // Load older messages when scrolled near the top
       if (scrollTop < 200 && hasMore && !loadingMore) {
         loadOlderMessages();
       }
 
-      // Throttled: expensive DOM queries for todo snapshot tracking
-      updateTodoSnapshot(isAtBottom);
-
-      // Track which user message is currently visible for timeline highlighting
-      const now2 = performance.now();
-      if (now2 - visibleMsgThrottleRef.current >= 100) {
-        visibleMsgThrottleRef.current = now2;
-        const userEls = viewport.querySelectorAll<HTMLElement>('[data-user-msg]');
-        if (userEls.length > 0) {
-          if (isAtBottom) {
-            // At bottom → highlight the last user message
-            setVisibleMessageId(userEls[userEls.length - 1].dataset.userMsg!);
-          } else {
-            // Find which user message "section" occupies the viewport center.
-            // A section spans from a user message's top to the next user message's top
-            // (or the bottom of the scroll content for the last one).
-            const viewportRect = viewport.getBoundingClientRect();
-            const probe = viewportRect.top + viewportRect.height * 0.4;
-            let found: string | null = null;
-            for (let i = 0; i < userEls.length; i++) {
-              const sectionTop = userEls[i].getBoundingClientRect().top;
-              const sectionBottom =
-                i + 1 < userEls.length
-                  ? userEls[i + 1].getBoundingClientRect().top
-                  : viewport.scrollHeight + viewportRect.top; // end of content
-              if (sectionTop <= probe && probe < sectionBottom) {
-                found = userEls[i].dataset.userMsg!;
-                break;
-              }
-            }
-            // Fallback: if probe is above all sections, pick the first
-            if (!found) {
-              found = userEls[0].dataset.userMsg!;
-            }
-            setVisibleMessageId(found);
-          }
-        }
+      // At-bottom: sync visible message ID to last user message (no DOM queries)
+      if (isAtBottom && lastUserMsgIdRef.current) {
+        scheduleIdle(() => setVisibleMessageId(lastUserMsgIdRef.current));
       }
     };
 
     viewport.addEventListener('scroll', handleScroll, { passive: true });
     return () => viewport.removeEventListener('scroll', handleScroll);
-  }, [activeThread?.id, hasMore, loadingMore, loadOlderMessages]);
+  }, [activeThread?.id, hasMore, loadingMore, loadOlderMessages, scheduleIdle]);
+
+  // IntersectionObserver for visible user message tracking (replaces getBoundingClientRect loop).
+  // Detects which user message section contains the ~40% viewport line.
+  useEffect(() => {
+    const viewport = scrollViewportRef.current;
+    if (!viewport || !activeThread?.id) return;
+
+    const io = new IntersectionObserver(
+      (entries) => {
+        // When scrolled to bottom, the scroll handler sets visibleMessageId — skip here.
+        if (!userHasScrolledUp.current) return;
+        for (const entry of entries) {
+          if (entry.isIntersecting) {
+            const id = (entry.target as HTMLElement).dataset.userMsg;
+            if (id) scheduleIdle(() => setVisibleMessageId(id));
+          }
+        }
+      },
+      { root: viewport, rootMargin: '-35% 0px -55% 0px', threshold: [0] },
+    );
+
+    const observeAll = () => {
+      io.disconnect();
+      viewport.querySelectorAll<HTMLElement>('[data-user-msg]').forEach((el) => io.observe(el));
+    };
+    observeAll();
+
+    // Re-observe when DOM structure changes (new messages, window expansion)
+    let debounceTimer: ReturnType<typeof setTimeout>;
+    const mo = new MutationObserver(() => {
+      clearTimeout(debounceTimer);
+      debounceTimer = setTimeout(observeAll, 200);
+    });
+    mo.observe(viewport, { childList: true, subtree: true });
+
+    return () => {
+      io.disconnect();
+      mo.disconnect();
+      clearTimeout(debounceTimer);
+    };
+  }, [activeThread?.id, scheduleIdle]);
 
   // Scroll to bottom whenever the fingerprint changes (new messages, status changes).
   // Only scrolls if the user is already at the bottom (sticky behavior).
@@ -1138,11 +1228,9 @@ export function ThreadView() {
       // When at bottom, sync visibleMessageId to the last user message.
       // Setting scrollTop programmatically doesn't always fire a scroll event,
       // so the scroll handler may never update visibleMessageId.
-      const lastUserMsg = activeThread?.messages
-        ?.filter((m: any) => m.role === 'user' && m.content?.trim())
-        .at(-1);
-      if (lastUserMsg) {
-        setVisibleMessageId(lastUserMsg.id);
+      if (lastUserMsgIdRef.current) {
+        const id = lastUserMsgIdRef.current;
+        scheduleIdle(() => setVisibleMessageId(id));
       }
     }
     // Hide scroll-to-bottom button via DOM if content doesn't overflow
@@ -1378,17 +1466,6 @@ export function ThreadView() {
     <div className="relative flex h-full min-w-0 flex-1 flex-col">
       <ProjectHeader />
 
-      {/* Floating TODO Panel (currently disabled) */}
-      {/* <AnimatePresence>
-        {currentSnapshot && !todoPanelDismissed && currentSnapshot.progress.completed < currentSnapshot.progress.total && (
-          <TodoPanel
-            todos={currentSnapshot.todos}
-            progress={currentSnapshot.progress}
-            onDismiss={() => setTodoPanelDismissed(true)}
-          />
-        )}
-      </AnimatePresence> */}
-
       {/* Messages + Timeline */}
       <div className="thread-container flex min-h-0 flex-1">
         {/* Messages column + input */}
@@ -1422,6 +1499,7 @@ export function ThreadView() {
               {activeThread.initInfo && <InitInfoCard initInfo={activeThread.initInfo} />}
 
               <MemoizedMessageList
+                ref={messageListRef}
                 messages={activeThread.messages ?? []}
                 threadEvents={activeThread.threadEvents}
                 threadId={activeThread.id}
@@ -1430,6 +1508,7 @@ export function ThreadView() {
                 snapshotMap={snapshotMap}
                 onSend={handleSend}
                 onOpenLightbox={openLightbox}
+                scrollRef={scrollViewportRef}
               />
 
               {isRunning && !isExternal && (
@@ -1613,11 +1692,20 @@ export function ThreadView() {
             messagesScrollRef={scrollViewportRef}
             onScrollToMessage={(msgId, toolCallId) => {
               // Try tool call element first, then user message
-              const el = toolCallId
-                ? scrollViewportRef.current?.querySelector(`[data-tool-call-id="${toolCallId}"]`)
-                : scrollViewportRef.current?.querySelector(`[data-user-msg="${msgId}"]`);
+              const targetId = toolCallId || msgId;
+              const selector = toolCallId
+                ? `[data-tool-call-id="${toolCallId}"]`
+                : `[data-user-msg="${msgId}"]`;
+              const el = scrollViewportRef.current?.querySelector(selector);
               if (el) {
                 el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+              } else {
+                // Item not rendered yet — expand window, then scroll after commit
+                messageListRef.current?.expandToItem(targetId);
+                requestAnimationFrame(() => {
+                  const el2 = scrollViewportRef.current?.querySelector(selector);
+                  if (el2) el2.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                });
               }
             }}
           />

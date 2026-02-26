@@ -2,6 +2,16 @@
 @tailwind components;
 @tailwind utilities;
 
+/* Size-adjusted fallback to minimize CLS during font swap */
+@font-face {
+  font-family: 'Geist Sans Fallback';
+  src: local('Arial');
+  size-adjust: 99.7%;
+  ascent-override: 99%;
+  descent-override: 22%;
+  line-gap-override: 0%;
+}
+
 /* Show timeline only when thread container is wide enough */
 .thread-container {
   container-type: inline-size;
@@ -108,7 +118,7 @@
   }
 
   body {
-    font-family: 'Geist Sans', sans-serif;
+    font-family: 'Geist Sans', 'Geist Sans Fallback', sans-serif;
     @apply bg-background text-foreground;
   }
 

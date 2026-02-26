@@ -1,5 +1,5 @@
 import { ChevronRight, Wrench, ListTodo } from 'lucide-react';
-import { useState } from 'react';
+import { useState, memo } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { cn } from '@/lib/utils';
@@ -20,7 +20,7 @@ interface ToolCallGroupProps {
   onRespond?: (answer: string) => void;
 }
 
-export function ToolCallGroup({ name, calls, onRespond }: ToolCallGroupProps) {
+export const ToolCallGroup = memo(function ToolCallGroup({ name, calls, onRespond }: ToolCallGroupProps) {
   const { t } = useTranslation();
   const [expanded, setExpanded] = useState(false);
   const label = getToolLabel(name, t);
@@ -64,4 +64,4 @@ export function ToolCallGroup({ name, calls, onRespond }: ToolCallGroupProps) {
       )}
     </div>
   );
-}
+});

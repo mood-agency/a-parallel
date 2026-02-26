@@ -7,6 +7,7 @@ import {
   ClipboardList,
   DollarSign,
   Archive,
+  Loader2,
 } from 'lucide-react';
 import { useEffect, useState, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
@@ -126,14 +127,14 @@ export function AnalyticsView() {
       </div>
 
       {/* Content */}
+      {loading ? (
+        <div className="flex flex-1 items-center justify-center text-muted-foreground">
+          <Loader2 className="h-5 w-5 animate-spin" />
+        </div>
+      ) : (
       <ScrollArea className="min-h-0 flex-1">
         <div className="mx-auto max-w-4xl space-y-6 px-6 py-6">
-          {loading ? (
-            <div className="flex items-center justify-center py-16">
-              <div className="h-6 w-6 animate-spin rounded-full border-b-2 border-primary" />
-              <span className="ml-3 text-sm text-muted-foreground">{t('analytics.loading')}</span>
-            </div>
-          ) : !overview ? (
+          {!overview ? (
             <div className="py-16 text-center text-sm text-muted-foreground">
               {t('analytics.noData')}
             </div>
@@ -220,6 +221,7 @@ export function AnalyticsView() {
           )}
         </div>
       </ScrollArea>
+      )}
     </div>
   );
 }

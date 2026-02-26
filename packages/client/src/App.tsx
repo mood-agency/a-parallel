@@ -237,7 +237,7 @@ export function App() {
           ~500ms first-open delay from lazy loading + mount + diff fetch. */}
       <div
         className={cn(
-          'h-full overflow-hidden flex-shrink-0 border-l border-border transition-[width,opacity] duration-200 ease-out',
+          'h-full overflow-hidden flex-shrink-0 border-l border-border bg-sidebar transition-[width,opacity] duration-200 ease-out',
           reviewPaneOpen && !settingsOpen && !allThreadsProjectId
             ? 'w-[50vw] opacity-100'
             : 'w-0 opacity-0 border-l-0',

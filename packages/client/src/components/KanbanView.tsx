@@ -4,9 +4,9 @@ import {
   dropTargetForElements,
   monitorForElements,
 } from '@atlaskit/pragmatic-drag-and-drop/element/adapter';
-import type { Thread, ThreadStage, Project } from '@funny/shared';
+import type { Thread, ThreadStage, Project, GitStatusInfo } from '@funny/shared';
 import { GitBranch, Pin, Plus, Search, Trash2, Chrome, Bot, Webhook, Terminal } from 'lucide-react';
-import { useState, useEffect, useRef, useMemo, useCallback, startTransition } from 'react';
+import { useState, useEffect, useRef, useMemo, useCallback, memo, startTransition } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useNavigate } from 'react-router-dom';
 import { toast } from 'sonner';
@@ -26,7 +26,6 @@ import { Input } from '@/components/ui/input';
 import { Popover, PopoverTrigger, PopoverContent } from '@/components/ui/popover';
 import { ProjectChip } from '@/components/ui/project-chip';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
-import { useMinuteTick } from '@/hooks/use-minute-tick';
 import { api } from '@/lib/api';
 import { stageConfig, statusConfig, gitSyncStateConfig, timeAgo } from '@/lib/thread-utils';
 import { cn } from '@/lib/utils';
@@ -53,7 +52,7 @@ const SOURCE_ICON: Record<string, typeof Chrome | undefined> = {
   ingest: Webhook,
 };
 
-function KanbanCard({
+const KanbanCard = memo(function KanbanCard({
   thread,
   projectInfo,
   onDelete,
@@ -63,6 +62,7 @@ function KanbanCard({
   projectId,
   highlighted,
   stage: _stage,
+  gitStatus: gitStatusProp,
 }: {
   thread: Thread;
   projectInfo?: { name: string; color?: string };
@@ -73,10 +73,10 @@ function KanbanCard({
   projectId?: string;
   highlighted?: boolean;
   stage: ThreadStage;
+  gitStatus?: GitStatusInfo;
 }) {
   const { t } = useTranslation();
   const navigate = useNavigate();
-  const statusByThread = useGitStatusStore((s) => s.statusByThread);
   const setKanbanContext = useUIStore((s) => s.setKanbanContext);
   const pinThread = useThreadStore((s) => s.pinThread);
   const ref = useRef<HTMLDivElement>(null);
@@ -109,8 +109,7 @@ function KanbanCard({
   const StatusIcon = statusConfig[thread.status].icon;
   const statusClassName = statusConfig[thread.status].className;
 
-  const gitStatus = statusByThread[thread.id];
-  const gitConf = gitStatus ? gitSyncStateConfig[gitStatus.state] : null;
+  const gitConf = gitStatusProp ? gitSyncStateConfig[gitStatusProp.state] : null;
   const GitIcon = gitConf?.icon;
   const displayBranch = thread.branch || thread.baseBranch;
 
@@ -118,7 +117,7 @@ function KanbanCard({
     <div
       ref={ref}
       className={cn(
-        'group/card relative rounded-md border bg-card p-2.5 cursor-pointer transition-all duration-500',
+        'group/card relative rounded-md border bg-card p-2.5 cursor-pointer transition-[opacity,box-shadow] duration-300',
         isDragging && 'opacity-40',
         ghost && !isDragging && 'opacity-50 hover:opacity-80',
         highlighted && 'ring-2 ring-ring shadow-md',
@@ -235,7 +234,7 @@ function KanbanCard({
       </div>
     </div>
   );
-}
+});
 
 function AddThreadButton({
   projectId,
@@ -326,7 +325,7 @@ function AddThreadButton({
   );
 }
 
-function KanbanColumn({
+const KanbanColumn = memo(function KanbanColumn({
   stage,
   threads,
   projectInfoById,
@@ -337,6 +336,7 @@ function KanbanColumn({
   search,
   contentSnippets,
   highlightThreadId,
+  statusByThread,
 }: {
   stage: ThreadStage;
   threads: Thread[];
@@ -348,6 +348,7 @@ function KanbanColumn({
   search?: string;
   contentSnippets?: Map<string, string>;
   highlightThreadId?: string;
+  statusByThread: Record<string, GitStatusInfo>;
 }) {
   const { t } = useTranslation();
   const ref = useRef<HTMLDivElement>(null);
@@ -435,6 +436,7 @@ function KanbanColumn({
                 projectId={projectId}
                 highlighted={thread.id === highlightThreadId}
                 stage={stage}
+                gitStatus={statusByThread[thread.id]}
               />
             ))}
             {hasMore && (
@@ -450,7 +452,7 @@ function KanbanColumn({
       </div>
     </div>
   );
-}
+});
 
 export function KanbanView({
   threads,
@@ -460,7 +462,6 @@ export function KanbanView({
   highlightThreadId: initialHighlightId,
 }: KanbanViewProps) {
   const { t } = useTranslation();
-  useMinuteTick();
   const navigate = useNavigate();
   const updateThreadStage = useThreadStore((s) => s.updateThreadStage);
   const archiveThread = useThreadStore((s) => s.archiveThread);
@@ -737,6 +738,7 @@ export function KanbanView({
             search={search}
             contentSnippets={contentSnippets}
             highlightThreadId={highlightThreadId}
+            statusByThread={statusByThread}
           />
         ))}
       </div>

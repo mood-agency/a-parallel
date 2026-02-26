@@ -5,6 +5,7 @@
 
 import type { ThreadEvent } from '@funny/shared';
 import { GitCommit, Upload, GitMerge, GitPullRequest } from 'lucide-react';
+import { memo } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { timeAgo } from '@/lib/thread-utils';
@@ -43,7 +44,7 @@ const iconColor: Record<string, string> = {
   'git:pr_created': 'text-orange-600',
 };
 
-export function GitEventCard({ event }: { event: ThreadEvent }) {
+export const GitEventCard = memo(function GitEventCard({ event }: { event: ThreadEvent }) {
   const { t } = useTranslation();
   const config = eventConfig[event.type];
   if (!config) return null;
@@ -82,4 +83,4 @@ export function GitEventCard({ event }: { event: ThreadEvent }) {
       )}
     </div>
   );
-}
+});

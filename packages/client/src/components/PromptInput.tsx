@@ -519,9 +519,13 @@ export const PromptInput = memo(function PromptInput({
   }, [setPromptDraft]);
 
   // Derive project path and manage cwd override
+  const effectiveProjectIdForPath = propProjectId || selectedProjectId;
   const projectPath = useMemo(
-    () => (selectedProjectId ? (projects.find((p) => p.id === selectedProjectId)?.path ?? '') : ''),
-    [selectedProjectId, projects],
+    () =>
+      effectiveProjectIdForPath
+        ? (projects.find((p) => p.id === effectiveProjectIdForPath)?.path ?? '')
+        : '',
+    [effectiveProjectIdForPath, projects],
   );
   const [cwdOverride, setCwdOverride] = useState<string | null>(null);
   const threadCwd = activeThreadWorktreePath || projectPath;
@@ -768,15 +772,23 @@ export const PromptInput = memo(function PromptInput({
     if (!loading) textareaRef.current?.focus();
   }, [loading]);
 
-  // Auto-resize textarea up to 35vh (called imperatively to avoid re-render dependency on prompt)
+  // Auto-resize textarea up to 35vh.  Wrapped in rAF so multiple keystrokes
+  // within a single frame batch into one resize (avoids repeated forced reflows).
+  const resizeRafRef = useRef(0);
   const resizeTextarea = useCallback(() => {
-    const ta = textareaRef.current;
-    if (!ta) return;
-    ta.style.height = 'auto';
-    const maxHeight = window.innerHeight * 0.35;
-    ta.style.height = `${Math.min(ta.scrollHeight, maxHeight)}px`;
-    ta.style.overflowY = ta.scrollHeight > maxHeight ? 'auto' : 'hidden';
+    cancelAnimationFrame(resizeRafRef.current);
+    resizeRafRef.current = requestAnimationFrame(() => {
+      const ta = textareaRef.current;
+      if (!ta) return;
+      ta.style.height = 'auto';
+      const maxHeight = window.innerHeight * 0.35;
+      ta.style.height = `${Math.min(ta.scrollHeight, maxHeight)}px`;
+      ta.style.overflowY = ta.scrollHeight > maxHeight ? 'auto' : 'hidden';
+    });
   }, []);
+
+  // Cleanup rAF on unmount
+  useEffect(() => () => cancelAnimationFrame(resizeRafRef.current), []);
 
   // Resize on initial mount and when prompt changes externally (e.g. draft restore)
   useEffect(() => {
