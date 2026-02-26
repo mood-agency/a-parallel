@@ -56,9 +56,9 @@ export const ToolCallCard = memo(function ToolCallCard({ name, input, output, on
   }, [output, expanded]);
 
   // Specialized cards
-  // ExitPlanMode: use plan from input if available, otherwise fall back to the
-  // parent assistant message content (the SDK sends ExitPlanMode with empty input)
-  if (name === 'ExitPlanMode') return <ExitPlanModeCard plan={typeof parsed.plan === 'string' ? parsed.plan : planText} onRespond={output ? undefined : onRespond} output={output} />;
+  // ExitPlanMode: prefer planText (which includes content from a Write to plan.md
+  // if one exists), then fall back to parsed.plan from the tool input
+  if (name === 'ExitPlanMode') return <ExitPlanModeCard plan={planText || (typeof parsed.plan === 'string' ? parsed.plan : undefined)} onRespond={output ? undefined : onRespond} output={output} />;
   if (isPlan) return <PlanCard parsed={parsed} output={output} hideLabel={hideLabel} />;
   if (name === 'Bash') return <BashCard parsed={parsed} output={output} hideLabel={hideLabel} />;
   if (name === 'Read') return <ReadFileCard parsed={parsed} output={output} hideLabel={hideLabel} />;

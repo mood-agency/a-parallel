@@ -367,6 +367,8 @@ function getItemTimestamp(item: RenderItem): string {
 function buildGroupedRenderItems(messages: any[], threadEvents?: import('@funny/shared').ThreadEvent[]): RenderItem[] {
   // Flatten all messages into a single stream of items
   const flat: ({ type: 'message'; msg: any } | { type: 'toolcall'; tc: any })[] = [];
+  // Collect Write tool calls that wrote plan files, so ExitPlanMode can use their content
+  let lastWrittenPlanContent: string | undefined;
   for (const msg of messages) {
     const hasExitPlanMode = msg.toolCalls?.some((tc: any) => tc.name === 'ExitPlanMode');
     // Only add message bubble if there's actual text content.
@@ -376,9 +378,20 @@ function buildGroupedRenderItems(messages: any[], threadEvents?: import('@funny/
       flat.push({ type: 'message', msg });
     }
     for (const tc of msg.toolCalls ?? []) {
-      // Attach parent message content as plan text for ExitPlanMode
-      if (tc.name === 'ExitPlanMode' && msg.content?.trim()) {
-        tc._planText = msg.content.trim();
+      // Track the most recent Write to a plan file
+      if (tc.name === 'Write') {
+        try {
+          const inp = typeof tc.input === 'string' ? JSON.parse(tc.input) : tc.input;
+          const fp = (inp?.file_path || '') as string;
+          if (/plan\.md$/i.test(fp) && typeof inp?.content === 'string') {
+            lastWrittenPlanContent = inp.content;
+          }
+        } catch { /* ignore parse errors */ }
+      }
+      // Attach plan text for ExitPlanMode: prefer the content written to plan.md,
+      // then fall back to the parent assistant message content
+      if (tc.name === 'ExitPlanMode') {
+        tc._planText = lastWrittenPlanContent || (msg.content?.trim() || undefined);
       }
       flat.push({ type: 'toolcall', tc });
     }

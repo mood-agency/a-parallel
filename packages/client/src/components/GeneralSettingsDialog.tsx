@@ -19,7 +19,11 @@ import {
 } from '@/components/ui/select';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
+import { Input } from '@/components/ui/input';
 import { Sun, Moon, Monitor } from 'lucide-react';
+import { api } from '@/lib/api';
+import { toast } from 'sonner';
+import type { UserProfile } from '@funny/shared';
 
 function getLanguageName(code: string): string {
   try {
@@ -103,6 +107,11 @@ export function GeneralSettingsDialog({
   const [draftTheme, setDraftTheme] = useState<Theme>(theme);
   const [draftLanguage, setDraftLanguage] = useState(i18n.language);
 
+  // GitHub token state (persisted via profile API, not local store)
+  const [githubToken, setGithubToken] = useState('');
+  const [hasGithubToken, setHasGithubToken] = useState(false);
+  const [tokenSaving, setTokenSaving] = useState(false);
+
   // Reset draft state whenever the dialog opens
   useEffect(() => {
     if (open) {
@@ -110,16 +119,44 @@ export function GeneralSettingsDialog({
       setDraftUseInternalEditor(useInternalEditor);
       setDraftTheme(theme);
       setDraftLanguage(i18n.language);
+      // Load profile to check token status
+      api.getProfile().then((result) => {
+        if (result.isOk() && result.value) {
+          setHasGithubToken((result.value as UserProfile).hasGithubToken);
+        }
+      });
+      setGithubToken('');
     }
   }, [open, defaultEditor, useInternalEditor, theme, i18n.language]);
 
-  const handleSave = useCallback(() => {
+  const handleSave = useCallback(async () => {
     setDefaultEditor(draftEditor);
     setUseInternalEditor(draftUseInternalEditor);
     setTheme(draftTheme);
     i18n.changeLanguage(draftLanguage);
+    // Save GitHub token if user typed one
+    if (githubToken) {
+      const result = await api.updateProfile({ githubToken } as any);
+      if (result.isOk()) {
+        setHasGithubToken(result.value.hasGithubToken);
+        setGithubToken('');
+      } else {
+        toast.error(t('profile.saveFailed'));
+      }
+    }
     onOpenChange(false);
-  }, [draftEditor, draftUseInternalEditor, draftTheme, draftLanguage, setDefaultEditor, setUseInternalEditor, setTheme, i18n, onOpenChange]);
+  }, [draftEditor, draftUseInternalEditor, draftTheme, draftLanguage, githubToken, setDefaultEditor, setUseInternalEditor, setTheme, i18n, t, onOpenChange]);
+
+  const handleClearToken = useCallback(async () => {
+    setTokenSaving(true);
+    const result = await api.updateProfile({ githubToken: null } as any);
+    if (result.isOk()) {
+      setHasGithubToken(false);
+      setGithubToken('');
+      toast.success(t('profile.tokenCleared'));
+    }
+    setTokenSaving(false);
+  }, [t]);
 
   const handleCancel = useCallback(() => {
     onOpenChange(false);
@@ -207,6 +244,39 @@ export function GeneralSettingsDialog({
                   ]}
                 />
               </SettingRow>
+            </div>
+          </div>
+
+          {/* GitHub section */}
+          <div>
+            <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider px-1 pb-2">
+              GitHub
+            </h3>
+            <div className="rounded-lg border border-border/50 overflow-hidden">
+              <div className="px-4 py-3.5">
+                <p className="text-sm font-medium text-foreground">{t('profile.githubTokenLabel')}</p>
+                <p className="text-xs text-muted-foreground mt-0.5 mb-2">{t('profile.githubTokenDesc')}</p>
+                <div className="flex items-center gap-2">
+                  <Input
+                    type="password"
+                    value={githubToken}
+                    onChange={(e) => setGithubToken(e.target.value)}
+                    placeholder={hasGithubToken ? t('profile.tokenSaved') : t('profile.tokenPlaceholder')}
+                    className="text-sm"
+                  />
+                  {hasGithubToken && (
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="text-xs text-destructive hover:text-destructive shrink-0"
+                      onClick={handleClearToken}
+                      disabled={tokenSaving}
+                    >
+                      {t('profile.clearToken')}
+                    </Button>
+                  )}
+                </div>
+              </div>
             </div>
           </div>
         </div>
