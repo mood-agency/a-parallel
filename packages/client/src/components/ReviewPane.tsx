@@ -67,7 +67,6 @@ import { useProjectStore } from '@/stores/project-store';
 import { useSettingsStore, deriveToolLists } from '@/stores/settings-store';
 import { editorLabels } from '@/stores/settings-store';
 import { useThreadStore } from '@/stores/thread-store';
-import { getNavigate } from '@/stores/thread-store-internals';
 import { useUIStore } from '@/stores/ui-store';
 
 import { GitProgressModal, type GitProgressStep } from './GitProgressModal';
@@ -759,26 +758,15 @@ export function ReviewPane() {
   const handleAskAgentResolve = async () => {
     if (!effectiveThreadId) return;
 
-    const activeThread = useThreadStore.getState().activeThread;
-    if (!activeThread) return;
-
     const target = baseBranch || 'main';
     const prompt = t('review.agentResolvePrompt', { target });
-    const title = t('review.agentResolveThreadTitle', { target });
     const { allowedTools, disallowedTools } = deriveToolLists(
       useSettingsStore.getState().toolPermissions,
     );
 
-    const result = await api.createThread({
-      projectId: activeThread.projectId,
-      title,
-      mode: 'local',
-      model: activeThread.model,
-      prompt,
+    const result = await api.sendMessage(effectiveThreadId, prompt, {
       allowedTools,
       disallowedTools,
-      worktreePath: activeThread.worktreePath ?? undefined,
-      parentThreadId: activeThread.id,
     });
 
     if (result.isErr()) {
@@ -786,15 +774,6 @@ export function ReviewPane() {
       return;
     }
 
-    const newThread = result.value;
-    await useThreadStore.getState().loadThreadsForProject(activeThread.projectId);
-
-    const navigate = getNavigate();
-    if (navigate) {
-      navigate(`/projects/${activeThread.projectId}/threads/${newThread.id}`);
-    }
-
-    useUIStore.getState().setReviewPaneOpen(false);
     toast.success(t('review.agentResolveSent'));
     setHasRebaseConflict(false);
   };
