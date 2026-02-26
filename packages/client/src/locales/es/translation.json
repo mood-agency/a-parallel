@@ -516,7 +516,8 @@
     "projectRenamed": "Proyecto renombrado a \"{{name}}\"",
     "projectDeleted": "Proyecto \"{{name}}\" eliminado",
     "worktreeDeleted": "Worktree \"{{branch}}\" eliminado",
-    "worktreeDeleteFailed": "Error al eliminar worktree: {{message}}"
+    "worktreeDeleteFailed": "Error al eliminar worktree: {{message}}",
+    "threadMoved": "\"{{title}}\" movido de {{from}} a {{to}}"
   },
   "confirm": {
     "notGitRepo": "\"{{path}}\" no es un repositorio git.\n\n¿Quieres inicializarlo con git init?",

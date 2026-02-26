@@ -398,6 +398,7 @@ export function KanbanView({ threads, projectId, search, contentSnippets, highli
   const [mergeWarning, setMergeWarning] = useState<{
     threadId: string;
     title: string;
+    sourceStage: ThreadStage;
     newStage: ThreadStage;
     gitState: string;
   } | null>(null);
@@ -440,13 +441,16 @@ export function KanbanView({ threads, projectId, search, contentSnippets, highli
 
   const handleMergeWarningConfirm = useCallback(() => {
     if (!mergeWarning) return;
-    const { threadId, newStage } = mergeWarning;
-    const targetProjectId = projectId || threads.find((t) => t.id === threadId)?.projectId;
+    const { threadId, title, sourceStage, newStage } = mergeWarning;
+    const targetProjectId = projectId || threads.find((th) => th.id === threadId)?.projectId;
     if (targetProjectId) {
       updateThreadStage(threadId, targetProjectId, newStage);
+      const fromLabel = t(stageConfig[sourceStage].labelKey);
+      const toLabel = t(stageConfig[newStage].labelKey);
+      toast.success(t('toast.threadMoved', { title, from: fromLabel, to: toLabel }));
     }
     setMergeWarning(null);
-  }, [mergeWarning, projectId, threads, updateThreadStage]);
+  }, [mergeWarning, projectId, threads, updateThreadStage, t]);
 
   const handlePromptSubmit = useCallback(async (
     prompt: string,
@@ -578,6 +582,7 @@ export function KanbanView({ threads, projectId, search, contentSnippets, highli
           setMergeWarning({
             threadId,
             title: thread.title,
+            sourceStage,
             newStage,
             gitState: gitStatus.state,
           });
@@ -595,8 +600,14 @@ export function KanbanView({ threads, projectId, search, contentSnippets, highli
       } else {
         updateThreadStage(threadId, targetProjectId, newStage);
       }
+
+      const thread = threads.find((th) => th.id === threadId);
+      const title = thread?.title || threadId;
+      const fromLabel = t(stageConfig[sourceStage].labelKey);
+      const toLabel = t(stageConfig[newStage].labelKey);
+      toast.success(t('toast.threadMoved', { title, from: fromLabel, to: toLabel }));
     },
-    [projectId, updateThreadStage, archiveThread, unarchiveThread, pinThread, statusByThread, threads]
+    [projectId, updateThreadStage, archiveThread, unarchiveThread, pinThread, statusByThread, threads, t]
   );
 
   useEffect(() => {
