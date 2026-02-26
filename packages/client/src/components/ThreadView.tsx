@@ -1509,9 +1509,7 @@ export function ThreadView() {
     <div className="relative flex h-full min-w-0 flex-1 flex-col">
       <ProjectHeader />
       {isRunning && activeThread.contextUsage && (
-        <ContextUsageBar
-          cumulativeInputTokens={activeThread.contextUsage.cumulativeInputTokens}
-        />
+        <ContextUsageBar cumulativeInputTokens={activeThread.contextUsage.cumulativeInputTokens} />
       )}
 
       {/* Messages + Timeline */}

@@ -20,13 +20,12 @@ export function ContextUsageBar({ cumulativeInputTokens }: Props) {
 
   if (cumulativeInputTokens === 0) return null;
 
-  const color =
-    pct > 80 ? 'bg-red-500' : pct > 60 ? 'bg-amber-500' : 'bg-primary';
+  const color = pct > 80 ? 'bg-red-500' : pct > 60 ? 'bg-amber-500' : 'bg-primary';
 
   return (
     <Tooltip>
       <TooltipTrigger asChild>
-        <div className="mx-4 mt-1 mb-0 h-1 rounded-full bg-muted cursor-default">
+        <div className="mx-4 mb-0 mt-1 h-1 cursor-default rounded-full bg-muted">
           <div
             className={cn('h-full rounded-full transition-all duration-500', color)}
             style={{ width: `${pct}%` }}
