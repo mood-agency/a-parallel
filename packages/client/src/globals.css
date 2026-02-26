@@ -47,7 +47,7 @@
     --destructive: 0 84.2% 60.2%;
     --destructive-foreground: 0 0% 98%;
     --border: 240 5.9% 90%;
-    --input: 240 5.9% 90%;
+    --input: 240 6% 93%;
     --ring: 240 5.9% 10%;
     --radius: 0.5rem;
     --sidebar-background: 0 0% 98%;
@@ -88,7 +88,7 @@
     --destructive: 0 62.8% 30.6%;
     --destructive-foreground: 0 0% 98%;
     --border: 240 3.7% 15.9%;
-    --input: 240 3.7% 15.9%;
+    --input: 240 4% 20%;
     --ring: 240 4.9% 83.9%;
     --radius: 0.5rem;
     --sidebar-background: 0 0% 9.4%;
@@ -130,7 +130,7 @@
     --destructive: 3.5 55.2% 49%;
     --destructive-foreground: 0 0% 98%;
     --border: 222 13.9% 28.2%;
-    --input: 220 9.4% 12.5%;
+    --input: 220 10% 24%;
     --ring: 220.2 100% 66.1%;
     --radius: 0.5rem;
     --sidebar-background: 216 13.2% 14.9%;
@@ -171,7 +171,7 @@
     --destructive: 0 100% 66.7%;
     --destructive-foreground: 0 0% 98%;
     --border: 232.5 13.8% 11.4%;
-    --input: 231.4 14.9% 18.4%;
+    --input: 231.4 15% 26%;
     --ring: 264.7 89.5% 77.6%;
     --radius: 0.5rem;
     --sidebar-background: 234.5 14.3% 15.1%;
@@ -212,7 +212,7 @@
     --destructive: 2.7 92.6% 62.9%;
     --destructive-foreground: 0 0% 98%;
     --border: 212.3 11.9% 21.4%;
-    --input: 215 21.4% 11%;
+    --input: 215 21% 16%;
     --ring: 215.4 92.6% 57.6%;
     --radius: 0.5rem;
     --sidebar-background: 217.5 80% 2%;
@@ -253,7 +253,7 @@
     --destructive: 1.1 83.2% 62.5%;
     --destructive-foreground: 0 0% 98%;
     --border: 206.3 57.1% 16.5%;
-    --input: 206.8 68.1% 13.5%;
+    --input: 206.8 50% 18%;
     --ring: 261.9 46.7% 55.1%;
     --radius: 0.5rem;
     --sidebar-background: 205.7 93.3% 5.9%;
@@ -294,7 +294,7 @@
     --destructive: 343.3 81.2% 74.9%;
     --destructive-foreground: 240 22.7% 8.6%;
     --border: 234.3 13.2% 31.2%;
-    --input: 236.8 16.2% 22.9%;
+    --input: 237 16% 28%;
     --ring: 217.2 91.9% 75.9%;
     --radius: 0.5rem;
     --sidebar-background: 240 21.3% 12%;

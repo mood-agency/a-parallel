@@ -7,5 +7,9 @@ git diff --cached --name-only --diff-filter=ACM | grep -v '^docker/' | xargs -r 
 # Lint staged JS/TS files
 git diff --cached --name-only --diff-filter=ACM | grep -E '\.(ts|tsx|js|jsx)$' | xargs -r npx oxlint
 
-# Format check staged files
-git diff --cached --name-only --diff-filter=ACM | grep -E '\.(ts|tsx|js|jsx|css|json)$' | xargs -r npx oxfmt --check
+# Format staged files (auto-fix and re-stage)
+STAGED_FMT=$(git diff --cached --name-only --diff-filter=ACM | grep -E '\.(ts|tsx|js|jsx|css|json)$')
+if [ -n "$STAGED_FMT" ]; then
+  echo "$STAGED_FMT" | xargs npx oxfmt --write
+  echo "$STAGED_FMT" | xargs git add
+fi

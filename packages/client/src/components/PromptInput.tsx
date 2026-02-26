@@ -827,7 +827,10 @@ export const PromptInput = memo(function PromptInput({
               sendToBacklog,
             }
           : createWorktreeForFollowUp
-            ? { threadMode: 'worktree', baseBranch: followUpSelectedBranch || undefined }
+            ? {
+                threadMode: 'worktree',
+                baseBranch: followUpSelectedBranch || undefined,
+              }
             : { baseBranch: followUpSelectedBranch || undefined }),
         cwd: cwdOverride || undefined,
         fileReferences: submittedFiles,
@@ -1068,7 +1071,7 @@ export const PromptInput = memo(function PromptInput({
         {/* Textarea + bottom toolbar */}
         <div
           className={cn(
-            'relative rounded-md border bg-background',
+            'relative rounded-md border bg-input/50',
             isDragging
               ? 'border-primary border-2 ring-2 ring-primary/20'
               : 'border-input focus-within:border-ring',
