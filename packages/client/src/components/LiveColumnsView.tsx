@@ -14,7 +14,6 @@ import {
 import { useTranslation } from 'react-i18next';
 import ReactMarkdown from 'react-markdown';
 import { useNavigate } from 'react-router-dom';
-import remarkGfm from 'remark-gfm';
 import { toast } from 'sonner';
 
 import { Badge } from '@/components/ui/badge';
@@ -24,7 +23,9 @@ import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { useMinuteTick } from '@/hooks/use-minute-tick';
 import { api } from '@/lib/api';
+import { remarkPlugins, baseMarkdownComponents } from '@/lib/markdown-components';
 import { parseReferencedFiles } from '@/lib/parse-referenced-files';
+import { buildGroupedRenderItems, type ToolItem } from '@/lib/render-items';
 import { statusConfig } from '@/lib/thread-utils';
 import { cn } from '@/lib/utils';
 import { useAppStore } from '@/stores/app-store';
@@ -108,143 +109,6 @@ function GridPicker({
       </PopoverContent>
     </Popover>
   );
-}
-
-const remarkPlugins = [remarkGfm];
-
-const markdownComponents = {
-  code: ({ className, children, ...props }: any) => {
-    const isBlock = className?.startsWith('language-');
-    return isBlock ? (
-      <code
-        className={cn('block bg-muted p-2 rounded text-xs font-mono overflow-x-auto', className)}
-        {...props}
-      >
-        {children}
-      </code>
-    ) : (
-      <code className="rounded bg-muted px-1 py-0.5 font-mono text-xs" {...props}>
-        {children}
-      </code>
-    );
-  },
-  pre: ({ children }: any) => (
-    <pre className="my-2 overflow-x-auto rounded bg-muted p-2 font-mono">{children}</pre>
-  ),
-};
-
-type ToolItem =
-  | { type: 'toolcall'; tc: any }
-  | { type: 'toolcall-group'; name: string; calls: any[] };
-
-type RenderItem =
-  | { type: 'message'; msg: any }
-  | ToolItem
-  | { type: 'toolcall-run'; items: ToolItem[] };
-
-function buildGroupedRenderItems(messages: any[]): RenderItem[] {
-  const flat: ({ type: 'message'; msg: any } | { type: 'toolcall'; tc: any })[] = [];
-  // Track Write tool calls that wrote plan files, so ExitPlanMode can use their content
-  let lastWrittenPlanContent: string | undefined;
-  for (const msg of messages) {
-    const hasExitPlanMode = msg.toolCalls?.some((tc: any) => tc.name === 'ExitPlanMode');
-    if (msg.content && msg.content.trim() && !hasExitPlanMode) {
-      flat.push({ type: 'message', msg });
-    }
-    for (const tc of msg.toolCalls ?? []) {
-      // Track the most recent Write to a plan file
-      if (tc.name === 'Write') {
-        try {
-          const inp = typeof tc.input === 'string' ? JSON.parse(tc.input) : tc.input;
-          const fp = (inp?.file_path || '') as string;
-          if (/plan\.md$/i.test(fp) && typeof inp?.content === 'string') {
-            lastWrittenPlanContent = inp.content;
-          }
-        } catch {
-          /* ignore parse errors */
-        }
-      }
-      // Attach plan text for ExitPlanMode: prefer the content written to plan.md,
-      // then fall back to the parent assistant message content
-      if (tc.name === 'ExitPlanMode') {
-        tc._planText = lastWrittenPlanContent || msg.content?.trim() || undefined;
-      }
-      flat.push({ type: 'toolcall', tc });
-    }
-  }
-
-  const noGroup = new Set(['AskUserQuestion', 'ExitPlanMode']);
-  const grouped: RenderItem[] = [];
-  for (const item of flat) {
-    if (item.type === 'toolcall') {
-      const last = grouped[grouped.length - 1];
-      if (
-        !noGroup.has(item.tc.name) &&
-        last?.type === 'toolcall' &&
-        (last as any).tc.name === item.tc.name
-      ) {
-        grouped[grouped.length - 1] = {
-          type: 'toolcall-group',
-          name: item.tc.name,
-          calls: [(last as any).tc, item.tc],
-        };
-      } else if (
-        !noGroup.has(item.tc.name) &&
-        last?.type === 'toolcall-group' &&
-        last.name === item.tc.name
-      ) {
-        last.calls.push(item.tc);
-      } else {
-        grouped.push(item);
-      }
-    } else {
-      grouped.push(item);
-    }
-  }
-
-  // Deduplicate TodoWrite
-  let lastTodoIdx = -1;
-  for (let i = grouped.length - 1; i >= 0; i--) {
-    const g = grouped[i];
-    if (
-      (g.type === 'toolcall' && g.tc.name === 'TodoWrite') ||
-      (g.type === 'toolcall-group' && g.name === 'TodoWrite')
-    ) {
-      lastTodoIdx = i;
-      break;
-    }
-  }
-  const deduped: RenderItem[] = [];
-  for (let i = 0; i < grouped.length; i++) {
-    const g = grouped[i];
-    const isTodoItem =
-      (g.type === 'toolcall' && g.tc.name === 'TodoWrite') ||
-      (g.type === 'toolcall-group' && g.name === 'TodoWrite');
-    if (isTodoItem && i !== lastTodoIdx) continue;
-    if (isTodoItem && g.type === 'toolcall-group') {
-      deduped.push({ type: 'toolcall', tc: g.calls[g.calls.length - 1] });
-    } else {
-      deduped.push(g);
-    }
-  }
-
-  const final: RenderItem[] = [];
-  for (const item of deduped) {
-    if (item.type === 'toolcall' || item.type === 'toolcall-group') {
-      const last = final[final.length - 1];
-      if (last?.type === 'toolcall-run') {
-        last.items.push(item);
-      } else if (last?.type === 'toolcall' || last?.type === 'toolcall-group') {
-        final[final.length - 1] = { type: 'toolcall-run', items: [last, item] };
-      } else {
-        final.push(item);
-      }
-    } else {
-      final.push(item);
-    }
-  }
-
-  return final;
 }
 
 /** A single column that loads and streams a thread in real-time */
@@ -497,7 +361,10 @@ const ThreadColumn = memo(function ThreadColumn({ threadId }: { threadId: string
                     })()
                   ) : (
                     <div className="prose prose-sm max-w-none overflow-x-auto break-words">
-                      <ReactMarkdown remarkPlugins={remarkPlugins} components={markdownComponents}>
+                      <ReactMarkdown
+                        remarkPlugins={remarkPlugins}
+                        components={baseMarkdownComponents}
+                      >
                         {msg.content.trim()}
                       </ReactMarkdown>
                     </div>
