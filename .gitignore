@@ -26,3 +26,4 @@ packages/chrome-extension/background.js
 packages/chrome-extension/popup.js
 packages/chrome-extension/content.js
 packages/chrome-extension/page-bridge.js
+*.zip
