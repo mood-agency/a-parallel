@@ -20,17 +20,12 @@
 
 import { timingSafeEqual } from 'crypto';
 
+import { FunnyClient } from '@funny/funny-client';
 import { Hono } from 'hono';
 import { cors } from 'hono/cors';
 import { logger } from 'hono/logger';
 
-import { FunnyClient } from '@funny/funny-client';
-
-import {
-  handlePRWebhook,
-  parseRepoMappings,
-  type PRWebhookPayload,
-} from './webhook-handler.js';
+import { handlePRWebhook, parseRepoMappings, type PRWebhookPayload } from './webhook-handler.js';
 
 // ── Config ───────────────────────────────────────────────────
 
@@ -77,10 +72,7 @@ app.post('/webhook', async (c) => {
   // Only process pull_request events
   const githubEvent = c.req.header('X-GitHub-Event');
   if (githubEvent && githubEvent !== 'pull_request') {
-    return c.json(
-      { status: 'ok', skipped: true, reason: `Ignoring event: ${githubEvent}` },
-      200,
-    );
+    return c.json({ status: 'ok', skipped: true, reason: `Ignoring event: ${githubEvent}` }, 200);
   }
 
   const body = await c.req.json<PRWebhookPayload>();
@@ -121,9 +113,13 @@ console.log(`\n  funny reviewbot (standalone)`);
 console.log(`  ────────────────────────────`);
 console.log(`  Port:         http://localhost:${port}`);
 console.log(`  Webhook:      POST http://localhost:${port}/webhook`);
-console.log(`  Webhook auth: ${WEBHOOK_SECRET ? 'configured' : 'NOT SET (set REVIEW_WEBHOOK_SECRET)'}`);
+console.log(
+  `  Webhook auth: ${WEBHOOK_SECRET ? 'configured' : 'NOT SET (set REVIEW_WEBHOOK_SECRET)'}`,
+);
 console.log(`  funny server: ${process.env.FUNNY_BASE_URL ?? 'http://localhost:3001'}`);
-console.log(`  Ingest auth:  ${process.env.INGEST_WEBHOOK_SECRET ? 'configured' : 'NOT SET (set INGEST_WEBHOOK_SECRET)'}`);
+console.log(
+  `  Ingest auth:  ${process.env.INGEST_WEBHOOK_SECRET ? 'configured' : 'NOT SET (set INGEST_WEBHOOK_SECRET)'}`,
+);
 console.log(`  ACP server:   ${acpBaseUrl ?? 'http://localhost:4010 (default)'}`);
 console.log(`  Model:        ${model ?? 'claude-sonnet-4-5-20250929 (default)'}`);
 console.log(`  Repos:`);

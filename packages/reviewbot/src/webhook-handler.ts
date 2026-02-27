@@ -142,14 +142,18 @@ export async function handlePRWebhook(
   // Create thread in funny (non-blocking — don't fail the webhook if funny is down)
   let threadCreated = false;
   try {
-    await funnyClient.accepted(requestId, {
-      title,
-      projectId: mapping.projectId,
-      repo_full_name: repo.full_name,
-      branch: pr.head.ref,
-      base_branch: pr.base.ref,
-      prompt: promptContent,
-    }, { createdBy: 'reviewbot' });
+    await funnyClient.accepted(
+      requestId,
+      {
+        title,
+        projectId: mapping.projectId,
+        repo_full_name: repo.full_name,
+        branch: pr.head.ref,
+        base_branch: pr.base.ref,
+        prompt: promptContent,
+      },
+      { createdBy: 'reviewbot' },
+    );
     threadCreated = true;
   } catch (err: any) {
     log(`[reviewbot] Warning: failed to create thread in funny: ${err.message}`);
