@@ -148,12 +148,6 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
     }
     // Fetch branch name for the selected project
     get().fetchBranch(projectId);
-    // Auto-open the review pane so the user sees git info for the project
-    // (only when no thread is active — otherwise the pane is thread-driven).
-    // Lazy import to avoid circular dependency (ui-store imports project-store).
-    if (!useThreadStore.getState().activeThread) {
-      import('./ui-store').then(({ useUIStore }) => useUIStore.getState().setReviewPaneOpen(true));
-    }
     // Defer git status fetch to avoid blocking the interaction (INP)
     const fetchGitStatus = () => useGitStatusStore.getState().fetchForProject(projectId);
     if (typeof requestIdleCallback === 'function') {

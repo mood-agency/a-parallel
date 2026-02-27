@@ -95,7 +95,8 @@ export function AppSidebar() {
     name: string;
   } | null>(null);
   const [actionLoading, setActionLoading] = useState(false);
-  const [generalSettingsOpen, setGeneralSettingsOpen] = useState(false);
+  const generalSettingsOpen = useUIStore((s) => s.generalSettingsOpen);
+  const setGeneralSettingsOpen = useUIStore((s) => s.setGeneralSettingsOpen);
   const [issuesProjectId, setIssuesProjectId] = useState<string | null>(null);
   const projectsScrollRef = useRef<HTMLDivElement>(null);
   const threadsScrollRef = useRef<HTMLDivElement>(null);

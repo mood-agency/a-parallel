@@ -11,6 +11,7 @@ import {
   FolderOpen,
   Check,
   LogOut,
+  Settings,
 } from 'lucide-react';
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
@@ -22,6 +23,7 @@ import { Input } from '@/components/ui/input';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { api } from '@/lib/api';
 import { useAppStore } from '@/stores/app-store';
+import { useUIStore } from '@/stores/ui-store';
 
 import { FolderPicker } from './FolderPicker';
 
@@ -32,6 +34,7 @@ export function CloneRepoView() {
   const navigate = useNavigate();
   const loadProjects = useAppStore((s) => s.loadProjects);
   const setAddProjectOpen = useAppStore((s) => s.setAddProjectOpen);
+  const generalSettingsOpen = useUIStore((s) => s.generalSettingsOpen);
 
   const [view, setView] = useState<ViewState>('checking');
   const [ghUser, setGhUser] = useState<{
@@ -65,18 +68,27 @@ export function CloneRepoView() {
   // Search debounce
   const searchTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
+  const checkConnection = useCallback(async () => {
+    const result = await api.githubStatus();
+    if (result.isOk() && result.value.connected) {
+      await loadGhUser();
+      setView('repos');
+    } else {
+      setView('connect');
+    }
+  }, []);
+
   // Check initial connection status
   useEffect(() => {
-    (async () => {
-      const result = await api.githubStatus();
-      if (result.isOk() && result.value.connected) {
-        await loadGhUser();
-        setView('repos');
-      } else {
-        setView('connect');
-      }
-    })();
-  }, []);
+    checkConnection();
+  }, [checkConnection]);
+
+  // Re-check when general settings dialog closes (user may have added a token)
+  useEffect(() => {
+    if (!generalSettingsOpen && view === 'connect') {
+      checkConnection();
+    }
+  }, [generalSettingsOpen, view, checkConnection]);
 
   const loadGhUser = async () => {
     const result = await api.githubUser();
@@ -262,10 +274,25 @@ export function CloneRepoView() {
           <h3 className="font-medium">{t('github.connectGithub')}</h3>
           <p className="max-w-xs text-sm text-muted-foreground">{t('github.connectDesc')}</p>
         </div>
-        <Button onClick={startDeviceFlow}>
-          <Github className="mr-2 h-4 w-4" />
-          {t('github.connectGithub')}
-        </Button>
+        <div className="flex w-full max-w-xs flex-col gap-2">
+          <Button className="w-full" onClick={startDeviceFlow}>
+            <Github className="mr-2 h-4 w-4" />
+            {t('github.connectGithub')}
+          </Button>
+          <div className="flex items-center gap-3">
+            <div className="h-px flex-1 bg-border" />
+            <span className="text-xs text-muted-foreground">{t('common.or')}</span>
+            <div className="h-px flex-1 bg-border" />
+          </div>
+          <Button
+            variant="outline"
+            className="w-full"
+            onClick={() => useUIStore.getState().setGeneralSettingsOpen(true)}
+          >
+            <Settings className="mr-2 h-4 w-4" />
+            {t('github.useToken')}
+          </Button>
+        </div>
       </div>
     );
   }

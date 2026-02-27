@@ -511,7 +511,8 @@
     "save": "Save",
     "loading": "Loading...",
     "stop": "Stop",
-    "continue": "Continue"
+    "continue": "Continue",
+    "or": "or"
   },
   "editor": {
     "failedToLoad": "Failed to load file",
@@ -689,6 +690,7 @@
   "github": {
     "connectGithub": "Connect to GitHub",
     "connectDesc": "Authenticate with GitHub to browse and clone your repositories",
+    "useToken": "Use Personal Access Token",
     "connected": "Connected as {{login}}",
     "disconnect": "Disconnect",
     "disconnected": "GitHub disconnected",

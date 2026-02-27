@@ -20,11 +20,13 @@ interface UIState {
   addProjectOpen: boolean;
   analyticsOpen: boolean;
   liveColumnsOpen: boolean;
+  generalSettingsOpen: boolean;
   kanbanContext: { projectId?: string; search?: string; threadId?: string } | null;
   setReviewPaneOpen: (open: boolean) => void;
   setReviewPaneWidth: (width: number) => void;
   setSettingsOpen: (open: boolean) => void;
   setActiveSettingsPage: (page: string | null) => void;
+  setGeneralSettingsOpen: (open: boolean) => void;
   startNewThread: (projectId: string, idleOnly?: boolean) => void;
   cancelNewThread: () => void;
   closeAllThreads: () => void;
@@ -57,6 +59,7 @@ export const useUIStore = create<UIState>((set) => ({
   addProjectOpen: false,
   analyticsOpen: false,
   liveColumnsOpen: false,
+  generalSettingsOpen: false,
   kanbanContext: null,
   setReviewPaneOpen: (open) => set({ reviewPaneOpen: open }),
   setReviewPaneWidth: (width) => {
@@ -73,6 +76,7 @@ export const useUIStore = create<UIState>((set) => ({
         : { settingsOpen: false, activeSettingsPage: null },
     ),
   setActiveSettingsPage: (page) => set({ activeSettingsPage: page }),
+  setGeneralSettingsOpen: (open) => set({ generalSettingsOpen: open }),
   setAutomationInboxOpen: (open) => {
     if (open) {
       invalidateSelectThread();
