@@ -244,8 +244,9 @@ export function ReviewPane() {
   const [stashPopInProgress, setStashPopInProgress] = useState(false);
   const [resetInProgress, setResetInProgress] = useState(false);
   const [confirmDialog, setConfirmDialog] = useState<{
-    type: 'revert' | 'reset';
+    type: 'revert' | 'reset' | 'discard-all';
     path?: string;
+    paths?: string[];
   } | null>(null);
 
   const isWorktree = useThreadStore((s) => s.activeThread?.mode === 'worktree');
@@ -673,6 +674,30 @@ export function ReviewPane() {
     }
   };
 
+  const handleDiscardAll = () => {
+    const paths = checkedFiles.size > 0 ? Array.from(checkedFiles) : summaries.map((s) => s.path);
+    if (paths.length === 0) return;
+    setConfirmDialog({ type: 'discard-all', paths });
+  };
+
+  const executeDiscardAll = async (paths: string[]) => {
+    if (!hasGitContext) return;
+    const result = effectiveThreadId
+      ? await api.revertFiles(effectiveThreadId, paths)
+      : await api.projectRevertFiles(projectModeId!, paths);
+    if (result.isErr()) {
+      toast.error(t('review.revertFailed', { message: result.error.message }));
+    } else {
+      toast.success(
+        t('review.discardSuccess', {
+          count: paths.length,
+          defaultValue: '{{count}} file(s) discarded',
+        }),
+      );
+      await refresh();
+    }
+  };
+
   const handleIgnore = async (pattern: string) => {
     if (!hasGitContext) return;
     const result = effectiveThreadId
@@ -1066,6 +1091,24 @@ export function ReviewPane() {
                 {isAgentRunning
                   ? t('review.agentRunningTooltip')
                   : t('review.stash', 'Stash changes')}
+              </TooltipContent>
+            </Tooltip>
+          )}
+          {summaries.length > 0 && (
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  variant="ghost"
+                  size="icon-xs"
+                  onClick={handleDiscardAll}
+                  disabled={!!actionInProgress || !!isAgentRunning}
+                  className="text-muted-foreground"
+                >
+                  <Undo2 className="h-3.5 w-3.5" />
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent side="top">
+                {isAgentRunning ? t('review.agentRunningTooltip') : t('review.discard', 'Discard')}
               </TooltipContent>
             </Tooltip>
           )}
@@ -1489,26 +1532,28 @@ export function ReviewPane() {
                   </Tooltip>
                 ))}
               </div>
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <div className="w-full">
-                    <Button
-                      className="w-full"
-                      size="sm"
-                      onClick={handleCommitAction}
-                      disabled={!canCommit}
-                    >
-                      {actionInProgress ? (
-                        <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />
-                      ) : null}
-                      {t('review.continue', 'Continue')}
-                    </Button>
-                  </div>
-                </TooltipTrigger>
-                {isAgentRunning && (
-                  <TooltipContent side="top">{t('review.agentRunningTooltip')}</TooltipContent>
-                )}
-              </Tooltip>
+              <div className="flex gap-1.5">
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <div className="flex-1">
+                      <Button
+                        className="w-full"
+                        size="sm"
+                        onClick={handleCommitAction}
+                        disabled={!canCommit}
+                      >
+                        {actionInProgress ? (
+                          <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />
+                        ) : null}
+                        {t('review.continue', 'Continue')}
+                      </Button>
+                    </div>
+                  </TooltipTrigger>
+                  {isAgentRunning && (
+                    <TooltipContent side="top">{t('review.agentRunningTooltip')}</TooltipContent>
+                  )}
+                </Tooltip>
+              </div>
             </div>
           )}
 
@@ -1707,14 +1752,19 @@ export function ReviewPane() {
         <DialogContent className="max-w-sm">
           <DialogHeader>
             <DialogTitle>
-              {confirmDialog?.type === 'revert'
+              {confirmDialog?.type === 'revert' || confirmDialog?.type === 'discard-all'
                 ? t('review.discardChanges', 'Discard changes')
                 : t('review.undoLastCommit', 'Undo last commit')}
             </DialogTitle>
             <DialogDescription>
               {confirmDialog?.type === 'revert'
                 ? t('review.revertConfirm', { paths: confirmDialog?.path })
-                : t('review.resetSoftConfirm', 'Undo the last commit? Changes will be kept.')}
+                : confirmDialog?.type === 'discard-all'
+                  ? t('review.discardAllConfirm', {
+                      count: confirmDialog?.paths?.length,
+                      defaultValue: `Discard changes in ${confirmDialog?.paths?.length} file(s)? This cannot be undone.`,
+                    })
+                  : t('review.resetSoftConfirm', 'Undo the last commit? Changes will be kept.')}
             </DialogDescription>
           </DialogHeader>
           <div className="mt-2 flex justify-end gap-2">
@@ -1729,6 +1779,8 @@ export function ReviewPane() {
                 setConfirmDialog(null);
                 if (dialog?.type === 'revert' && dialog.path) {
                   await executeRevert(dialog.path);
+                } else if (dialog?.type === 'discard-all' && dialog.paths) {
+                  await executeDiscardAll(dialog.paths);
                 } else if (dialog?.type === 'reset') {
                   await executeResetSoft();
                 }
