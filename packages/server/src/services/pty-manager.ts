@@ -76,6 +76,12 @@ function handleHelperMessage(msg: any) {
   switch (type) {
     case 'pty:data':
       if (data.ptyId) {
+        log.info(`[DEBUG] pty:data received from helper`, {
+          namespace: 'pty-manager',
+          ptyId: data.ptyId,
+          len: data.data?.length,
+          clients: wsBroker.clientCount,
+        });
         // If the PTY is associated with a specific user (we don't track user mapping easily here anymore
         // without complex state, so we broadcast to all sessions for now or check if we can retrieve it).
         //

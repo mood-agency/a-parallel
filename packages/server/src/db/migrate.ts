@@ -484,6 +484,13 @@ const migrations: Migration[] = [
       `);
     },
   },
+
+  {
+    name: '025_project_urls',
+    up() {
+      addColumn('projects', 'urls', 'TEXT');
+    },
+  },
 ];
 
 // ── Public API ──────────────────────────────────────────────────

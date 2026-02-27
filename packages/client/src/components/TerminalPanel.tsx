@@ -1,12 +1,5 @@
 import AnsiToHtml from 'ansi-to-html';
-import {
-  Terminal as TerminalIcon,
-  Plus,
-  X,
-  ChevronDown,
-  Square,
-  GripHorizontal,
-} from 'lucide-react';
+import { Plus, X, ChevronDown, Square, GripHorizontal } from 'lucide-react';
 import { useRef, useState, useCallback, useEffect, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useShallow } from 'zustand/react/shallow';
@@ -433,12 +426,7 @@ export function TerminalPanel() {
           <TooltipContent>{t('terminal.hideTerminal')}</TooltipContent>
         </Tooltip>
 
-        <TerminalIcon className="ml-1 h-3.5 w-3.5 text-muted-foreground" />
-        <span className="ml-1 text-xs font-medium text-muted-foreground">
-          {t('terminal.title')}
-        </span>
-
-        <div className="ml-2 flex flex-1 items-center gap-0.5 overflow-x-auto">
+        <div className="ml-1 flex flex-1 items-center gap-0.5 overflow-x-auto">
           {visibleTabs.map((tab) => (
             <button
               key={tab.id}
@@ -475,6 +463,15 @@ export function TerminalPanel() {
             </Button>
           </TooltipTrigger>
           <TooltipContent>{t('terminal.newTerminal')}</TooltipContent>
+        </Tooltip>
+
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <Button variant="ghost" size="icon-xs" className="ml-auto" onClick={togglePanel}>
+              <X className="h-3.5 w-3.5" />
+            </Button>
+          </TooltipTrigger>
+          <TooltipContent>{t('terminal.hideTerminal')}</TooltipContent>
         </Tooltip>
       </div>
 

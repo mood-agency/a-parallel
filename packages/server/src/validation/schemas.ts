@@ -68,6 +68,7 @@ export const updateProjectSchema = z.object({
   defaultModel: agentModelSchema.nullable().optional(),
   defaultMode: threadModeSchema.nullable().optional(),
   defaultPermissionMode: permissionModeSchema.nullable().optional(),
+  urls: z.array(z.string().url()).nullable().optional(),
 });
 
 export const reorderProjectsSchema = z.object({

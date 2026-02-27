@@ -28,6 +28,7 @@ interface ProjectState {
       defaultModel?: string | null;
       defaultMode?: string | null;
       defaultPermissionMode?: string | null;
+      urls?: string[] | null;
     },
   ) => Promise<void>;
   deleteProject: (projectId: string) => Promise<void>;

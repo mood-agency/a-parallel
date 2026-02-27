@@ -9,7 +9,6 @@ const activePtys = new Map();
 // Input stream (stdin) - expect line-delimited JSON commands
 const rl = createInterface({
   input: process.stdin,
-  output: process.stdout,
   terminal: false,
 });
 
@@ -81,6 +80,16 @@ function spawnPty(id, cwd, cols, rows, env, shellId) {
     // Merge provided env with process.env
     const ptyEnv = { ...process.env, ...env };
 
+    // On Windows, MSYS2/Git Bash has its own pseudo-console (pcon) layer that
+    // conflicts with node-pty's ConPTY, causing double echo on both input and
+    // output. Disable the MSYS2 pcon layer so ConPTY handles everything.
+    if (isWindows && (shellId === 'git-bash' || shell.toLowerCase().includes('git'))) {
+      const existing = ptyEnv.MSYS || '';
+      if (!existing.includes('disable_pcon')) {
+        ptyEnv.MSYS = existing ? `${existing} disable_pcon` : 'disable_pcon';
+      }
+    }
+
     const ptyProcess = pty.spawn(shell, shellArgs, {
       name: 'xterm-256color',
       cols: cols || 80,
@@ -91,7 +100,10 @@ function spawnPty(id, cwd, cols, rows, env, shellId) {
 
     activePtys.set(id, ptyProcess);
 
+    let dataCount = 0;
     ptyProcess.onData((data) => {
+      dataCount++;
+      console.error(`[pty-helper] onData #${dataCount} ptyId=${id} len=${data.length}`);
       send('pty:data', { ptyId: id, data });
     });
 

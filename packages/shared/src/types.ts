@@ -104,6 +104,7 @@ export interface Project {
   defaultModel?: AgentModel;
   defaultMode?: ThreadMode;
   defaultPermissionMode?: PermissionMode;
+  urls?: string[];
   userId: string;
   sortOrder: number;
   createdAt: string;

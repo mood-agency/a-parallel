@@ -20,6 +20,7 @@ function toProject(row: ProjectRow): Project {
     defaultModel,
     defaultMode,
     defaultPermissionMode,
+    urls: urlsRaw,
     ...rest
   } = row;
   return {
@@ -36,6 +37,7 @@ function toProject(row: ProjectRow): Project {
     ...(defaultPermissionMode != null
       ? { defaultPermissionMode: defaultPermissionMode as Project['defaultPermissionMode'] }
       : {}),
+    ...(urlsRaw != null ? { urls: JSON.parse(urlsRaw) as string[] } : {}),
   };
 }
 
@@ -139,6 +141,7 @@ export function updateProject(
     defaultModel?: string | null;
     defaultMode?: string | null;
     defaultPermissionMode?: string | null;
+    urls?: string[] | null;
   },
 ): Result<Project, DomainError> {
   const project = db.select().from(schema.projects).where(eq(schema.projects.id, id)).get();
@@ -168,6 +171,7 @@ export function updateProject(
   if (fields.defaultMode !== undefined) updateData.defaultMode = fields.defaultMode;
   if (fields.defaultPermissionMode !== undefined)
     updateData.defaultPermissionMode = fields.defaultPermissionMode;
+  if (fields.urls !== undefined) updateData.urls = fields.urls ? JSON.stringify(fields.urls) : null;
 
   db.update(schema.projects).set(updateData).where(eq(schema.projects.id, id)).run();
   return ok(toProject({ ...project, ...updateData } as ProjectRow));

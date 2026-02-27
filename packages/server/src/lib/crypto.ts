@@ -1,9 +1,9 @@
 import { randomBytes, createCipheriv, createDecipheriv } from 'crypto';
-import { readFileSync, writeFileSync, mkdirSync, existsSync } from 'fs';
-import { homedir } from 'os';
+import { readFileSync, writeFileSync, existsSync } from 'fs';
 import { resolve } from 'path';
 
-const DATA_DIR = resolve(homedir(), '.funny');
+import { DATA_DIR } from './data-dir.js';
+
 const KEY_PATH = resolve(DATA_DIR, 'encryption.key');
 const ALGORITHM = 'aes-256-gcm';
 const IV_LENGTH = 12;
@@ -14,8 +14,6 @@ let cachedKey: Buffer | null = null;
 /** Load or generate the 256-bit encryption key. */
 function getKey(): Buffer {
   if (cachedKey) return cachedKey;
-
-  mkdirSync(DATA_DIR, { recursive: true });
 
   if (existsSync(KEY_PATH)) {
     cachedKey = Buffer.from(readFileSync(KEY_PATH, 'utf-8').trim(), 'hex');

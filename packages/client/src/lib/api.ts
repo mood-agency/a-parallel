@@ -178,6 +178,7 @@ export const api = {
       defaultModel?: string | null;
       defaultMode?: string | null;
       defaultPermissionMode?: string | null;
+      urls?: string[] | null;
     },
   ) => request<Project>(`/projects/${id}`, { method: 'PATCH', body: JSON.stringify(data) }),
   deleteProject: (id: string) => request<{ ok: boolean }>(`/projects/${id}`, { method: 'DELETE' }),

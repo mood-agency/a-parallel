@@ -1,16 +1,16 @@
 import { mkdirSync } from 'fs';
-
-import 'winston-daily-rotate-file';
-import { homedir } from 'os';
 import { resolve } from 'path';
 
+import 'winston-daily-rotate-file';
 import { emitLog } from '@funny/observability';
 import winston from 'winston';
+
+import { DATA_DIR } from './data-dir.js';
 
 const isDev = process.env.NODE_ENV !== 'production';
 
 // Ensure log directory exists
-const logDir = resolve(homedir(), '.funny', 'logs');
+const logDir = resolve(DATA_DIR, 'logs');
 mkdirSync(logDir, { recursive: true });
 
 /** Winston transport that forwards logs to OTLP via the observability package. */

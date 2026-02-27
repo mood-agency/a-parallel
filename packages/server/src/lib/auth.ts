@@ -1,6 +1,5 @@
 import { randomBytes } from 'crypto';
-import { readFileSync, writeFileSync, existsSync, mkdirSync } from 'fs';
-import { homedir } from 'os';
+import { readFileSync, writeFileSync, existsSync } from 'fs';
 import { resolve } from 'path';
 
 import { betterAuth } from 'better-auth';
@@ -8,14 +7,12 @@ import { drizzleAdapter } from 'better-auth/adapters/drizzle';
 import { admin, username } from 'better-auth/plugins';
 
 import { db } from '../db/index.js';
+import { DATA_DIR } from './data-dir.js';
 import { log } from './logger.js';
 
-const AUTH_DIR = resolve(homedir(), '.funny');
-const SECRET_PATH = resolve(AUTH_DIR, 'auth-secret');
+const SECRET_PATH = resolve(DATA_DIR, 'auth-secret');
 
 function getOrCreateSecret(): string {
-  mkdirSync(AUTH_DIR, { recursive: true });
-
   if (existsSync(SECRET_PATH)) {
     const secret = readFileSync(SECRET_PATH, 'utf-8').trim();
     if (secret.length > 0) return secret;

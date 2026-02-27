@@ -261,6 +261,10 @@ function handleMessage(e: MessageEvent) {
       break;
     }
     case 'pty:data': {
+      console.log(`[DEBUG] pty:data received via WS`, {
+        ptyId: data.ptyId,
+        len: data.data?.length,
+      });
       const termStore = useTerminalStore.getState();
       termStore.emitPtyData(data.ptyId, data.data);
       break;
@@ -365,8 +369,17 @@ function teardown() {
   }
   pendingMessages.clear();
   pendingToolOutputs = [];
-  activeWS?.close();
-  activeWS = null;
+  if (activeWS) {
+    // Null out handlers BEFORE closing to prevent the async close handshake
+    // from triggering a phantom reconnection (StrictMode: teardown sets
+    // stopped=true, but the remount resets stopped=false before the old WS
+    // finishes closing — so its onclose would see stopped=false and reconnect).
+    activeWS.onmessage = null;
+    activeWS.onclose = null;
+    activeWS.onerror = null;
+    activeWS.close();
+    activeWS = null;
+  }
   _wasConnected = false;
 }
 

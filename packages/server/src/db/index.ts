@@ -1,17 +1,13 @@
 import { Database } from 'bun:sqlite';
-import { mkdirSync } from 'fs';
-import { homedir } from 'os';
 import { resolve } from 'path';
 
 import { drizzle } from 'drizzle-orm/bun-sqlite';
 
+import { DATA_DIR } from '../lib/data-dir.js';
 import { log } from '../lib/logger.js';
 import * as schema from './schema.js';
 
-const dbDir = resolve(homedir(), '.funny');
-mkdirSync(dbDir, { recursive: true });
-
-const dbPath = resolve(dbDir, 'data.db');
+const dbPath = resolve(DATA_DIR, 'data.db');
 export const sqlite = new Database(dbPath);
 
 // Enable WAL mode for better concurrent read performance

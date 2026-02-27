@@ -10,6 +10,7 @@ export const projects = sqliteTable('projects', {
   defaultModel: text('default_model'),
   defaultMode: text('default_mode'),
   defaultPermissionMode: text('default_permission_mode'),
+  urls: text('urls'), // JSON-encoded string[] of URL patterns for Chrome extension auto-detection
   userId: text('user_id').notNull().default('__local__'),
   sortOrder: integer('sort_order').notNull().default(0),
   createdAt: text('created_at').notNull(),

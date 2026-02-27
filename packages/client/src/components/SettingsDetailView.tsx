@@ -1,8 +1,8 @@
 import type { ToolPermission } from '@funny/shared';
 import type { AgentProvider } from '@funny/shared';
 import { getDefaultModel } from '@funny/shared/models';
-import { Monitor, GitBranch, RotateCcw, Check, ChevronsUpDown } from 'lucide-react';
-import { useState, useCallback } from 'react';
+import { Monitor, GitBranch, RotateCcw, Check, ChevronsUpDown, X, Plus } from 'lucide-react';
+import { useState, useCallback, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
 import { toast } from 'sonner';
 import { useShallow } from 'zustand/react/shallow';
@@ -24,6 +24,7 @@ import {
   CommandGroup,
   CommandItem,
 } from '@/components/ui/command';
+import { Input } from '@/components/ui/input';
 import { Popover, PopoverTrigger, PopoverContent } from '@/components/ui/popover';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { PROVIDERS, getModelOptions } from '@/lib/providers';
@@ -250,6 +251,86 @@ function ProjectColorPicker({
   );
 }
 
+/* ── URL patterns for Chrome extension auto-detection ── */
+function ProjectUrlPatterns({
+  projectId,
+  currentUrls,
+  onSave,
+}: {
+  projectId: string;
+  currentUrls: string[];
+  onSave: (projectId: string, data: { urls: string[] | null }) => void;
+}) {
+  const [urls, setUrls] = useState<string[]>(currentUrls);
+  const { t } = useTranslation();
+
+  useEffect(() => {
+    setUrls(currentUrls);
+  }, [currentUrls]);
+
+  const save = (newUrls: string[]) => {
+    const filtered = newUrls.filter((u) => u.trim() !== '');
+    setUrls(filtered.length > 0 ? filtered : []);
+    onSave(projectId, { urls: filtered.length > 0 ? filtered : null });
+  };
+
+  return (
+    <div className="flex flex-col gap-3 border-b border-border/50 px-4 py-3.5 last:border-b-0">
+      <div className="min-w-0">
+        <p className="text-sm font-medium text-foreground">
+          {t('settings.projectUrls', 'Extension URLs')}
+        </p>
+        <p className="mt-0.5 text-xs text-muted-foreground">
+          {t(
+            'settings.projectUrlsDesc',
+            'URLs for Chrome extension auto-detection. The extension will auto-select this project when you visit a matching URL.',
+          )}
+        </p>
+      </div>
+      <div className="space-y-2">
+        {urls.map((url, i) => (
+          <div key={i} className="flex items-center gap-2">
+            <Input
+              value={url}
+              onChange={(e) => {
+                const next = [...urls];
+                next[i] = e.target.value;
+                setUrls(next);
+              }}
+              onBlur={() => save(urls)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') save(urls);
+              }}
+              placeholder="https://example.com"
+              className="h-8 flex-1 font-mono text-xs"
+            />
+            <Button
+              variant="ghost"
+              size="icon"
+              className="h-8 w-8 shrink-0"
+              onClick={() => {
+                const next = urls.filter((_, idx) => idx !== i);
+                save(next);
+              }}
+            >
+              <X className="h-3.5 w-3.5" />
+            </Button>
+          </div>
+        ))}
+        <Button
+          variant="outline"
+          size="sm"
+          className="h-7 text-xs"
+          onClick={() => setUrls([...urls, ''])}
+        >
+          <Plus className="mr-1.5 h-3 w-3" />
+          {t('settings.addUrl', 'Add URL')}
+        </Button>
+      </div>
+    </div>
+  );
+}
+
 /* ── General settings content ── */
 function GeneralSettings() {
   const { toolPermissions, setToolPermission, resetToolPermissions } = useSettingsStore(
@@ -388,6 +469,11 @@ function GeneralSettings() {
                 ]}
               />
             </SettingRow>
+            <ProjectUrlPatterns
+              projectId={selectedProject.id}
+              currentUrls={selectedProject.urls || []}
+              onSave={saveProject}
+            />
           </div>
         </>
       )}

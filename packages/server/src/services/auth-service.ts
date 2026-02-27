@@ -4,14 +4,13 @@
  */
 
 import { randomBytes, timingSafeEqual } from 'crypto';
-import { readFileSync, writeFileSync, existsSync, mkdirSync } from 'fs';
-import { homedir } from 'os';
+import { readFileSync, writeFileSync, existsSync } from 'fs';
 import { resolve } from 'path';
 
+import { DATA_DIR } from '../lib/data-dir.js';
 import { log } from '../lib/logger.js';
 
-const AUTH_DIR = resolve(homedir(), '.funny');
-const TOKEN_PATH = resolve(AUTH_DIR, 'auth-token');
+const TOKEN_PATH = resolve(DATA_DIR, 'auth-token');
 
 let cachedToken: string | null = null;
 
@@ -21,8 +20,6 @@ let cachedToken: string | null = null;
  */
 export function getAuthToken(): string {
   if (cachedToken) return cachedToken;
-
-  mkdirSync(AUTH_DIR, { recursive: true });
 
   if (existsSync(TOKEN_PATH)) {
     cachedToken = readFileSync(TOKEN_PATH, 'utf-8').trim();

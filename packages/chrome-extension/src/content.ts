@@ -560,21 +560,43 @@ function resetDetailsCollapsed() {
 
 function loadPopoverProjectName() {
   safeSendMessage({ type: 'GET_CONFIG' }, (config: any) => {
-    if (!config?.projectId) {
-      popoverProjectName.textContent = 'No project';
-      popoverProjectName.classList.add('popover-project-empty');
-      return;
-    }
-    // Fetch projects to get the name
+    // Fetch projects to check URL patterns and get project name
     safeSendMessage({ type: 'FETCH_PROJECTS' }, (result: any) => {
-      if (result?.success && result.projects) {
-        const project = result.projects.find((p: any) => p.id === config.projectId);
-        popoverProjectName.textContent = project?.name || 'No project';
-        popoverProjectName.classList.toggle('popover-project-empty', !project);
-      } else {
+      if (!result?.success || !result.projects) {
         popoverProjectName.textContent = 'No project';
         popoverProjectName.classList.add('popover-project-empty');
+        return;
       }
+
+      const currentUrl = window.location.href;
+
+      // Try URL-based auto-detection first
+      const matchedProject = result.projects.find((p: any) =>
+        p.urls?.some((url: string) => currentUrl.startsWith(url)),
+      );
+
+      if (matchedProject) {
+        // Auto-select the matched project if it differs from current config
+        if (config?.projectId !== matchedProject.id) {
+          safeSendMessage({
+            type: 'SAVE_CONFIG',
+            config: { ...config, projectId: matchedProject.id },
+          });
+        }
+        popoverProjectName.textContent = matchedProject.name;
+        popoverProjectName.classList.remove('popover-project-empty');
+        return;
+      }
+
+      // Fall back to manually-selected project
+      if (!config?.projectId) {
+        popoverProjectName.textContent = 'No project';
+        popoverProjectName.classList.add('popover-project-empty');
+        return;
+      }
+      const project = result.projects.find((p: any) => p.id === config.projectId);
+      popoverProjectName.textContent = project?.name || 'No project';
+      popoverProjectName.classList.toggle('popover-project-empty', !project);
     });
   });
 }
