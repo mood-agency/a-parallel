@@ -575,6 +575,7 @@
   "prompt": {
     "plan": "Modo Plan",
     "autoEdit": "Edición Automática",
+    "ask": "Preguntar",
     "askBeforeEdits": "Preguntar Antes de Editar",
     "attach": "Adjuntar archivo",
     "stopAgent": "Detener agente",

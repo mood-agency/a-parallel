@@ -137,7 +137,7 @@ export type GeminiModel =
   | 'gemini-3-flash-preview'
   | 'gemini-3-pro-preview';
 export type AgentModel = ClaudeModel | CodexModel | GeminiModel;
-export type PermissionMode = 'plan' | 'autoEdit' | 'confirmEdit';
+export type PermissionMode = 'plan' | 'autoEdit' | 'confirmEdit' | 'ask';
 
 export interface Thread {
   id: string;

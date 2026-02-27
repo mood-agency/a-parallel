@@ -14,6 +14,7 @@ import {
   resolvePermissionMode,
   resolveResumePermissionMode,
   getDefaultAllowedTools,
+  getAskModeTools,
 } from '@funny/shared/models';
 
 import type { IAgentProcess, IAgentProcessFactory } from './interfaces.js';
@@ -124,14 +125,21 @@ export class AgentOrchestrator extends EventEmitter {
       : cliPermissionMode;
 
     // Build shared process options
-    const effectiveAllowedTools = allowedTools ?? getDefaultAllowedTools(provider);
+    // In ask mode, restrict to read-only tools regardless of caller-provided lists
+    const isAskMode = permissionMode === 'ask';
+    const effectiveAllowedTools = isAskMode
+      ? getAskModeTools()
+      : (allowedTools ?? getDefaultAllowedTools(provider));
+    const effectiveDisallowedTools = isAskMode
+      ? ['Edit', 'Write', 'Bash', 'NotebookEdit', 'TodoWrite']
+      : disallowedTools;
     const processOpts = {
       prompt: effectivePrompt,
       cwd,
       model: resolvedModel,
       permissionMode: effectivePermissionMode,
       allowedTools: effectiveAllowedTools,
-      disallowedTools,
+      disallowedTools: effectiveDisallowedTools,
       maxTurns,
       images,
       provider,

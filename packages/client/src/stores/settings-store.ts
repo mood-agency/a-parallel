@@ -5,7 +5,7 @@ import { persist } from 'zustand/middleware';
 export type Editor = 'cursor' | 'vscode' | 'windsurf' | 'zed' | 'sublime' | 'vim';
 export type ThreadMode = 'local' | 'worktree';
 export type ClaudeModel = 'haiku' | 'sonnet' | 'opus';
-export type PermissionMode = 'plan' | 'autoEdit' | 'confirmEdit';
+export type PermissionMode = 'plan' | 'autoEdit' | 'confirmEdit' | 'ask';
 
 const editorLabels: Record<Editor, string> = {
   cursor: 'Cursor',

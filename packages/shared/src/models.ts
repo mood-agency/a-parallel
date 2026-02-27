@@ -77,7 +77,12 @@ const CLAUDE_PERMISSION_MAP: Record<PermissionMode, string> = {
   plan: 'plan',
   autoEdit: 'bypassPermissions',
   confirmEdit: 'default',
+  ask: 'bypassPermissions',
 };
+
+// ── Ask-mode tools (read-only) ───────────────────────────────
+
+const CLAUDE_ASK_TOOLS = ['Read', 'Glob', 'Grep', 'WebSearch', 'WebFetch', 'Task'];
 
 // ── Default tools per provider ────────────────────────────────
 
@@ -204,6 +209,11 @@ export function getDefaultAllowedTools(provider: AgentProvider): string[] {
   if (provider === 'gemini') return [...GEMINI_DEFAULT_TOOLS];
   if (provider === 'llm-api') return [...LLM_API_DEFAULT_TOOLS];
   return [];
+}
+
+/** Get read-only tools for ask mode (Claude only). */
+export function getAskModeTools(): string[] {
+  return [...CLAUDE_ASK_TOOLS];
 }
 
 /** Check if a model belongs to the given provider. */

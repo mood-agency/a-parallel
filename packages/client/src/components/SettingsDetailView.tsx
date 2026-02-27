@@ -381,6 +381,7 @@ function GeneralSettings() {
                 value={selectedProject.defaultPermissionMode || 'autoEdit'}
                 onChange={(v) => saveProject(selectedProject.id, { defaultPermissionMode: v })}
                 options={[
+                  { value: 'ask', label: t('prompt.ask') },
                   { value: 'plan', label: t('prompt.plan') },
                   { value: 'autoEdit', label: t('prompt.autoEdit') },
                   { value: 'confirmEdit', label: t('prompt.askBeforeEdits') },

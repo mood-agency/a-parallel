@@ -16,7 +16,7 @@ export const geminiModelSchema = z.enum([
   'gemini-3-pro-preview',
 ]);
 export const agentModelSchema = z.union([claudeModelSchema, codexModelSchema, geminiModelSchema]);
-export const permissionModeSchema = z.enum(['plan', 'autoEdit', 'confirmEdit']);
+export const permissionModeSchema = z.enum(['plan', 'autoEdit', 'confirmEdit', 'ask']);
 export const threadStageSchema = z.enum(['backlog', 'planning', 'in_progress', 'review', 'done']);
 export const threadSourceSchema = z.enum([
   'web',
