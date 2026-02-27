@@ -1,4 +1,4 @@
-import { motion, AnimatePresence, useReducedMotion } from 'motion/react';
+import { motion, AnimatePresence, useReducedMotion, type TargetAndTransition } from 'motion/react';
 import { useState, useEffect } from 'react';
 
 import { cn } from '@/lib/utils';
@@ -6,7 +6,10 @@ import { cn } from '@/lib/utils';
 const D4C_FRAMES = ['🐇', '🌀', '🐰', '⭐'] as const;
 const D4C_INTERVAL = 1800;
 
-const D4C_ANIMATIONS: Record<string, { initial: object; animate: object; exit: object }> = {
+const D4C_ANIMATIONS: Record<
+  string,
+  { initial: TargetAndTransition; animate: TargetAndTransition; exit: TargetAndTransition }
+> = {
   '🐇': {
     initial: { y: -14, opacity: 0 },
     animate: { y: 0, opacity: 1 },
