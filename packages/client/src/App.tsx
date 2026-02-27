@@ -1,5 +1,5 @@
 import { PanelLeft } from 'lucide-react';
-import { lazy, Suspense, useEffect, useState, startTransition } from 'react';
+import { lazy, Suspense, useCallback, useEffect, useRef, useState, startTransition } from 'react';
 import { useNavigate } from 'react-router-dom';
 
 import { SidebarProvider, SidebarInset, useSidebar } from '@/components/ui/sidebar';
@@ -107,6 +107,8 @@ export function App() {
   const loadProjects = useProjectStore((s) => s.loadProjects);
   const reviewPaneOpen = useUIStore((s) => s.reviewPaneOpen);
   const _setReviewPaneOpen = useUIStore((s) => s.setReviewPaneOpen);
+  const reviewPaneWidth = useUIStore((s) => s.reviewPaneWidth);
+  const setReviewPaneWidth = useUIStore((s) => s.setReviewPaneWidth);
   const settingsOpen = useUIStore((s) => s.settingsOpen);
   const allThreadsProjectId = useUIStore((s) => s.allThreadsProjectId);
   const automationInboxOpen = useUIStore((s) => s.automationInboxOpen);
@@ -118,6 +120,45 @@ export function App() {
   const internalEditorContent = useInternalEditorStore((s) => s.initialContent);
   const navigate = useNavigate();
   const [commandPaletteOpen, setCommandPaletteOpen] = useState(false);
+  // --- Right sidebar resize handle ---
+  const rpDragging = useRef(false);
+  const rpStartX = useRef(0);
+  const rpStartWidth = useRef(0);
+  const [rpResizing, setRpResizing] = useState(false);
+
+  const handleRpPointerDown = useCallback(
+    (e: React.PointerEvent) => {
+      rpDragging.current = true;
+      rpStartX.current = e.clientX;
+      rpStartWidth.current = reviewPaneWidth;
+      setRpResizing(true);
+      document.body.style.cursor = 'col-resize';
+      document.body.style.userSelect = 'none';
+      (e.target as HTMLElement).setPointerCapture(e.pointerId);
+    },
+    [reviewPaneWidth],
+  );
+
+  const handleRpPointerMove = useCallback(
+    (e: React.PointerEvent) => {
+      if (!rpDragging.current) return;
+      // Dragging left increases width, dragging right decreases
+      const deltaPx = rpStartX.current - e.clientX;
+      const deltaVw = (deltaPx / window.innerWidth) * 100;
+      setReviewPaneWidth(rpStartWidth.current + deltaVw);
+    },
+    [setReviewPaneWidth],
+  );
+
+  const handleRpPointerUp = useCallback((e: React.PointerEvent) => {
+    if (!rpDragging.current) return;
+    rpDragging.current = false;
+    setRpResizing(false);
+    document.body.style.cursor = '';
+    document.body.style.userSelect = '';
+    (e.target as HTMLElement).releasePointerCapture(e.pointerId);
+  }, []);
+
   // Eagerly mount ReviewPane (hidden) after initial load so first toggle is instant.
   // Deferred via requestIdleCallback to avoid blocking the initial render.
   const [reviewPaneReady, setReviewPaneReady] = useState(false);
@@ -237,20 +278,38 @@ export function App() {
           ~500ms first-open delay from lazy loading + mount + diff fetch. */}
       <div
         className={cn(
-          'h-full overflow-hidden flex-shrink-0 border-l border-border bg-sidebar transition-[width,opacity] duration-200 ease-out',
+          'relative h-full overflow-hidden flex-shrink-0 border-l border-border bg-sidebar',
+          !rpResizing && 'transition-[width,opacity] duration-200 ease-out',
           reviewPaneOpen && !settingsOpen && !allThreadsProjectId
-            ? 'w-[50vw] opacity-100'
+            ? 'opacity-100'
             : 'w-0 opacity-0 border-l-0',
         )}
+        style={
+          reviewPaneOpen && !settingsOpen && !allThreadsProjectId
+            ? { width: `${reviewPaneWidth}vw` }
+            : undefined
+        }
       >
+        {/* Resize handle */}
+        {reviewPaneOpen && !settingsOpen && !allThreadsProjectId && (
+          <button
+            aria-label="Resize review pane"
+            tabIndex={-1}
+            onPointerDown={handleRpPointerDown}
+            onPointerMove={handleRpPointerMove}
+            onPointerUp={handleRpPointerUp}
+            className="absolute inset-y-0 left-0 z-20 w-4 -translate-x-1/2 cursor-col-resize after:absolute after:inset-y-0 after:left-1/2 after:w-[2px] hover:after:bg-sidebar-border"
+          />
+        )}
         {(reviewPaneReady || reviewPaneOpen) && (
           <div
-            className="h-full w-[50vw]"
-            style={
-              !(reviewPaneOpen && !settingsOpen && !allThreadsProjectId)
-                ? { visibility: 'hidden' }
-                : undefined
-            }
+            className="h-full"
+            style={{
+              width: `${reviewPaneWidth}vw`,
+              ...(!(reviewPaneOpen && !settingsOpen && !allThreadsProjectId)
+                ? { visibility: 'hidden' as const }
+                : {}),
+            }}
           >
             <Suspense>
               <ReviewPane />
