@@ -408,7 +408,7 @@ export function TerminalPanel() {
 
   return (
     <div
-      className={cn('flex-shrink-0 overflow-hidden', panelVisible && 'border-t border-border')}
+      className="flex-shrink-0 overflow-hidden"
       style={{
         height: panelVisible ? panelHeight : 0,
       }}
