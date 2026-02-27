@@ -39,7 +39,15 @@ import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip
 import { useMinuteTick } from '@/hooks/use-minute-tick';
 import { useTodoSnapshots } from '@/hooks/use-todo-panel';
 import { api } from '@/lib/api';
+import { remarkPlugins, baseMarkdownComponents } from '@/lib/markdown-components';
 import { parseReferencedFiles } from '@/lib/parse-referenced-files';
+import {
+  buildGroupedRenderItems,
+  getItemKey,
+  getItemTimestamp,
+  type ToolItem,
+  type RenderItem,
+} from '@/lib/render-items';
 import { timeAgo, resolveModelLabel } from '@/lib/thread-utils';
 import { cn } from '@/lib/utils';
 import { useProjectStore } from '@/stores/project-store';
@@ -66,14 +74,14 @@ const FILE_PATH_RE = /(?:[A-Za-z]:[\\/]|\/)[^\s:*?"<>|,()]+(?::\d+)?/g;
 import { toEditorUriWithLine, openFileInEditor } from '@/lib/editor-utils';
 import { editorLabels } from '@/stores/settings-store';
 
-// Prefetch react-markdown + remark-gfm immediately at module load time.
-// By the time ThreadView renders messages, the chunks are already downloaded.
-const _markdownImport = Promise.all([import('react-markdown'), import('remark-gfm')]);
+// Prefetch react-markdown immediately at module load time.
+// By the time ThreadView renders messages, the chunk is already downloaded.
+const _markdownImport = import('react-markdown');
 
 const LazyMarkdownRenderer = lazy(() =>
-  _markdownImport.then(([{ default: ReactMarkdown }, { default: remarkGfm }]) => {
-    const remarkPlugins = [remarkGfm];
+  _markdownImport.then(({ default: ReactMarkdown }) => {
     const markdownComponents = {
+      ...baseMarkdownComponents,
       a: ({ href, children }: any) => {
         const text = String(children);
         const isWebUrl = href && /^https?:\/\//.test(href);
@@ -114,27 +122,6 @@ const LazyMarkdownRenderer = lazy(() =>
           </a>
         );
       },
-      code: ({ className, children, ...props }: any) => {
-        const isBlock = className?.startsWith('language-');
-        return isBlock ? (
-          <code
-            className={cn(
-              'block bg-muted p-2 rounded text-xs font-mono overflow-x-auto',
-              className,
-            )}
-            {...props}
-          >
-            {children}
-          </code>
-        ) : (
-          <code className="rounded bg-muted px-1 py-0.5 font-mono text-xs" {...props}>
-            {children}
-          </code>
-        );
-      },
-      pre: ({ children }: any) => (
-        <pre className="my-2 overflow-x-auto rounded bg-muted p-2 font-mono">{children}</pre>
-      ),
     };
 
     function MarkdownRenderer({ content }: { content: string }) {
@@ -320,17 +307,6 @@ export function PermissionApprovalCard({
   );
 }
 
-type ToolItem =
-  | { type: 'toolcall'; tc: any }
-  | { type: 'toolcall-group'; name: string; calls: any[] };
-
-type RenderItem =
-  | { type: 'message'; msg: any }
-  | ToolItem
-  | { type: 'toolcall-run'; items: ToolItem[] }
-  | { type: 'thread-event'; event: import('@funny/shared').ThreadEvent }
-  | { type: 'compaction-event'; event: import('@/stores/thread-store').CompactionEvent };
-
 /** Group MCP tools by server prefix and show built-in tools individually */
 function groupTools(tools: string[]) {
   const builtIn: string[] = [];
@@ -414,162 +390,6 @@ const McpToolGroup = memo(function McpToolGroup({
   );
 });
 
-/** Get timestamp for a render item (used for chronological interleaving with events) */
-function getItemTimestamp(item: RenderItem): string {
-  if (item.type === 'message') return item.msg.timestamp || '';
-  if (item.type === 'thread-event') return item.event.createdAt || '';
-  if (item.type === 'compaction-event') return item.event.timestamp || '';
-  if (item.type === 'toolcall') return item.tc.timestamp || '';
-  if (item.type === 'toolcall-group') return item.calls[0]?.timestamp || '';
-  if (item.type === 'toolcall-run') {
-    const first = item.items[0];
-    return first.type === 'toolcall' ? first.tc.timestamp || '' : first.calls[0]?.timestamp || '';
-  }
-  return '';
-}
-
-function buildGroupedRenderItems(
-  messages: any[],
-  threadEvents?: import('@funny/shared').ThreadEvent[],
-  compactionEvents?: import('@/stores/thread-store').CompactionEvent[],
-): RenderItem[] {
-  // Flatten all messages into a single stream of items
-  const flat: ({ type: 'message'; msg: any } | { type: 'toolcall'; tc: any })[] = [];
-  // Collect Write tool calls that wrote plan files, so ExitPlanMode can use their content
-  let lastWrittenPlanContent: string | undefined;
-  for (const msg of messages) {
-    const hasExitPlanMode = msg.toolCalls?.some((tc: any) => tc.name === 'ExitPlanMode');
-    // Only add message bubble if there's actual text content.
-    // Skip if the message has an ExitPlanMode tool call — the plan text
-    // will be shown inside the ExitPlanModeCard instead.
-    if (msg.content && msg.content.trim() && !hasExitPlanMode) {
-      flat.push({ type: 'message', msg });
-    }
-    for (const tc of msg.toolCalls ?? []) {
-      // Track the most recent Write to a plan file
-      if (tc.name === 'Write') {
-        try {
-          const inp = typeof tc.input === 'string' ? JSON.parse(tc.input) : tc.input;
-          const fp = (inp?.file_path || '') as string;
-          if (/plan\.md$/i.test(fp) && typeof inp?.content === 'string') {
-            lastWrittenPlanContent = inp.content;
-          }
-        } catch {
-          /* ignore parse errors */
-        }
-      }
-      // Attach plan text for ExitPlanMode: prefer the content written to plan.md,
-      // then fall back to the parent assistant message content
-      if (tc.name === 'ExitPlanMode') {
-        tc._planText = lastWrittenPlanContent || msg.content?.trim() || undefined;
-      }
-      flat.push({ type: 'toolcall', tc });
-    }
-  }
-
-  // Tool calls that should never be grouped (interactive, need individual response, or need per-item scroll tracking)
-  const noGroup = new Set(['AskUserQuestion', 'ExitPlanMode']);
-
-  // Group consecutive same-type tool calls (across message boundaries)
-  const grouped: RenderItem[] = [];
-  for (const item of flat) {
-    if (item.type === 'toolcall') {
-      const last = grouped[grouped.length - 1];
-      if (
-        !noGroup.has(item.tc.name) &&
-        last?.type === 'toolcall' &&
-        (last as any).tc.name === item.tc.name
-      ) {
-        grouped[grouped.length - 1] = {
-          type: 'toolcall-group',
-          name: item.tc.name,
-          calls: [(last as any).tc, item.tc],
-        };
-      } else if (
-        !noGroup.has(item.tc.name) &&
-        last?.type === 'toolcall-group' &&
-        last.name === item.tc.name
-      ) {
-        last.calls.push(item.tc);
-      } else {
-        grouped.push(item);
-      }
-    } else {
-      grouped.push(item);
-    }
-  }
-
-  // Deduplicate TodoWrite: only keep the last one (the floating panel handles history).
-  // For TodoWrite groups, replace with a single toolcall using the last call's data.
-  let lastTodoIdx = -1;
-  for (let i = grouped.length - 1; i >= 0; i--) {
-    const g = grouped[i];
-    if (
-      (g.type === 'toolcall' && g.tc.name === 'TodoWrite') ||
-      (g.type === 'toolcall-group' && g.name === 'TodoWrite')
-    ) {
-      lastTodoIdx = i;
-      break;
-    }
-  }
-  const deduped: RenderItem[] = [];
-  for (let i = 0; i < grouped.length; i++) {
-    const g = grouped[i];
-    const isTodoItem =
-      (g.type === 'toolcall' && g.tc.name === 'TodoWrite') ||
-      (g.type === 'toolcall-group' && g.name === 'TodoWrite');
-    if (isTodoItem && i !== lastTodoIdx) continue; // skip earlier TodoWrites
-    if (isTodoItem && g.type === 'toolcall-group') {
-      // Replace group with just the last call
-      deduped.push({ type: 'toolcall', tc: g.calls[g.calls.length - 1] });
-    } else {
-      deduped.push(g);
-    }
-  }
-
-  // Wrap consecutive tool call items into a single toolcall-run for tighter spacing
-  const final: RenderItem[] = [];
-  for (const item of deduped) {
-    if (item.type === 'toolcall' || item.type === 'toolcall-group') {
-      const last = final[final.length - 1];
-      if (last?.type === 'toolcall-run') {
-        last.items.push(item);
-      } else if (last?.type === 'toolcall' || last?.type === 'toolcall-group') {
-        final[final.length - 1] = { type: 'toolcall-run', items: [last, item] };
-      } else {
-        final.push(item);
-      }
-    } else {
-      final.push(item);
-    }
-  }
-
-  // Interleave thread events (git operations) and compaction events chronologically
-  const hasEvents = threadEvents?.length || compactionEvents?.length;
-  if (!hasEvents) return final;
-
-  const eventItems: RenderItem[] = (threadEvents ?? [])
-    .filter((e) => e.type !== 'git:changed')
-    .map((e) => ({ type: 'thread-event' as const, event: e }));
-
-  const compactionItems: RenderItem[] = (compactionEvents ?? []).map((e) => ({
-    type: 'compaction-event' as const,
-    event: e,
-  }));
-
-  const merged = [...final, ...eventItems, ...compactionItems];
-  merged.sort((a, b) => {
-    const tsA = getItemTimestamp(a);
-    const tsB = getItemTimestamp(b);
-    if (!tsA && !tsB) return 0;
-    if (!tsA) return -1;
-    if (!tsB) return 1;
-    return tsA.localeCompare(tsB);
-  });
-
-  return merged;
-}
-
 const COLLAPSED_MAX_H = 128; // px – roughly 8 lines of text
 
 function UserMessageContent({ content }: { content: string }) {
@@ -621,20 +441,6 @@ function UserMessageContent({ content }: { content: string }) {
       )}
     </div>
   );
-}
-
-/** Get a stable key for a render item */
-function getItemKey(item: RenderItem): string {
-  if (item.type === 'message') return item.msg.id;
-  if (item.type === 'toolcall') return item.tc.id;
-  if (item.type === 'toolcall-group') return item.calls[0].id;
-  if (item.type === 'toolcall-run') {
-    const first = item.items[0];
-    return first.type === 'toolcall' ? first.tc.id : first.calls[0].id;
-  }
-  if (item.type === 'thread-event') return item.event.id;
-  if (item.type === 'compaction-event') return `compact-${item.event.timestamp}`;
-  return '';
 }
 
 /* ── Windowed rendering constants ─────────────────────────────────── */
