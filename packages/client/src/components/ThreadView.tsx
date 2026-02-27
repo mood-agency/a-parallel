@@ -1150,6 +1150,7 @@ export function ThreadView() {
     lastMessage?.content?.length,
     lastMessage?.toolCalls?.length,
     activeThread?.status,
+    activeThread?.waitingReason ?? '',
     !!activeThread?.initInfo, // trigger scroll-to-bottom when initInfo arrives (prevents CLS)
   ].join(':');
 
@@ -1251,9 +1252,16 @@ export function ThreadView() {
     // opened thread.  The thread-switch effect sets scrolledThreadRef to null;
     // here we detect that the current thread hasn't been "claimed" yet and
     // force-scroll regardless of the userHasScrolledUp flag.
-    const forceScroll = activeThread?.id != null && scrolledThreadRef.current !== activeThread.id;
-    if (forceScroll && activeThread?.id) {
+    const isNewThread = activeThread?.id != null && scrolledThreadRef.current !== activeThread.id;
+    // Also force scroll when the agent is waiting for user input (question,
+    // permission, or plan approval).  The input UI renders inline in the
+    // message list, so the user must be scrolled to the bottom to see it.
+    const isWaitingForInput = activeThread?.status === 'waiting' && !!activeThread?.waitingReason;
+    const forceScroll = isNewThread || isWaitingForInput;
+    if (isNewThread && activeThread?.id) {
       scrolledThreadRef.current = activeThread.id;
+    }
+    if (forceScroll) {
       userHasScrolledUp.current = false;
     }
 

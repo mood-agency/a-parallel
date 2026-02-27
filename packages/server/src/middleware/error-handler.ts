@@ -18,8 +18,8 @@ export const handleError: ErrorHandler = (err, c) => {
       command: e.command,
       stderr: e.stderr,
     });
-    // Return a generic message; full details logged server-side only
-    return c.json({ error: 'Command execution failed' }, 400);
+    const detail = e.stderr?.trim() || e.message || 'Command execution failed';
+    return c.json({ error: detail }, 400);
   }
 
   // Any other Error — log full details server-side, return generic message to client

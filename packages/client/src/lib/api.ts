@@ -127,7 +127,7 @@ function request<T>(path: string, init?: RequestInit): ResultAsync<T, DomainErro
         const body = await res.json().catch(() => ({}));
         const rawError = body.error;
         const message =
-          typeof rawError === 'string'
+          typeof rawError === 'string' && rawError.length > 0
             ? rawError
             : rawError
               ? JSON.stringify(rawError)

@@ -580,13 +580,16 @@ export function ReviewPane() {
           errMsg.includes('husky') ||
           errMsg.includes('lint-staged') ||
           errMsg.includes('pre-commit');
+        const displayError =
+          commitResult.error.message || t('review.commitFailedGeneric', 'Commit failed');
         if (isHookFailure) {
-          setStep('hooks', { status: 'failed', error: commitResult.error.message });
+          setStep('hooks', { status: 'failed', error: displayError });
         } else {
           setStep('hooks', { status: 'completed' });
           setStep('commit', { status: 'running' });
-          setStep('commit', { status: 'failed', error: commitResult.error.message });
+          setStep('commit', { status: 'failed', error: displayError });
         }
+        toast.error(displayError);
         setActionInProgress(null);
         return;
       }

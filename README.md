@@ -209,6 +209,40 @@ Worktrees are created in `.funny-worktrees/` adjacent to your project:
 
 Each worktree is an isolated working directory allowing parallel agent work without conflicts.
 
+## Chrome Extension
+
+The `packages/chrome-extension` package contains a Chrome extension for selecting and annotating UI elements, then sending them to Funny for AI-powered analysis and fixes.
+
+### Building the Extension
+
+```bash
+# Install dependencies (from the repo root)
+bun install
+
+# Build the extension
+cd packages/chrome-extension
+bun run build
+```
+
+This compiles the TypeScript source files (`src/`) into JavaScript files in the package root, ready for Chrome to load.
+
+### Loading in Chrome
+
+1. Open Chrome and navigate to `chrome://extensions`
+2. Enable **Developer mode** (toggle in the top-right corner)
+3. Click **Load unpacked**
+4. Select the `packages/chrome-extension` folder
+5. The extension icon should appear in your toolbar
+
+### Development (watch mode)
+
+```bash
+cd packages/chrome-extension
+bun run watch
+```
+
+This watches for changes in `src/` and rebuilds automatically. After each rebuild, click the reload button on `chrome://extensions` to pick up the changes.
+
 ## Commands
 
 See [CLAUDE.md](./CLAUDE.md) for detailed commands and architecture documentation.
