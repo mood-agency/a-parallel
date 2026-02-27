@@ -435,6 +435,7 @@ export function handleWSCompactBoundary(
         cumulativeInputTokens: 0,
         lastInputTokens: 0,
         lastOutputTokens: 0,
+        tokenOffset: (activeThread.contextUsage?.tokenOffset ?? 0) + data.preTokens,
       },
     },
   });
@@ -458,6 +459,7 @@ export function handleWSContextUsage(
         cumulativeInputTokens: data.cumulativeInputTokens,
         lastInputTokens: data.inputTokens,
         lastOutputTokens: data.outputTokens,
+        tokenOffset: activeThread.contextUsage?.tokenOffset ?? 0,
       },
     },
   });

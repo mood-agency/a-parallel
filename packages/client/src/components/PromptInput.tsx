@@ -1250,6 +1250,35 @@ export const PromptInput = memo(function PromptInput({
               </Select>
               {/* Model + send — always visible, pushed right */}
               <div className="ml-auto flex shrink-0 items-center gap-1">
+                {!isNewThread &&
+                  (() => {
+                    const maxTokens = getContextWindow(
+                      activeThreadProvider ?? provider ?? 'claude',
+                      activeThreadModel ?? model ?? 'sonnet',
+                    );
+                    const cumulative =
+                      (contextUsage?.tokenOffset ?? 0) + (contextUsage?.cumulativeInputTokens ?? 0);
+                    const pct = maxTokens > 0 ? Math.min(100, (cumulative / maxTokens) * 100) : 0;
+                    const tokenK = Math.round(cumulative / 1000);
+                    const colorClass =
+                      pct > 80
+                        ? 'text-red-500'
+                        : pct > 60
+                          ? 'text-amber-500'
+                          : 'text-muted-foreground';
+                    return (
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <span className={cn('cursor-default text-xs tabular-nums', colorClass)}>
+                            {pct.toFixed(0)}% used
+                          </span>
+                        </TooltipTrigger>
+                        <TooltipContent>
+                          Context: {tokenK}K / {Math.round(maxTokens / 1000)}K tokens
+                        </TooltipContent>
+                      </Tooltip>
+                    );
+                  })()}
                 <Select value={unifiedModel} onValueChange={setUnifiedModel}>
                   <SelectTrigger
                     tabIndex={-1}
@@ -1272,24 +1301,6 @@ export const PromptInput = memo(function PromptInput({
                     ))}
                   </SelectContent>
                 </Select>
-                {contextUsage && contextUsage.cumulativeInputTokens > 0 && (() => {
-                  const maxTokens = getContextWindow(activeThreadProvider ?? 'claude', activeThreadModel ?? 'sonnet');
-                  const pct = Math.min(100, (contextUsage.cumulativeInputTokens / maxTokens) * 100);
-                  const tokenK = Math.round(contextUsage.cumulativeInputTokens / 1000);
-                  const colorClass = pct > 80 ? 'text-red-500' : pct > 60 ? 'text-amber-500' : 'text-muted-foreground';
-                  return (
-                    <Tooltip>
-                      <TooltipTrigger asChild>
-                        <span className={cn('cursor-default text-xs tabular-nums', colorClass)}>
-                          {tokenK}K
-                        </span>
-                      </TooltipTrigger>
-                      <TooltipContent>
-                        Context: {tokenK}K / {Math.round(maxTokens / 1000)}K tokens ({pct.toFixed(0)}%)
-                      </TooltipContent>
-                    </Tooltip>
-                  );
-                })()}
                 {queuedCount > 0 && (
                   <span className="inline-flex items-center rounded bg-muted px-1.5 py-0.5 text-xs font-medium text-muted-foreground">
                     {queuedCount} {t('prompt.queued')}

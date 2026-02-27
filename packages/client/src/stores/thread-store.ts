@@ -57,6 +57,8 @@ export interface ContextUsage {
   cumulativeInputTokens: number;
   lastInputTokens: number;
   lastOutputTokens: number;
+  /** Accumulated tokens from before compaction(s) so the counter doesn't reset */
+  tokenOffset: number;
 }
 
 export interface ThreadWithMessages extends Thread {
