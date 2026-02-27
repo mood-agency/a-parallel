@@ -25,7 +25,7 @@ export const threads = sqliteTable('threads', {
   title: text('title').notNull(),
   mode: text('mode').notNull(), // 'local' | 'worktree'
   provider: text('provider').notNull().default('claude'), // 'claude' | 'codex'
-  permissionMode: text('permission_mode').notNull().default('autoEdit'), // 'plan' | 'autoEdit' | 'confirmEdit'
+  permissionMode: text('permission_mode').notNull().default('autoEdit'), // 'plan' | 'autoEdit' | 'confirmEdit' | 'ask'
   status: text('status').notNull().default('pending'), // 'pending' | 'running' | 'waiting' | 'completed' | 'failed' | 'stopped' | 'interrupted'
   branch: text('branch'),
   baseBranch: text('base_branch'),

@@ -392,6 +392,7 @@ export const PromptInput = memo(function PromptInput({
 
   const modes = useMemo(
     () => [
+      { value: 'ask', label: t('prompt.ask') },
       { value: 'plan', label: t('prompt.plan') },
       { value: 'autoEdit', label: t('prompt.autoEdit') },
       { value: 'confirmEdit', label: t('prompt.askBeforeEdits') },
