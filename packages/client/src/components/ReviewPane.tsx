@@ -1236,9 +1236,9 @@ export function ReviewPane() {
                       <span
                         className={cn(
                           'text-[10px] font-medium flex-shrink-0',
-                          f.status === 'added' && 'text-status-success',
+                          f.status === 'added' && 'text-diff-added',
                           f.status === 'modified' && 'text-status-pending',
-                          f.status === 'deleted' && 'text-destructive',
+                          f.status === 'deleted' && 'text-diff-removed',
                           f.status === 'renamed' && 'text-status-info',
                         )}
                       >

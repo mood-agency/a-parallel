@@ -9,6 +9,7 @@
         "node-pty": "^1.1.0",
       },
       "devDependencies": {
+        "@playwright/test": "^1.58.2",
         "@secretlint/secretlint-rule-preset-recommend": "^11.3.1",
         "@tauri-apps/api": "^2.10.1",
         "@tauri-apps/cli": "^2.10.0",
@@ -697,6 +698,8 @@
     "@oxlint/binding-win32-x64-msvc": ["@oxlint/binding-win32-x64-msvc@1.50.0", "", { "os": "win32", "cpu": "x64" }, "sha512-682t7npLC4G2Ca+iNlI9fhAKTcFPYYXJjwoa88H4q+u5HHHlsnL/gHULapX3iqp+A8FIJbgdylL5KMYo2LaluQ=="],
 
     "@pinojs/redact": ["@pinojs/redact@0.4.0", "", {}, "sha512-k2ENnmBugE/rzQfEcdWHcCY+/FM3VLzH9cYEsbdsoqrvzAKRhUZeRNhAZvB8OitQJ1TBed3yqWtdjzS6wJKBwg=="],
+
+    "@playwright/test": ["@playwright/test@1.58.2", "", { "dependencies": { "playwright": "1.58.2" }, "bin": { "playwright": "cli.js" } }, "sha512-akea+6bHYBBfA9uQqSYmlJXn61cTa+jbO87xVLCWbTqbWadRVmhxlXATaOjOgcBaWU4ePo0wB41KMFv3o35IXA=="],
 
     "@protobufjs/aspromise": ["@protobufjs/aspromise@1.1.2", "", {}, "sha512-j+gKExEuLmKwvz3OgROXtrJ2UG2x8Ch2YZUxahh+s1F2HZ+wAceUNLkvy6zKCPVRkU++ZWQrdxsUeQXmcg4uoQ=="],
 

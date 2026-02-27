@@ -432,6 +432,23 @@ async function shutdown() {
 process.on('SIGINT', shutdown);
 process.on('SIGTERM', shutdown);
 
+// Catch unhandled errors so a stray rejection doesn't silently kill the server (exit 255).
+process.on('uncaughtException', (err) => {
+  log.error('Uncaught exception — keeping server alive', {
+    namespace: 'server',
+    error: err?.message ?? String(err),
+    stack: err?.stack,
+  });
+});
+process.on('unhandledRejection', (reason) => {
+  const msg = reason instanceof Error ? reason.message : String(reason);
+  log.error('Unhandled rejection — keeping server alive', {
+    namespace: 'server',
+    error: msg,
+    stack: reason instanceof Error ? reason.stack : undefined,
+  });
+});
+
 log.info(`Listening on http://localhost:${server.port}`, {
   namespace: 'server',
   port: server.port,

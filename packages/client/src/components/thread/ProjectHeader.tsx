@@ -478,16 +478,20 @@ export const ProjectHeader = memo(function ProjectHeader() {
                   <BreadcrumbPage className="block truncate text-sm">
                     {activeThreadTitle}
                   </BreadcrumbPage>
-                  {activeThreadStage && activeThreadStage !== 'archived' && (() => {
-                    const cfg = stageConfig[activeThreadStage];
-                    const StageIcon = cfg.icon;
-                    return (
-                      <span className={`inline-flex flex-shrink-0 items-center gap-1 rounded-full border px-2 py-0.5 text-xs ${cfg.className}`}>
-                        <StageIcon className="h-3 w-3" />
-                        {t(cfg.labelKey)}
-                      </span>
-                    );
-                  })()}
+                  {activeThreadStage &&
+                    activeThreadStage !== 'archived' &&
+                    (() => {
+                      const cfg = stageConfig[activeThreadStage];
+                      const StageIcon = cfg.icon;
+                      return (
+                        <span
+                          className={`inline-flex flex-shrink-0 items-center gap-1 rounded-full border px-2 py-0.5 text-xs ${cfg.className}`}
+                        >
+                          <StageIcon className="h-3 w-3" />
+                          {t(cfg.labelKey)}
+                        </span>
+                      );
+                    })()}
                 </BreadcrumbItem>
               )}
             </BreadcrumbList>
@@ -583,8 +587,8 @@ export const ProjectHeader = memo(function ProjectHeader() {
               >
                 {showGitStats ? (
                   <div className="flex items-center gap-2 font-mono text-xs font-semibold">
-                    <span className="text-status-success">+{gitStatus.linesAdded}</span>
-                    <span className="text-status-error">-{gitStatus.linesDeleted}</span>
+                    <span className="text-diff-added">+{gitStatus.linesAdded}</span>
+                    <span className="text-diff-removed">-{gitStatus.linesDeleted}</span>
                   </div>
                 ) : (
                   <GitCompare className="h-4 w-4" />

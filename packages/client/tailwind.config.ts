@@ -25,6 +25,10 @@ const config: Config = {
           neutral: 'hsl(var(--status-neutral) / <alpha-value>)',
           violet: 'hsl(var(--status-violet) / <alpha-value>)',
         },
+        diff: {
+          added: 'hsl(var(--diff-added) / <alpha-value>)',
+          removed: 'hsl(var(--diff-removed) / <alpha-value>)',
+        },
         primary: {
           DEFAULT: 'hsl(var(--primary))',
           foreground: 'hsl(var(--primary-foreground))',

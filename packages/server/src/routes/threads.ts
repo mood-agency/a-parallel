@@ -904,9 +904,11 @@ threadRoutes.delete('/:id', async (c) => {
     });
 
     if (isAgentRunning(id)) {
-      stopAgent(id).catch((err) =>
-        log.error('Failed to stop agent', { namespace: 'agent', threadId: id, error: err }),
-      );
+      try {
+        await stopAgent(id);
+      } catch (err) {
+        log.error('Failed to stop agent', { namespace: 'agent', threadId: id, error: err });
+      }
     }
 
     // Only remove worktree/branch for worktree-mode threads (skip local threads reusing a worktree and external threads)
