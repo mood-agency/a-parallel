@@ -1,5 +1,5 @@
 import AnsiToHtml from 'ansi-to-html';
-import { Plus, X, ChevronDown, Square, Loader2 } from 'lucide-react';
+import { Plus, X, Square, Loader2 } from 'lucide-react';
 import { useRef, useState, useCallback, useEffect, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useShallow } from 'zustand/react/shallow';
@@ -490,16 +490,7 @@ export function TerminalPanel() {
 
         {/* Tab bar */}
         <div className="flex h-8 flex-shrink-0 items-center gap-0.5 bg-background px-2">
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <Button variant="ghost" size="icon-xs" onClick={togglePanel}>
-                <ChevronDown className="h-3.5 w-3.5" />
-              </Button>
-            </TooltipTrigger>
-            <TooltipContent>{t('terminal.hideTerminal')}</TooltipContent>
-          </Tooltip>
-
-          <div className="ml-1 flex flex-1 items-center gap-0.5 overflow-x-auto">
+          <div className="flex flex-1 items-center gap-0.5 overflow-x-auto">
             {visibleTabs.map((tab) => (
               <button
                 key={tab.id}
