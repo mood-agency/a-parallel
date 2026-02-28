@@ -34,6 +34,7 @@
   },
   "optionalDependencies": {
     "@agentclientprotocol/sdk": "^0.14.1",
+    "@funny/native-git": "*",
     "@openai/codex-sdk": "^0.101.0"
   }
 }

@@ -1,0 +1,21 @@
+{
+  "name": "@funny/native-git",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "main": "./index.js",
+  "types": "./index.d.ts",
+  "scripts": {
+    "build": "napi build --platform --release",
+    "build:debug": "napi build --platform"
+  },
+  "devDependencies": {
+    "@napi-rs/cli": "^3.5.1"
+  },
+  "napi": {
+    "name": "native-git",
+    "triples": {
+      "defaults": true
+    }
+  }
+}

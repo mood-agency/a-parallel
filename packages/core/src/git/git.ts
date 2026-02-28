@@ -6,6 +6,7 @@ import type { FileDiff, FileDiffSummary, DiffSummaryResponse, GitSyncState } fro
 import { processError, internal, badRequest, type DomainError } from '@funny/shared/errors';
 import { ok, err, ResultAsync, type Result } from 'neverthrow';
 
+import { getNativeGit } from './native.js';
 import { validatePath, validatePathSync } from './path-validation.js';
 import { execute, executeSync, gitRead, gitWrite, ProcessExecutionError } from './process.js';
 
@@ -82,11 +83,14 @@ export function isGitRepoSync(path: string): boolean {
 
 /**
  * Get the current branch name.
- * Falls back to symbolic-ref for repos with no commits yet.
  */
 export function getCurrentBranch(cwd: string): ResultAsync<string, DomainError> {
-  return git(['rev-parse', '--abbrev-ref', 'HEAD'], cwd).orElse(() =>
-    git(['symbolic-ref', '--short', 'HEAD'], cwd),
+  const native = getNativeGit();
+  if (!native)
+    return new ResultAsync(Promise.resolve(err(internal('Native git module not available'))));
+  return ResultAsync.fromPromise(
+    native.getCurrentBranch(cwd).then((b) => b ?? ''),
+    (error) => processError(String(error), 1, ''),
   );
 }
 
@@ -95,6 +99,12 @@ export function getCurrentBranch(cwd: string): ResultAsync<string, DomainError> 
  * Falls back to remote branches if no local branches exist.
  */
 export function listBranches(cwd: string): ResultAsync<string[], DomainError> {
+  const native = getNativeGit();
+  if (native) {
+    return ResultAsync.fromPromise(native.listBranches(cwd), (error) =>
+      processError(String(error), 1, ''),
+    );
+  }
   return ResultAsync.fromPromise(
     (async () => {
       // Try local branches first
@@ -132,6 +142,12 @@ export function listBranches(cwd: string): ResultAsync<string[], DomainError> {
  * Detect the default branch of the repository.
  */
 export function getDefaultBranch(cwd: string): ResultAsync<string | null, DomainError> {
+  const native = getNativeGit();
+  if (native) {
+    return ResultAsync.fromPromise(native.getDefaultBranch(cwd), (error) =>
+      processError(String(error), 1, ''),
+    );
+  }
   return ResultAsync.fromPromise(
     (async () => {
       const remoteHead = await gitOptional(
@@ -662,6 +678,25 @@ export function getDiffSummary(
   cwd: string,
   options?: { excludePatterns?: string[]; maxFiles?: number },
 ): ResultAsync<DiffSummaryResponse, DomainError> {
+  const native = getNativeGit();
+  if (native) {
+    const exclude = options?.excludePatterns ?? [];
+    const maxFiles = options?.maxFiles ?? 0;
+    return ResultAsync.fromPromise(
+      native
+        .getDiffSummary(cwd, exclude.length > 0 ? exclude : null, maxFiles > 0 ? maxFiles : null)
+        .then((r) => ({
+          files: r.files.map((f) => ({
+            path: f.path,
+            status: f.status as FileDiffSummary['status'],
+            staged: f.staged,
+          })),
+          total: r.total,
+          truncated: r.truncated,
+        })),
+      (error) => processError(String(error), 1, ''),
+    );
+  }
   const exclude = options?.excludePatterns ?? [];
   const maxFiles = options?.maxFiles ?? 0; // 0 = no limit
 
@@ -831,6 +866,21 @@ export function getStatusSummary(
     return ResultAsync.fromSafePromise(Promise.resolve(cached.data));
   }
 
+  // Try native module first
+  const native = getNativeGit();
+  if (native) {
+    return ResultAsync.fromPromise(
+      native
+        .getStatusSummary(worktreeCwd, baseBranch ?? null, projectCwd ?? null)
+        .then((result) => {
+          statusCache.set(cacheKey, { data: result, ts: Date.now() });
+          return result;
+        }),
+      (error) => processError(String(error), 1, ''),
+    );
+  }
+
+  // Fallback: CLI-based implementation
   return ResultAsync.fromPromise(
     (async () => {
       // Phase 1: two git commands cover what previously took 4
@@ -1026,6 +1076,12 @@ export interface GitLogEntry {
  * Get recent commit log entries.
  */
 export function getLog(cwd: string, limit = 20): ResultAsync<GitLogEntry[], DomainError> {
+  const native = getNativeGit();
+  if (native) {
+    return ResultAsync.fromPromise(native.getLog(cwd, limit), (error) =>
+      processError(String(error), 1, ''),
+    );
+  }
   const SEP = '@@SEP@@';
   const format = `%H${SEP}%h${SEP}%an${SEP}%ar${SEP}%s`;
   return git(['log', `--format=${format}`, `-n`, String(limit)], cwd).map((output) => {

@@ -14,6 +14,8 @@ export {
 
 export { validatePath, validatePathSync, pathExists, sanitizePath } from './path-validation.js';
 
+export { getNativeGit } from './native.js';
+
 export {
   git,
   gitSync,
