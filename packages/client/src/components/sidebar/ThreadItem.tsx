@@ -143,9 +143,7 @@ export const ThreadItem = memo(function ThreadItem({
         <div className="flex min-w-0 flex-1 items-center gap-1">
           <span className="truncate text-sm leading-tight">{thread.title}</span>
           {/* Git status (worktree threads only) */}
-          {showGitIcon &&
-          gitStatus.state === 'dirty' &&
-          (gitStatus.linesAdded > 0 || gitStatus.linesDeleted > 0) ? (
+          {showGitIcon && (gitStatus.linesAdded > 0 || gitStatus.linesDeleted > 0) ? (
             <span className="flex-shrink-0 font-mono text-xs">
               {gitStatus.linesAdded > 0 && (
                 <span className="text-emerald-400">+{gitStatus.linesAdded}</span>

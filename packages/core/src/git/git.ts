@@ -762,6 +762,32 @@ export function getSingleFileDiff(
 
 // ─── Git Status Summary ─────────────────────────────────
 
+const MAX_UNTRACKED_TO_COUNT = 200;
+const MAX_UNTRACKED_FILE_SIZE = 512 * 1024; // 512 KB
+
+/** Unquote a path from git's porcelain output (C-style escaping inside double quotes). */
+function unquoteGitPath(raw: string): string {
+  if (!raw.startsWith('"') || !raw.endsWith('"')) return raw;
+  const inner = raw.slice(1, -1);
+  return inner.replace(/\\([tnr"\\])|\\([0-7]{3})/g, (_, esc, oct) => {
+    if (oct) return String.fromCharCode(parseInt(oct, 8));
+    switch (esc) {
+      case 't':
+        return '\t';
+      case 'n':
+        return '\n';
+      case 'r':
+        return '\r';
+      case '"':
+        return '"';
+      case '\\':
+        return '\\';
+      default:
+        return esc;
+    }
+  });
+}
+
 export interface GitStatusSummary {
   dirtyFileCount: number;
   unpushedCommitCount: number;
@@ -792,6 +818,7 @@ export function getStatusSummary(
       // Parse branch from the first line: "## branch" or "## branch...upstream [ahead N]"
       let branch: string | null = null;
       let dirtyFileCount = 0;
+      const untrackedPaths: string[] = [];
       if (statusResult.exitCode === 0 && statusResult.stdout.trim()) {
         const lines = statusResult.stdout.trim().split('\n');
         const headerLine = lines[0]; // e.g. "## main...origin/main [ahead 2]"
@@ -802,7 +829,13 @@ export function getStatusSummary(
           }
         }
         // All lines after the header are dirty files
-        dirtyFileCount = lines.slice(1).filter(Boolean).length;
+        const fileLines = lines.slice(1).filter(Boolean);
+        dirtyFileCount = fileLines.length;
+        for (const line of fileLines) {
+          if (line.startsWith('?? ')) {
+            untrackedPaths.push(unquoteGitPath(line.slice(3)));
+          }
+        }
       }
 
       // Parse combined line stats
@@ -818,6 +851,36 @@ export function getStatusSummary(
             if (!isNaN(deleted)) linesDeleted += deleted;
           }
         }
+      }
+
+      // Count lines in untracked files (not covered by git diff HEAD --numstat)
+      if (untrackedPaths.length > 0) {
+        const filesToCount = untrackedPaths.slice(0, MAX_UNTRACKED_TO_COUNT);
+        const counts = await Promise.all(
+          filesToCount.map(async (relPath) => {
+            try {
+              const file = Bun.file(join(worktreeCwd, relPath));
+              const size = file.size;
+              if (size === 0 || size > MAX_UNTRACKED_FILE_SIZE) return 0;
+              const buffer = new Uint8Array(await file.arrayBuffer());
+              // Binary detection: null bytes in first 8KB
+              const checkLen = Math.min(buffer.length, 8192);
+              for (let i = 0; i < checkLen; i++) {
+                if (buffer[i] === 0) return 0;
+              }
+              // Count newlines
+              let n = 0;
+              for (let i = 0; i < buffer.length; i++) {
+                if (buffer[i] === 0x0a) n++;
+              }
+              if (buffer.length > 0 && buffer[buffer.length - 1] !== 0x0a) n++;
+              return n;
+            } catch {
+              return 0;
+            }
+          }),
+        );
+        for (const c of counts) linesAdded += c;
       }
 
       if (!branch) {

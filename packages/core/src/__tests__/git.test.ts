@@ -402,6 +402,40 @@ describe('git operations', () => {
         expect(result.value.dirtyFileCount).toBe(2);
       }
     });
+
+    test('counts lines in untracked files as linesAdded', async () => {
+      writeFileSync(resolve(repoPath, 'new-file.txt'), 'line1\nline2\nline3\n');
+      writeFileSync(resolve(repoPath, 'another.txt'), 'single line\n');
+      const result = await getStatusSummary(repoPath);
+      expect(result.isOk()).toBe(true);
+      if (result.isOk()) {
+        expect(result.value.linesAdded).toBe(4); // 3 + 1
+        expect(result.value.linesDeleted).toBe(0);
+      }
+    });
+
+    test('does not double-count staged new files', async () => {
+      writeFileSync(resolve(repoPath, 'staged.txt'), 'a\nb\nc\n');
+      executeSync('git', ['add', 'staged.txt'], { cwd: repoPath });
+      const result = await getStatusSummary(repoPath);
+      expect(result.isOk()).toBe(true);
+      if (result.isOk()) {
+        expect(result.value.linesAdded).toBe(3);
+      }
+    });
+
+    test('skips binary untracked files', async () => {
+      writeFileSync(
+        resolve(repoPath, 'image.png'),
+        Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x00, 0x00]),
+      );
+      writeFileSync(resolve(repoPath, 'text.txt'), 'hello\n');
+      const result = await getStatusSummary(repoPath);
+      expect(result.isOk()).toBe(true);
+      if (result.isOk()) {
+        expect(result.value.linesAdded).toBe(1); // only text.txt
+      }
+    });
   });
 
   describe('getLog', () => {

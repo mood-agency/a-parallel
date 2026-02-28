@@ -348,8 +348,7 @@ export function AppSidebar() {
     <Sidebar collapsible="offcanvas" className="select-none">
       {/* Header with collapse toggle */}
       <SidebarHeader className="group/header flex-row items-center justify-between px-3 py-2">
-        <span className="text-sm font-semibold text-sidebar-foreground">funny</span>
-        <div className="flex items-center gap-0.5">
+        <div className="ml-auto flex items-center gap-0.5">
           <div className="flex items-center gap-0.5 opacity-0 transition-opacity group-hover/header:opacity-100">
             <Tooltip>
               <TooltipTrigger asChild>
