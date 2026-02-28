@@ -1,4 +1,5 @@
 import { useEffect, startTransition } from 'react';
+import { toast } from 'sonner';
 
 import { closePreviewForCommand } from '@/hooks/use-preview-window';
 import { getAuthToken, getAuthMode } from '@/lib/api';
@@ -272,6 +273,10 @@ function handleMessage(e: MessageEvent) {
     case 'pty:exit': {
       const termStore = useTerminalStore.getState();
       termStore.markExited(data.ptyId);
+      break;
+    }
+    case 'pty:error': {
+      toast.error(data.error ?? 'Failed to create terminal');
       break;
     }
     case 'thread:queue_update': {

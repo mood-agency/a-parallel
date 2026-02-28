@@ -6,9 +6,9 @@ if (process.platform === 'win32') {
 }
 
 import { existsSync } from 'fs';
-import { join, resolve } from 'path';
+import { basename, dirname, join, resolve } from 'path';
 
-import { getStatusSummary, deriveGitSyncState } from '@funny/core/git';
+import { getStatusSummary, deriveGitSyncState, WORKTREE_DIR_NAME } from '@funny/core/git';
 import { observability, observabilityShutdown } from '@funny/observability';
 import {
   getProviderModels,
@@ -325,7 +325,14 @@ const server = Bun.serve({
             const resolvedCwd = resolve(data.cwd);
             const isAllowed = userProjects.some((p: any) => {
               const projectPath = resolve(p.path);
-              return resolvedCwd.startsWith(projectPath);
+              if (resolvedCwd.startsWith(projectPath)) return true;
+              // Worktrees live in ../.funny-worktrees/<project-name>/, a sibling of the project
+              const worktreeBase = resolve(
+                dirname(projectPath),
+                WORKTREE_DIR_NAME,
+                basename(projectPath),
+              );
+              return resolvedCwd.startsWith(worktreeBase);
             });
             if (!isAllowed) {
               log.warn(`PTY spawn denied: cwd not in user's projects`, {
