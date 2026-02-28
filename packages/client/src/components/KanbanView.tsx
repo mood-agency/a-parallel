@@ -203,10 +203,14 @@ const KanbanCard = memo(function KanbanCard({
 
       <div className="flex items-center justify-between gap-1.5">
         <div className="flex min-w-0 items-center gap-1">
-          <StatusIcon className={cn('h-3 w-3 shrink-0', statusClassName)} />
-          <span className="truncate text-xs text-muted-foreground">
-            {t(`thread.status.${thread.status}`)}
-          </span>
+          {thread.status !== 'completed' && (
+            <>
+              <StatusIcon className={cn('h-3 w-3 shrink-0', statusClassName)} />
+              <span className="truncate text-xs text-muted-foreground">
+                {t(`thread.status.${thread.status}`)}
+              </span>
+            </>
+          )}
           {thread.source &&
             thread.source !== 'web' &&
             SOURCE_ICON[thread.source] &&
@@ -223,10 +227,12 @@ const KanbanCard = memo(function KanbanCard({
                 </Tooltip>
               );
             })()}
-        </div>
-        <div className="flex shrink-0 items-center gap-2 text-xs text-muted-foreground">
-          <span>{timeAgo(thread.completedAt || thread.createdAt, t)}</span>
-          {thread.cost > 0 && <span>${thread.cost.toFixed(3)}</span>}
+          <span className="text-xs text-muted-foreground">
+            {timeAgo(thread.completedAt || thread.createdAt, t)}
+          </span>
+          {thread.cost > 0 && (
+            <span className="text-xs text-muted-foreground">${thread.cost.toFixed(3)}</span>
+          )}
         </div>
       </div>
     </div>
