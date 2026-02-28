@@ -175,7 +175,7 @@ function parseRoute(pathname: string) {
   };
 }
 
-const validSettingsIds = new Set(settingsItems.map((i) => i.id));
+const validSettingsIds = new Set([...settingsItems.map((i) => i.id), 'users']);
 
 export function useRouteSync() {
   const location = useLocation();

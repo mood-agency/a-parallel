@@ -36,7 +36,6 @@ import { useUIStore } from '@/stores/ui-store';
 import { ArchivedThreadsSettings } from './ArchivedThreadsSettings';
 import { AutomationSettings } from './AutomationSettings';
 import { McpServerSettings } from './McpServerSettings';
-import { ProfileSettings } from './settings/ProfileSettings';
 import { UserManagement } from './settings/UserManagement';
 import { settingsLabelKeys, type SettingsItemId } from './SettingsPanel';
 import { SkillsSettings } from './SkillsSettings';
@@ -582,8 +581,6 @@ export function SettingsDetailView() {
             <AutomationSettings />
           ) : page === 'archived-threads' ? (
             <ArchivedThreadsSettings />
-          ) : page === 'profile' ? (
-            <ProfileSettings />
           ) : page === 'users' ? (
             <UserManagement />
           ) : (

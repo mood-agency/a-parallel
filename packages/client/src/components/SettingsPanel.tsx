@@ -8,7 +8,6 @@ import {
   Timer,
   Archive,
   Users,
-  User,
 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { useNavigate } from 'react-router-dom';
@@ -37,7 +36,7 @@ const baseSettingsItems = [
 ] as const;
 
 export const settingsItems = baseSettingsItems;
-export type SettingsItemId = (typeof baseSettingsItems)[number]['id'] | 'users' | 'profile';
+export type SettingsItemId = (typeof baseSettingsItems)[number]['id'] | 'users';
 
 export const settingsLabelKeys: Record<string, string> = {
   general: 'settings.general',
@@ -48,7 +47,6 @@ export const settingsLabelKeys: Record<string, string> = {
   automations: 'settings.automations',
   'archived-threads': 'settings.archivedThreads',
   users: 'users.title',
-  profile: 'profile.title',
 };
 
 export function SettingsPanel() {
@@ -65,7 +63,6 @@ export function SettingsPanel() {
   const items: Array<{ id: string; label: string; icon: typeof Settings }> = selectedProjectId
     ? [...baseSettingsItems].filter((item) => item.id !== 'archived-threads')
     : [...baseSettingsItems];
-  items.push({ id: 'profile', label: 'Profile', icon: User });
   if (authMode === 'multi' && authUser?.role === 'admin') {
     items.push({ id: 'users', label: 'Users', icon: Users });
   }

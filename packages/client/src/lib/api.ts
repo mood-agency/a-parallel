@@ -15,8 +15,6 @@ import type {
   CreateAutomationRequest,
   UpdateAutomationRequest,
   InboxItem,
-  UserProfile,
-  UpdateProfileRequest,
   GitHubRepo,
   PaginatedMessages,
   QueuedMessage,
@@ -590,11 +588,6 @@ export const api = {
       method: 'PATCH',
       body: JSON.stringify({ triageStatus }),
     }),
-
-  // Profile
-  getProfile: () => request<UserProfile | null>('/profile'),
-  updateProfile: (data: UpdateProfileRequest) =>
-    request<UserProfile>('/profile', { method: 'PUT', body: JSON.stringify(data) }),
 
   // Browse (filesystem)
   browseRoots: () => request<{ roots: string[]; home: string }>('/browse/roots'),
