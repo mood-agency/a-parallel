@@ -22,6 +22,34 @@ import { useThreadStore } from '@/stores/thread-store';
 
 const isTauri = !!(window as unknown as { __TAURI_INTERNALS__: unknown }).__TAURI_INTERNALS__;
 
+/** Resolve a CSS variable (HSL) to a hex-like string for xterm/ansi-to-html. */
+function getCssVar(name: string): string {
+  const raw = getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+  return raw ? `hsl(${raw})` : '#1b1b1b';
+}
+
+function getTerminalTheme() {
+  return {
+    background: getCssVar('--background'),
+    foreground: getCssVar('--foreground'),
+    cursor: getCssVar('--foreground'),
+    selectionBackground: '#264f78',
+  };
+}
+
+/** Watch for theme changes on <html> class and call back with updated xterm theme. */
+function useThemeSync(termRef: React.RefObject<{ terminal: any } | null>) {
+  useEffect(() => {
+    const observer = new MutationObserver(() => {
+      if (termRef.current?.terminal) {
+        termRef.current.terminal.options.theme = getTerminalTheme();
+      }
+    });
+    observer.observe(document.documentElement, { attributes: true, attributeFilter: ['class'] });
+    return () => observer.disconnect();
+  }, [termRef]);
+}
+
 /** Tauri PTY tab — uses xterm.js (lazy-loaded) */
 function TauriTerminalTabContent({
   id,
@@ -33,6 +61,8 @@ function TauriTerminalTabContent({
   active: boolean;
 }) {
   const containerRef = useRef<HTMLDivElement>(null);
+  const termRef = useRef<{ terminal: any; fitAddon: any } | null>(null);
+  useThemeSync(termRef);
 
   useEffect(() => {
     if (!containerRef.current || !isTauri) return;
@@ -55,12 +85,7 @@ function TauriTerminalTabContent({
         cursorBlink: true,
         fontSize: 13,
         fontFamily: 'Menlo, Monaco, Consolas, "Courier New", monospace',
-        theme: {
-          background: '#09090b',
-          foreground: '#fafafa',
-          cursor: '#fafafa',
-          selectionBackground: '#264f78',
-        },
+        theme: getTerminalTheme(),
         scrollback: 5000,
       });
 
@@ -69,6 +94,7 @@ function TauriTerminalTabContent({
       terminal.loadAddon(fitAddon);
       terminal.loadAddon(webLinksAddon);
       terminal.open(containerRef.current);
+      termRef.current = { terminal, fitAddon };
       requestAnimationFrame(() => fitAddon.fit());
 
       const { invoke } = await import('@tauri-apps/api/core');
@@ -104,6 +130,7 @@ function TauriTerminalTabContent({
         unlistenExit();
         onDataDisposable.dispose();
         onResizeDisposable.dispose();
+        termRef.current = null;
         terminal.dispose();
         invoke('pty_kill', { id }).catch(console.error);
       };
@@ -141,6 +168,7 @@ function WebTerminalTabContent({
   const registerPtyCallback = useTerminalStore((s) => s.registerPtyCallback);
   const unregisterPtyCallback = useTerminalStore((s) => s.unregisterPtyCallback);
   const [loading, setLoading] = useState(true);
+  useThemeSync(termRef);
 
   useEffect(() => {
     if (!containerRef.current) return;
@@ -163,12 +191,7 @@ function WebTerminalTabContent({
         cursorBlink: true,
         fontSize: 13,
         fontFamily: 'Menlo, Monaco, Consolas, "Courier New", monospace',
-        theme: {
-          background: '#09090b',
-          foreground: '#fafafa',
-          cursor: '#fafafa',
-          selectionBackground: '#264f78',
-        },
+        theme: getTerminalTheme(),
         scrollback: 5000,
       });
 
@@ -273,7 +296,7 @@ function WebTerminalTabContent({
     <div className={cn('relative w-full h-full', !active && 'hidden')}>
       <div ref={containerRef} className="h-full w-full" />
       {loading && (
-        <div className="absolute inset-0 flex items-center justify-center bg-[#09090b]">
+        <div className="absolute inset-0 flex items-center justify-center bg-background">
           <div className="flex items-center gap-2 text-xs text-muted-foreground">
             <Loader2 className="h-4 w-4 animate-spin" />
             <span>{t('terminal.loading')}</span>
@@ -301,7 +324,13 @@ function CommandTabContent({
   const scrollRef = useRef<HTMLDivElement>(null);
 
   const ansiConverter = useMemo(
-    () => new AnsiToHtml({ fg: '#fafafa', bg: '#09090b', newline: true, escapeXML: true }),
+    () =>
+      new AnsiToHtml({
+        fg: getCssVar('--foreground'),
+        bg: getCssVar('--background'),
+        newline: true,
+        escapeXML: true,
+      }),
     [],
   );
   const htmlOutput = useMemo(
@@ -450,14 +479,14 @@ export function TerminalPanel() {
         {/* Drag handle — matches sidebar rail style */}
         <div
           className={cn(
-            'relative h-1.5 cursor-row-resize flex-shrink-0 after:absolute after:inset-x-0 after:top-1/2 after:h-[2px] after:-translate-y-1/2 after:transition-colors hover:after:bg-sidebar-border',
+            'relative h-1.5 cursor-row-resize flex-shrink-0 after:absolute after:inset-x-0 after:top-1/2 after:h-[1px] after:-translate-y-1/2 after:bg-border after:transition-colors hover:after:bg-sidebar-border',
             dragging && 'after:bg-sidebar-border',
           )}
           onMouseDown={handleMouseDown}
         />
 
         {/* Tab bar */}
-        <div className="flex h-8 flex-shrink-0 items-center gap-0.5 border-b border-border bg-secondary/50 px-2">
+        <div className="flex h-8 flex-shrink-0 items-center gap-0.5 bg-background px-2">
           <Tooltip>
             <TooltipTrigger asChild>
               <Button variant="ghost" size="icon-xs" onClick={togglePanel}>
@@ -530,7 +559,7 @@ export function TerminalPanel() {
         </div>
 
         {/* Terminal content area */}
-        <div className="min-h-0 flex-1 overflow-hidden bg-[#09090b]">
+        <div className="min-h-0 flex-1 overflow-hidden bg-background pl-2 pt-5">
           {visibleTabs.length === 0 ? (
             <div className="flex h-full items-center justify-center text-xs text-muted-foreground">
               {t('terminal.noProcesses')}

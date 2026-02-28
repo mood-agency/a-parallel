@@ -74,6 +74,27 @@ export function NewThreadDialog() {
     [],
   );
 
+  // Ref to hold the created thread info until progress modal is dismissed
+  const pendingThreadRef = useRef<{ id: string; projectId: string } | null>(null);
+
+  const handleSetupProgressClose = useCallback(
+    async (open: boolean) => {
+      if (open) return;
+      const pending = pendingThreadRef.current;
+      pendingThreadRef.current = null;
+      if (pending) {
+        await loadThreadsForProject(pending.projectId);
+        await selectThread(pending.id);
+        setReviewPaneOpen(false);
+      }
+      // Batch these so React unmounts without rendering intermediate states
+      setSetupProgressOpen(false);
+      setCreating(false);
+      cancelNewThread();
+    },
+    [loadThreadsForProject, selectThread, setReviewPaneOpen, cancelNewThread],
+  );
+
   // Listen for worktree:setup WS events while creating
   useEffect(() => {
     if (!creating || !createWorktree) return;
@@ -139,202 +160,221 @@ export function NewThreadDialog() {
       return;
     }
 
-    setSetupProgressOpen(false);
-    await loadThreadsForProject(newThreadProjectId);
-    await selectThread(result.value.id);
-    setReviewPaneOpen(false);
-    cancelNewThread();
-    setCreating(false);
+    if (createWorktree) {
+      // Keep modal open — user dismisses via "Done" button
+      pendingThreadRef.current = { id: result.value.id, projectId: newThreadProjectId };
+      // Ensure all steps show as completed since server has finished
+      setSetupSteps((prev) => {
+        if (prev.length === 0) {
+          return [
+            {
+              id: 'worktree',
+              label: t('newThread.worktreeCreated', 'Worktree created'),
+              status: 'completed' as const,
+            },
+          ];
+        }
+        return prev.map((s) =>
+          s.status === 'running' ? { ...s, status: 'completed' as const } : s,
+        );
+      });
+    } else {
+      await loadThreadsForProject(newThreadProjectId);
+      await selectThread(result.value.id);
+      setReviewPaneOpen(false);
+      cancelNewThread();
+      setCreating(false);
+    }
   };
 
-  return (
-    <>
+  if (setupProgressOpen) {
+    return (
       <GitProgressModal
-        open={setupProgressOpen}
-        onOpenChange={setSetupProgressOpen}
+        open
+        onOpenChange={handleSetupProgressClose}
         steps={setupSteps}
         title={t('newThread.settingUpWorktree', 'Setting up worktree')}
       />
-      <Dialog open onOpenChange={(open) => !open && cancelNewThread()}>
-        <DialogContent className="max-w-lg">
-          <DialogHeader>
-            <DialogTitle>{t('newThread.title')}</DialogTitle>
-          </DialogHeader>
+    );
+  }
 
-          {/* Branch selector */}
-          <div>
-            <label className="mb-1 block text-xs font-medium text-muted-foreground">
-              {t('newThread.branch', 'Branch')}
-            </label>
-            <Popover
-              open={branchOpen}
-              onOpenChange={(v) => {
-                setBranchOpen(v);
-                if (!v) setBranchSearch('');
+  return (
+    <Dialog open onOpenChange={(open) => !open && !creating && cancelNewThread()}>
+      <DialogContent className="max-w-lg">
+        <DialogHeader>
+          <DialogTitle>{t('newThread.title')}</DialogTitle>
+        </DialogHeader>
+
+        {/* Branch selector */}
+        <div>
+          <label className="mb-1 block text-xs font-medium text-muted-foreground">
+            {t('newThread.branch', 'Branch')}
+          </label>
+          <Popover
+            open={branchOpen}
+            onOpenChange={(v) => {
+              setBranchOpen(v);
+              if (!v) setBranchSearch('');
+            }}
+          >
+            <PopoverTrigger asChild>
+              <button className="flex h-9 w-full items-center justify-between rounded-md border border-input bg-background px-3 text-sm transition-[border-color,box-shadow] duration-150 hover:bg-accent/50 focus:outline-none focus:ring-1 focus:ring-ring">
+                <div className="flex min-w-0 items-center gap-2">
+                  <GitBranch className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+                  <span className="truncate">{selectedBranch || t('newThread.selectBranch')}</span>
+                </div>
+                <ChevronsUpDown className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+              </button>
+            </PopoverTrigger>
+            <PopoverContent
+              className="flex w-[var(--radix-popover-trigger-width)] flex-col overflow-hidden p-0"
+              style={{ maxHeight: '320px' }}
+              align="start"
+              onOpenAutoFocus={(e) => {
+                e.preventDefault();
+                branchSearchRef.current?.focus();
               }}
             >
-              <PopoverTrigger asChild>
-                <button className="flex h-9 w-full items-center justify-between rounded-md border border-input bg-background px-3 text-sm transition-[border-color,box-shadow] duration-150 hover:bg-accent/50 focus:outline-none focus:ring-1 focus:ring-ring">
-                  <div className="flex min-w-0 items-center gap-2">
-                    <GitBranch className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
-                    <span className="truncate">
-                      {selectedBranch || t('newThread.selectBranch')}
-                    </span>
-                  </div>
-                  <ChevronsUpDown className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
-                </button>
-              </PopoverTrigger>
-              <PopoverContent
-                className="flex w-[var(--radix-popover-trigger-width)] flex-col overflow-hidden p-0"
-                style={{ maxHeight: '320px' }}
-                align="start"
-                onOpenAutoFocus={(e) => {
-                  e.preventDefault();
-                  branchSearchRef.current?.focus();
-                }}
-              >
-                <div className="flex items-center gap-2 border-b border-border px-3 py-2">
-                  <Search className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
-                  <input
-                    ref={branchSearchRef}
-                    type="text"
-                    value={branchSearch}
-                    onChange={(e) => setBranchSearch(e.target.value)}
-                    placeholder={t('newThread.searchBranches', 'Search branches…')}
-                    aria-label={t('newThread.searchBranches', 'Search branches')}
-                    autoComplete="off"
-                    className="w-full bg-transparent text-sm placeholder:text-muted-foreground focus:outline-none"
-                  />
-                </div>
-                <ScrollArea className="min-h-0 flex-1" style={{ maxHeight: '260px' }} type="always">
-                  <div className="p-1">
-                    {branches
-                      .filter(
-                        (b) =>
-                          !branchSearch || b.toLowerCase().includes(branchSearch.toLowerCase()),
-                      )
-                      .map((b) => {
-                        const isSelected = b === selectedBranch;
-                        return (
-                          <button
-                            key={b}
-                            onClick={() => {
-                              setSelectedBranch(b);
-                              setBranchOpen(false);
-                              setBranchSearch('');
-                            }}
-                            className={cn(
-                              'w-full flex items-center gap-2 rounded px-2 py-1.5 text-left text-sm transition-colors',
-                              isSelected
-                                ? 'bg-accent text-foreground'
-                                : 'text-muted-foreground hover:bg-accent hover:text-foreground',
-                            )}
-                          >
-                            <GitBranch className="h-3.5 w-3.5 shrink-0 text-status-info" />
-                            <span className="truncate font-mono">{b}</span>
-                            {isSelected && (
-                              <Check className="ml-auto h-3.5 w-3.5 shrink-0 text-status-info" />
-                            )}
-                          </button>
-                        );
-                      })}
-                    {branches.filter(
+              <div className="flex items-center gap-2 border-b border-border px-3 py-2">
+                <Search className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+                <input
+                  ref={branchSearchRef}
+                  type="text"
+                  value={branchSearch}
+                  onChange={(e) => setBranchSearch(e.target.value)}
+                  placeholder={t('newThread.searchBranches', 'Search branches…')}
+                  aria-label={t('newThread.searchBranches', 'Search branches')}
+                  autoComplete="off"
+                  className="w-full bg-transparent text-sm placeholder:text-muted-foreground focus:outline-none"
+                />
+              </div>
+              <ScrollArea className="min-h-0 flex-1" style={{ maxHeight: '260px' }} type="always">
+                <div className="p-1">
+                  {branches
+                    .filter(
                       (b) => !branchSearch || b.toLowerCase().includes(branchSearch.toLowerCase()),
-                    ).length === 0 && (
-                      <p className="py-3 text-center text-sm text-muted-foreground">
-                        {t('newThread.noBranchesMatch', 'No branches match')}
-                      </p>
-                    )}
-                  </div>
-                </ScrollArea>
-              </PopoverContent>
-            </Popover>
-          </div>
+                    )
+                    .map((b) => {
+                      const isSelected = b === selectedBranch;
+                      return (
+                        <button
+                          key={b}
+                          onClick={() => {
+                            setSelectedBranch(b);
+                            setBranchOpen(false);
+                            setBranchSearch('');
+                          }}
+                          className={cn(
+                            'w-full flex items-center gap-2 rounded px-2 py-1.5 text-left text-sm transition-colors',
+                            isSelected
+                              ? 'bg-accent text-foreground'
+                              : 'text-muted-foreground hover:bg-accent hover:text-foreground',
+                          )}
+                        >
+                          <GitBranch className="h-3.5 w-3.5 shrink-0 text-status-info" />
+                          <span className="truncate font-mono">{b}</span>
+                          {isSelected && (
+                            <Check className="ml-auto h-3.5 w-3.5 shrink-0 text-status-info" />
+                          )}
+                        </button>
+                      );
+                    })}
+                  {branches.filter(
+                    (b) => !branchSearch || b.toLowerCase().includes(branchSearch.toLowerCase()),
+                  ).length === 0 && (
+                    <p className="py-3 text-center text-sm text-muted-foreground">
+                      {t('newThread.noBranchesMatch', 'No branches match')}
+                    </p>
+                  )}
+                </div>
+              </ScrollArea>
+            </PopoverContent>
+          </Popover>
+        </div>
 
-          {/* Worktree toggle */}
-          <label className="flex cursor-pointer items-center gap-2">
-            <input
-              type="checkbox"
-              checked={createWorktree}
-              onChange={(e) => setCreateWorktree(e.target.checked)}
-              className="h-4 w-4 rounded border-input text-primary focus:ring-1 focus:ring-ring"
-            />
-            <div className="flex items-center gap-2 text-sm">
-              <GitBranch className="h-3.5 w-3.5 text-muted-foreground" />
-              <span>{t('newThread.createWorktree', 'Create isolated worktree')}</span>
-            </div>
+        {/* Worktree toggle */}
+        <label className="flex cursor-pointer items-center gap-2">
+          <input
+            type="checkbox"
+            checked={createWorktree}
+            onChange={(e) => setCreateWorktree(e.target.checked)}
+            className="h-4 w-4 rounded border-input text-primary focus:ring-1 focus:ring-ring"
+          />
+          <div className="flex items-center gap-2 text-sm">
+            <GitBranch className="h-3.5 w-3.5 text-muted-foreground" />
+            <span>{t('newThread.createWorktree', 'Create isolated worktree')}</span>
+          </div>
+        </label>
+
+        {/* Provider + Model selector */}
+        <div>
+          <label className="mb-1 block text-xs font-medium text-muted-foreground">
+            {t('newThread.model')}
           </label>
-
-          {/* Provider + Model selector */}
-          <div>
-            <label className="mb-1 block text-xs font-medium text-muted-foreground">
-              {t('newThread.model')}
-            </label>
-            <div className="flex gap-2">
-              <Select value={provider} onValueChange={setProvider}>
-                <SelectTrigger className="w-[120px]">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {PROVIDERS.map((p) => (
-                    <SelectItem key={p.value} value={p.value}>
-                      {p.label}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-              <Select value={model} onValueChange={setModel}>
-                <SelectTrigger className="flex-1">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {models.map((m) => (
-                    <SelectItem key={m.value} value={m.value}>
-                      {m.label}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
+          <div className="flex gap-2">
+            <Select value={provider} onValueChange={setProvider}>
+              <SelectTrigger className="w-[120px]">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {PROVIDERS.map((p) => (
+                  <SelectItem key={p.value} value={p.value}>
+                    {p.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <Select value={model} onValueChange={setModel}>
+              <SelectTrigger className="flex-1">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {models.map((m) => (
+                  <SelectItem key={m.value} value={m.value}>
+                    {m.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
           </div>
+        </div>
 
-          {/* Title */}
-          <div>
-            <label className="mb-1 block text-xs font-medium text-muted-foreground">
-              {t('newThread.titleOptional')}
-            </label>
-            <Input
-              placeholder={t('newThread.autoFromPrompt')}
-              value={title}
-              onChange={(e) => setTitle(e.target.value)}
-            />
-          </div>
+        {/* Title */}
+        <div>
+          <label className="mb-1 block text-xs font-medium text-muted-foreground">
+            {t('newThread.titleOptional')}
+          </label>
+          <Input
+            placeholder={t('newThread.autoFromPrompt')}
+            value={title}
+            onChange={(e) => setTitle(e.target.value)}
+          />
+        </div>
 
-          {/* Prompt */}
-          <div>
-            <label className="mb-1 block text-xs font-medium text-muted-foreground">
-              {t('newThread.prompt')}
-            </label>
-            <textarea
-              className="min-h-[120px] w-full resize-y rounded-md border border-input bg-background px-3 py-2 text-sm text-foreground transition-[border-color,box-shadow] duration-150 placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-ring"
-              placeholder={t('newThread.promptPlaceholder')}
-              value={prompt}
-              onChange={(e) => setPrompt(e.target.value)}
-              autoFocus
-            />
-          </div>
+        {/* Prompt */}
+        <div>
+          <label className="mb-1 block text-xs font-medium text-muted-foreground">
+            {t('newThread.prompt')}
+          </label>
+          <textarea
+            className="min-h-[120px] w-full resize-y rounded-md border border-input bg-background px-3 py-2 text-sm text-foreground transition-[border-color,box-shadow] duration-150 placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-ring"
+            placeholder={t('newThread.promptPlaceholder')}
+            value={prompt}
+            onChange={(e) => setPrompt(e.target.value)}
+            autoFocus
+          />
+        </div>
 
-          {/* Actions */}
-          <DialogFooter>
-            <Button variant="outline" onClick={() => cancelNewThread()}>
-              {t('common.cancel')}
-            </Button>
-            <Button onClick={handleCreate} disabled={!prompt.trim() || creating}>
-              {creating ? t('newThread.creating') : t('newThread.create')}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-    </>
+        {/* Actions */}
+        <DialogFooter>
+          <Button variant="outline" onClick={() => cancelNewThread()}>
+            {t('common.cancel')}
+          </Button>
+          <Button onClick={handleCreate} disabled={!prompt.trim() || creating}>
+            {creating ? t('newThread.creating') : t('newThread.create')}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }

@@ -607,7 +607,7 @@
 
   /* Terminal panel xterm.js overrides */
   .xterm {
-    padding: 4px;
+    padding: 0;
   }
 
   .xterm-viewport::-webkit-scrollbar {

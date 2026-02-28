@@ -26,6 +26,8 @@ interface GitProgressModalProps {
   onOpenChange: (open: boolean) => void;
   steps: GitProgressStep[];
   title: string;
+  /** When true, the modal auto-closes on success (no Done button). Failures still show Accept. */
+  autoClose?: boolean;
 }
 
 function formatElapsed(ms: number) {
@@ -112,7 +114,13 @@ function useTotalTimer(open: boolean, isFinished: boolean) {
   return elapsed;
 }
 
-export function GitProgressModal({ open, onOpenChange, steps, title }: GitProgressModalProps) {
+export function GitProgressModal({
+  open,
+  onOpenChange,
+  steps,
+  title,
+  autoClose,
+}: GitProgressModalProps) {
   const { t } = useTranslation();
   const isRunning = steps.some((s) => s.status === 'running');
   const hasFailed = steps.some((s) => s.status === 'failed');
@@ -125,10 +133,14 @@ export function GitProgressModal({ open, onOpenChange, steps, title }: GitProgre
   const getStepElapsed = useStepTimers(steps, open);
   const totalElapsed = useTotalTimer(open, isFinished);
 
+  // When autoClose is set, hide Done button on success (parent handles closing).
+  // Failures always show Accept so the user can see the error.
+  const showButton = isFinished && (!autoClose || hasFailed);
+
   return (
     <Dialog open={open} onOpenChange={isFinished ? onOpenChange : undefined}>
       <DialogContent
-        className={cn('max-w-sm', hasFailed && 'max-w-lg')}
+        className={cn('max-w-sm [&>button.absolute]:hidden', hasFailed && 'max-w-lg')}
         onPointerDownOutside={(e) => {
           if (!isFinished) e.preventDefault();
         }}
@@ -198,7 +210,7 @@ export function GitProgressModal({ open, onOpenChange, steps, title }: GitProgre
           <span className="text-[10px] tabular-nums text-muted-foreground/50">
             {formatElapsed(totalElapsed)}
           </span>
-          {isFinished && (
+          {showButton && (
             <Button
               size="sm"
               variant={hasFailed ? 'outline' : 'default'}
