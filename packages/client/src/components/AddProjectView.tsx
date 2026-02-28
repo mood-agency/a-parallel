@@ -26,7 +26,6 @@ export function AddProjectView() {
   const { t } = useTranslation();
   const navigate = useNavigate();
   const loadProjects = useAppStore((s) => s.loadProjects);
-  const setAddProjectOpen = useAppStore((s) => s.setAddProjectOpen);
   const [mode, setMode] = useState<AddMode>('local');
   const [newProjectName, setNewProjectName] = useState('');
   const [newProjectPath, setNewProjectPath] = useState('');
@@ -50,7 +49,7 @@ export function AddProjectView() {
       return;
     }
     await loadProjects();
-    setAddProjectOpen(false);
+    navigate('/');
     navigate(`/projects/${retryResult.value.id}`);
     setIsCreating(false);
   };
@@ -70,7 +69,7 @@ export function AddProjectView() {
       return;
     }
     await loadProjects();
-    setAddProjectOpen(false);
+    navigate('/');
     navigate(`/projects/${result.value.id}`);
     setIsCreating(false);
   };
@@ -149,7 +148,7 @@ export function AddProjectView() {
               </div>
             </div>
             <div className="flex gap-2 pt-2">
-              <Button variant="outline" className="flex-1" onClick={() => setAddProjectOpen(false)}>
+              <Button variant="outline" className="flex-1" onClick={() => navigate('/')}>
                 {t('common.cancel', { defaultValue: 'Cancel' })}
               </Button>
               <Button

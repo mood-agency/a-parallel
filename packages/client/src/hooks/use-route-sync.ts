@@ -18,6 +18,7 @@ function parseRoute(pathname: string) {
       inbox: false,
       analytics: false,
       liveColumns: false,
+      addProject: false,
     };
   }
 
@@ -31,6 +32,7 @@ function parseRoute(pathname: string) {
       inbox: false,
       analytics: false,
       liveColumns: false,
+      addProject: false,
     };
   }
 
@@ -44,6 +46,7 @@ function parseRoute(pathname: string) {
       inbox: false,
       analytics: false,
       liveColumns: false,
+      addProject: false,
     };
   }
 
@@ -57,6 +60,7 @@ function parseRoute(pathname: string) {
       inbox: false,
       analytics: false,
       liveColumns: false,
+      addProject: false,
     };
   }
 
@@ -70,6 +74,7 @@ function parseRoute(pathname: string) {
       inbox: true,
       analytics: false,
       liveColumns: false,
+      addProject: false,
     };
   }
 
@@ -83,6 +88,7 @@ function parseRoute(pathname: string) {
       inbox: false,
       analytics: false,
       liveColumns: false,
+      addProject: false,
     };
   }
 
@@ -96,6 +102,7 @@ function parseRoute(pathname: string) {
       inbox: false,
       analytics: false,
       liveColumns: false,
+      addProject: false,
     };
   }
 
@@ -110,6 +117,7 @@ function parseRoute(pathname: string) {
       inbox: false,
       analytics: true,
       liveColumns: false,
+      addProject: false,
     };
   }
 
@@ -123,6 +131,7 @@ function parseRoute(pathname: string) {
       inbox: false,
       analytics: true,
       liveColumns: false,
+      addProject: false,
     };
   }
 
@@ -136,6 +145,21 @@ function parseRoute(pathname: string) {
       inbox: false,
       analytics: false,
       liveColumns: true,
+      addProject: false,
+    };
+  }
+
+  // New project: /new
+  if (pathname === '/new') {
+    return {
+      settingsPage: null,
+      projectId: null,
+      threadId: null,
+      globalSearch: false,
+      inbox: false,
+      analytics: false,
+      liveColumns: false,
+      addProject: true,
     };
   }
 
@@ -147,6 +171,7 @@ function parseRoute(pathname: string) {
     inbox: false,
     analytics: false,
     liveColumns: false,
+    addProject: false,
   };
 }
 
@@ -161,8 +186,16 @@ export function useRouteSync() {
   useEffect(() => {
     if (!initialized) return;
 
-    const { settingsPage, projectId, threadId, globalSearch, inbox, analytics, liveColumns } =
-      parseRoute(location.pathname);
+    const {
+      settingsPage,
+      projectId,
+      threadId,
+      globalSearch,
+      inbox,
+      analytics,
+      liveColumns,
+      addProject,
+    } = parseRoute(location.pathname);
     // Use imperative getState() to avoid subscribing to store changes
     const projectStore = useProjectStore.getState();
     const threadStore = useThreadStore.getState();
@@ -227,6 +260,19 @@ export function useRouteSync() {
     // Close live columns when navigating away
     if (uiStore.liveColumnsOpen) {
       uiStore.setLiveColumnsOpen(false);
+    }
+
+    // Add project view: /new
+    if (addProject) {
+      if (!uiStore.addProjectOpen) {
+        uiStore.setAddProjectOpen(true);
+      }
+      return;
+    }
+
+    // Close add project when navigating away from /new
+    if (uiStore.addProjectOpen) {
+      uiStore.setAddProjectOpen(false);
     }
 
     // List/Kanban view: /list or /kanban (with optional ?project= query param)

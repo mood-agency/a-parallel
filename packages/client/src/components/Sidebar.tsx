@@ -66,7 +66,6 @@ export function AppSidebar() {
   // ui-store
   const settingsOpen = useUIStore((s) => s.settingsOpen);
   const startNewThread = useUIStore((s) => s.startNewThread);
-  const setAddProjectOpen = useUIStore((s) => s.setAddProjectOpen);
   const showGlobalSearch = useUIStore((s) => s.showGlobalSearch);
   const authMode = useAuthStore((s) => s.mode);
   const authUser = useAuthStore((s) => s.user);
@@ -463,7 +462,7 @@ export function AppSidebar() {
             <Button
               variant="ghost"
               size="icon-xs"
-              onClick={() => setAddProjectOpen(true)}
+              onClick={() => navigate('/new')}
               className="text-muted-foreground"
             >
               <FolderPlus className="h-3.5 w-3.5" />
@@ -483,7 +482,7 @@ export function AppSidebar() {
         />
         {projects.length === 0 && (
           <button
-            onClick={() => setAddProjectOpen(true)}
+            onClick={() => navigate('/new')}
             className="w-full cursor-pointer px-2 py-2 text-left text-xs text-muted-foreground transition-colors hover:text-foreground"
           >
             {t('sidebar.noProjects')}
