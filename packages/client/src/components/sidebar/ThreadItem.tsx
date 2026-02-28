@@ -144,15 +144,50 @@ export const ThreadItem = memo(function ThreadItem({
           <span className="truncate text-sm leading-tight">{thread.title}</span>
           {/* Git status (worktree threads only) */}
           {showGitIcon && (gitStatus.linesAdded > 0 || gitStatus.linesDeleted > 0) ? (
-            <span className="flex-shrink-0 font-mono text-xs">
+            <span className="flex flex-shrink-0 items-center font-mono text-xs">
               {gitStatus.linesAdded > 0 && (
-                <span className="text-emerald-400">+{gitStatus.linesAdded}</span>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <span className="text-emerald-400">+{gitStatus.linesAdded}</span>
+                  </TooltipTrigger>
+                  <TooltipContent side="top" className="text-xs">
+                    {t('gitStats.linesAdded', { count: gitStatus.linesAdded })}
+                  </TooltipContent>
+                </Tooltip>
               )}
               {gitStatus.linesAdded > 0 && gitStatus.linesDeleted > 0 && ' '}
               {gitStatus.linesDeleted > 0 && (
-                <span className="text-red-400">-{gitStatus.linesDeleted}</span>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <span className="text-red-400">-{gitStatus.linesDeleted}</span>
+                  </TooltipTrigger>
+                  <TooltipContent side="top" className="text-xs">
+                    {t('gitStats.linesDeleted', { count: gitStatus.linesDeleted })}
+                  </TooltipContent>
+                </Tooltip>
+              )}
+              {gitStatus.dirtyFileCount > 0 && (
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <span className="text-muted-foreground"> · {gitStatus.dirtyFileCount}</span>
+                  </TooltipTrigger>
+                  <TooltipContent side="top" className="text-xs">
+                    {t('gitStats.dirtyFiles', { count: gitStatus.dirtyFileCount })}
+                  </TooltipContent>
+                </Tooltip>
               )}
             </span>
+          ) : showGitIcon && gitStatus.dirtyFileCount > 0 ? (
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <span className="flex-shrink-0 font-mono text-xs text-muted-foreground">
+                  {gitStatus.dirtyFileCount} {gitStatus.dirtyFileCount === 1 ? 'file' : 'files'}
+                </span>
+              </TooltipTrigger>
+              <TooltipContent side="top" className="text-xs">
+                {t('gitStats.dirtyFiles', { count: gitStatus.dirtyFileCount })}
+              </TooltipContent>
+            </Tooltip>
           ) : showGitIcon && GitIcon ? (
             <Tooltip>
               <TooltipTrigger asChild>

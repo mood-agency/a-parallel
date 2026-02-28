@@ -604,6 +604,11 @@
     "merged": "Branch merged",
     "clean": "Clean"
   },
+  "gitStats": {
+    "linesAdded": "{{count}} lines added since last commit",
+    "linesDeleted": "{{count}} lines deleted since last commit",
+    "dirtyFiles": "{{count}} files with uncommitted changes"
+  },
   "kanban": {
     "backlog": "Backlog",
     "planning": "Planning",

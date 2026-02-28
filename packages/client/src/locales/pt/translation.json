@@ -598,6 +598,11 @@
     "merged": "Branch mergeado",
     "clean": "Limpo"
   },
+  "gitStats": {
+    "linesAdded": "{{count}} linhas adicionadas desde o último commit",
+    "linesDeleted": "{{count}} linhas removidas desde o último commit",
+    "dirtyFiles": "{{count}} arquivos com alterações não commitadas"
+  },
   "kanban": {
     "backlog": "Pendentes",
     "planning": "Planejamento",

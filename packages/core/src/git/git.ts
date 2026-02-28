@@ -7,7 +7,7 @@ import { processError, internal, badRequest, type DomainError } from '@funny/sha
 import { ok, err, ResultAsync, type Result } from 'neverthrow';
 
 import { validatePath, validatePathSync } from './path-validation.js';
-import { execute, executeSync, ProcessExecutionError } from './process.js';
+import { execute, executeSync, gitRead, gitWrite, ProcessExecutionError } from './process.js';
 
 /** Per-user git identity for multi-user mode. */
 export interface GitIdentityOptions {
@@ -25,7 +25,7 @@ export function git(
   env?: Record<string, string>,
 ): ResultAsync<string, DomainError> {
   return validatePath(cwd).andThen((validCwd) =>
-    ResultAsync.fromPromise(execute('git', args, { cwd: validCwd, env }), (error) => {
+    ResultAsync.fromPromise(gitWrite(args, { cwd: validCwd, env }), (error) => {
       if (error instanceof ProcessExecutionError) {
         return processError(error.message, error.exitCode, error.stderr);
       }
@@ -39,7 +39,7 @@ export function git(
  * Used for non-critical operations (branch listing, status checks, etc.).
  */
 function gitOptional(args: string[], cwd: string): Promise<string | null> {
-  return execute('git', args, { cwd, reject: false })
+  return gitRead(args, { cwd, reject: false })
     .then((r) => (r.exitCode === 0 && r.stdout.trim() ? r.stdout.trim() : null))
     .catch(() => null);
 }
@@ -194,7 +194,7 @@ export function stageFiles(cwd: string, paths: string[]): ResultAsync<void, Doma
   return ResultAsync.fromPromise(
     (async () => {
       // Ask git which of the requested paths are ignored
-      const checkResult = await execute('git', ['check-ignore', '--stdin'], {
+      const checkResult = await gitRead(['check-ignore', '--stdin'], {
         cwd,
         reject: false,
         stdin: paths.join('\n'),
@@ -456,7 +456,7 @@ export function mergeBranch(
       if (worktreePath) {
         const rebaseResult = await git(['rebase', targetBranch], worktreePath);
         if (rebaseResult.isErr()) {
-          await execute('git', ['rebase', '--abort'], { cwd: worktreePath, reject: false });
+          await gitWrite(['rebase', '--abort'], { cwd: worktreePath, reject: false });
           throw badRequest(
             `Rebase failed — there are conflicts between your branch and ${targetBranch}. ` +
               `Resolve them in the worktree and try again.`,
@@ -496,8 +496,8 @@ export function mergeBranch(
         if (mergeResult.isErr()) throw mergeResult.error;
         return mergeResult.value;
       } catch (error) {
-        await execute('git', ['merge', '--abort'], { cwd, reject: false });
-        await execute('git', ['checkout', originalBranch], { cwd, reject: false });
+        await gitWrite(['merge', '--abort'], { cwd, reject: false });
+        await gitWrite(['checkout', originalBranch], { cwd, reject: false });
         throw error;
       }
     })(),
@@ -562,7 +562,7 @@ function splitDiffByFile(rawDiff: string): Map<string, string> {
 export function getDiff(cwd: string): ResultAsync<FileDiff[], DomainError> {
   return ResultAsync.fromPromise(
     (async () => {
-      // Run all 4 commands in parallel — no dependency between them
+      // Run all 5 read commands in parallel — no dependency between them
       const [
         stagedStatusResult,
         unstagedStatusResult,
@@ -570,11 +570,11 @@ export function getDiff(cwd: string): ResultAsync<FileDiff[], DomainError> {
         stagedDiffResult,
         unstagedDiffResult,
       ] = await Promise.all([
-        execute('git', ['diff', '--staged', '--name-status'], { cwd, reject: false }),
-        execute('git', ['diff', '--name-status'], { cwd, reject: false }),
-        execute('git', ['ls-files', '--others', '--exclude-standard'], { cwd, reject: false }),
-        execute('git', ['diff', '--staged'], { cwd, reject: false }),
-        execute('git', ['diff'], { cwd, reject: false }),
+        gitRead(['diff', '--staged', '--name-status'], { cwd, reject: false }),
+        gitRead(['diff', '--name-status'], { cwd, reject: false }),
+        gitRead(['ls-files', '--others', '--exclude-standard'], { cwd, reject: false }),
+        gitRead(['diff', '--staged'], { cwd, reject: false }),
+        gitRead(['diff'], { cwd, reject: false }),
       ]);
 
       const stagedRaw = stagedStatusResult.exitCode === 0 ? stagedStatusResult.stdout.trim() : '';
@@ -668,9 +668,9 @@ export function getDiffSummary(
   return ResultAsync.fromPromise(
     (async () => {
       const [stagedStatusResult, unstagedStatusResult, untrackedResult] = await Promise.all([
-        execute('git', ['diff', '--staged', '--name-status'], { cwd, reject: false }),
-        execute('git', ['diff', '--name-status'], { cwd, reject: false }),
-        execute('git', ['ls-files', '--others', '--exclude-standard'], { cwd, reject: false }),
+        gitRead(['diff', '--staged', '--name-status'], { cwd, reject: false }),
+        gitRead(['diff', '--name-status'], { cwd, reject: false }),
+        gitRead(['ls-files', '--others', '--exclude-standard'], { cwd, reject: false }),
       ]);
 
       const stagedRaw = stagedStatusResult.exitCode === 0 ? stagedStatusResult.stdout.trim() : '';
@@ -731,21 +731,20 @@ export function getSingleFileDiff(
   return ResultAsync.fromPromise(
     (async () => {
       if (staged) {
-        const result = await execute('git', ['diff', '--staged', '--', filePath], {
+        const result = await gitRead(['diff', '--staged', '--', filePath], {
           cwd,
           reject: false,
         });
         return result.exitCode === 0 ? result.stdout : '';
       }
       // Check if file is untracked
-      const lsResult = await execute(
-        'git',
+      const lsResult = await gitRead(
         ['ls-files', '--others', '--exclude-standard', '--', filePath],
         { cwd, reject: false },
       );
       if (lsResult.exitCode === 0 && lsResult.stdout.trim()) {
         // Untracked file — use diff --no-index
-        const result = await execute('git', ['diff', '--no-index', '/dev/null', filePath], {
+        const result = await gitRead(['diff', '--no-index', '/dev/null', filePath], {
           cwd,
           reject: false,
         });
@@ -753,7 +752,7 @@ export function getSingleFileDiff(
         return result.stdout;
       }
       // Tracked, unstaged
-      const result = await execute('git', ['diff', '--', filePath], { cwd, reject: false });
+      const result = await gitRead(['diff', '--', filePath], { cwd, reject: false });
       return result.exitCode === 0 ? result.stdout : '';
     })(),
     (error) => processError(String(error), 1, ''),
@@ -761,6 +760,35 @@ export function getSingleFileDiff(
 }
 
 // ─── Git Status Summary ─────────────────────────────────
+
+export interface GitStatusSummary {
+  dirtyFileCount: number;
+  unpushedCommitCount: number;
+  hasRemoteBranch: boolean;
+  isMergedIntoBase: boolean;
+  linesAdded: number;
+  linesDeleted: number;
+}
+
+// ─── Result cache for expensive git queries ────────────────
+const STATUS_CACHE_TTL = 2_000; // 2 seconds
+
+const statusCache = new Map<string, { data: GitStatusSummary; ts: number }>();
+
+function statusCacheKey(cwd: string, baseBranch?: string, projectCwd?: string): string {
+  return `${cwd}|${baseBranch ?? ''}|${projectCwd ?? ''}`;
+}
+
+/** Invalidate status cache for a specific worktree path, or all entries. */
+export function invalidateStatusCache(cwd?: string): void {
+  if (cwd) {
+    for (const key of statusCache.keys()) {
+      if (key.startsWith(cwd + '|')) statusCache.delete(key);
+    }
+  } else {
+    statusCache.clear();
+  }
+}
 
 const MAX_UNTRACKED_TO_COUNT = 200;
 const MAX_UNTRACKED_FILE_SIZE = 512 * 1024; // 512 KB
@@ -788,15 +816,6 @@ function unquoteGitPath(raw: string): string {
   });
 }
 
-export interface GitStatusSummary {
-  dirtyFileCount: number;
-  unpushedCommitCount: number;
-  hasRemoteBranch: boolean;
-  isMergedIntoBase: boolean;
-  linesAdded: number;
-  linesDeleted: number;
-}
-
 /**
  * Get a summary of the git status for a worktree.
  */
@@ -805,14 +824,21 @@ export function getStatusSummary(
   baseBranch?: string,
   projectCwd?: string,
 ): ResultAsync<GitStatusSummary, DomainError> {
+  // Check cache first
+  const cacheKey = statusCacheKey(worktreeCwd, baseBranch, projectCwd);
+  const cached = statusCache.get(cacheKey);
+  if (cached && Date.now() - cached.ts < STATUS_CACHE_TTL) {
+    return ResultAsync.fromSafePromise(Promise.resolve(cached.data));
+  }
+
   return ResultAsync.fromPromise(
     (async () => {
       // Phase 1: two git commands cover what previously took 4
       //   - `status --porcelain -b` → dirty file count + branch name
       //   - `diff HEAD --numstat`   → staged + unstaged line stats combined
       const [statusResult, diffResult] = await Promise.all([
-        execute('git', ['status', '--porcelain', '-b'], { cwd: worktreeCwd, reject: false }),
-        execute('git', ['diff', 'HEAD', '--numstat'], { cwd: worktreeCwd, reject: false }),
+        gitRead(['status', '--porcelain', '-b'], { cwd: worktreeCwd, reject: false }),
+        gitRead(['diff', 'HEAD', '--numstat'], { cwd: worktreeCwd, reject: false }),
       ]);
 
       // Parse branch from the first line: "## branch" or "## branch...upstream [ahead N]"
@@ -884,7 +910,7 @@ export function getStatusSummary(
       }
 
       if (!branch) {
-        return {
+        const result: GitStatusSummary = {
           dirtyFileCount,
           unpushedCommitCount: 0,
           hasRemoteBranch: false,
@@ -892,27 +918,54 @@ export function getStatusSummary(
           linesAdded,
           linesDeleted,
         };
+        statusCache.set(cacheKey, { data: result, ts: Date.now() });
+        return result;
       }
 
-      // Phase 2: commands that depend on branch name — run in parallel
-      const [remoteResult, mergedResult] = await Promise.all([
-        execute('git', ['rev-parse', '--abbrev-ref', `${branch}@{upstream}`], {
-          cwd: worktreeCwd,
-          reject: false,
-        }),
-        baseBranch && projectCwd
-          ? execute('git', ['branch', '--merged', baseBranch, '--format=%(refname:short)'], {
-              cwd: projectCwd,
-              reject: false,
-            })
-          : Promise.resolve(null),
-      ]);
+      // Phase 2: launch ALL conditional commands in parallel (consolidated from 2 phases)
+      const [remoteResult, mergedResult, baseCountResult, mergeBaseResult, branchTipResult] =
+        await Promise.all([
+          gitRead(['rev-parse', '--abbrev-ref', `${branch}@{upstream}`], {
+            cwd: worktreeCwd,
+            reject: false,
+          }),
+          baseBranch && projectCwd
+            ? gitRead(['branch', '--merged', baseBranch, '--format=%(refname:short)'], {
+                cwd: projectCwd,
+                reject: false,
+              })
+            : Promise.resolve(null),
+          // Speculatively count against baseBranch — used when no remote exists
+          baseBranch
+            ? gitRead(['rev-list', '--count', `${baseBranch}..HEAD`], {
+                cwd: worktreeCwd,
+                reject: false,
+              })
+            : Promise.resolve(null),
+          baseBranch && projectCwd
+            ? gitRead(['merge-base', baseBranch, branch], { cwd: projectCwd, reject: false })
+            : Promise.resolve(null),
+          projectCwd
+            ? gitRead(['rev-parse', branch], { cwd: projectCwd, reject: false })
+            : Promise.resolve(null),
+        ]);
 
       const remoteBranch = remoteResult.exitCode === 0 ? remoteResult.stdout.trim() : null;
       const hasRemoteBranch = remoteBranch !== null;
 
-      // Phase 3: commands that depend on phase 2 results — run in parallel
-      const unpushedRef = hasRemoteBranch ? remoteBranch : baseBranch;
+      // If remote exists, we need count against it (one extra command).
+      // Otherwise, use the speculative baseBranch count from above.
+      let unpushedCommitCount = 0;
+      if (hasRemoteBranch) {
+        const remoteCount = await gitRead(['rev-list', '--count', `${remoteBranch}..HEAD`], {
+          cwd: worktreeCwd,
+          reject: false,
+        });
+        unpushedCommitCount =
+          remoteCount.exitCode === 0 ? parseInt(remoteCount.stdout.trim(), 10) || 0 : 0;
+      } else if (baseCountResult && baseCountResult.exitCode === 0) {
+        unpushedCommitCount = parseInt(baseCountResult.stdout.trim(), 10) || 0;
+      }
 
       const needsMergeCheck =
         mergedResult &&
@@ -924,26 +977,6 @@ export function getStatusSummary(
           .map((b) => b.trim())
           .includes(branch);
 
-      const [countResult, mergeBaseResult, branchTipResult] = await Promise.all([
-        unpushedRef
-          ? execute('git', ['rev-list', '--count', `${unpushedRef}..HEAD`], {
-              cwd: worktreeCwd,
-              reject: false,
-            })
-          : Promise.resolve(null),
-        needsMergeCheck && baseBranch && projectCwd
-          ? execute('git', ['merge-base', baseBranch, branch], { cwd: projectCwd, reject: false })
-          : Promise.resolve(null),
-        needsMergeCheck && projectCwd
-          ? execute('git', ['rev-parse', branch], { cwd: projectCwd, reject: false })
-          : Promise.resolve(null),
-      ]);
-
-      const unpushedCommitCount =
-        countResult && countResult.exitCode === 0
-          ? parseInt(countResult.stdout.trim(), 10) || 0
-          : 0;
-
       let isMergedIntoBase = false;
       if (needsMergeCheck && mergeBaseResult && branchTipResult) {
         if (mergeBaseResult.exitCode === 0 && branchTipResult.exitCode === 0) {
@@ -953,7 +986,7 @@ export function getStatusSummary(
         }
       }
 
-      return {
+      const result: GitStatusSummary = {
         dirtyFileCount,
         unpushedCommitCount,
         hasRemoteBranch,
@@ -961,6 +994,8 @@ export function getStatusSummary(
         linesAdded,
         linesDeleted,
       };
+      statusCache.set(cacheKey, { data: result, ts: Date.now() });
+      return result;
     })(),
     (error) => processError(String(error), 1, ''),
   );
@@ -1043,7 +1078,7 @@ export function stashPop(cwd: string): ResultAsync<string, DomainError> {
 export function stashList(cwd: string): ResultAsync<StashEntry[], DomainError> {
   return ResultAsync.fromPromise(
     (async () => {
-      const result = await execute('git', ['stash', 'list', '--format=%gd|%gs|%ar'], {
+      const result = await gitRead(['stash', 'list', '--format=%gd|%gs|%ar'], {
         cwd,
         reject: false,
       });

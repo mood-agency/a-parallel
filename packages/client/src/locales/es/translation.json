@@ -602,6 +602,11 @@
     "merged": "Branch mergeado",
     "clean": "Limpio"
   },
+  "gitStats": {
+    "linesAdded": "{{count}} líneas agregadas desde el último commit",
+    "linesDeleted": "{{count}} líneas eliminadas desde el último commit",
+    "dirtyFiles": "{{count}} archivos con cambios sin commitear"
+  },
   "kanban": {
     "backlog": "Pendientes",
     "planning": "Planificación",

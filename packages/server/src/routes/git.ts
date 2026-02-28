@@ -17,6 +17,7 @@ import {
   mergeBranch,
   git,
   getStatusSummary,
+  invalidateStatusCache,
   deriveGitSyncState,
   getLog,
   stash,
@@ -639,6 +640,7 @@ gitRoutes.post('/:threadId/stage', async (c) => {
   });
 
   invalidateGitStatusCache(threadId);
+  invalidateStatusCache(cwd);
   return c.json({ ok: true });
 });
 
@@ -670,6 +672,7 @@ gitRoutes.post('/:threadId/unstage', async (c) => {
   });
 
   invalidateGitStatusCache(threadId);
+  invalidateStatusCache(cwd);
   return c.json({ ok: true });
 });
 
@@ -701,6 +704,7 @@ gitRoutes.post('/:threadId/revert', async (c) => {
   });
 
   invalidateGitStatusCache(threadId);
+  invalidateStatusCache(cwd);
   return c.json({ ok: true });
 });
 
@@ -731,6 +735,7 @@ gitRoutes.post('/:threadId/commit', async (c) => {
   });
 
   invalidateGitStatusCache(threadId);
+  invalidateStatusCache(cwd);
   return c.json({ ok: true, output: result.value });
 });
 
@@ -754,6 +759,7 @@ gitRoutes.post('/:threadId/push', async (c) => {
   });
 
   invalidateGitStatusCache(threadId);
+  invalidateStatusCache(cwd);
   return c.json({ ok: true, output: result.value });
 });
 
@@ -1022,6 +1028,7 @@ gitRoutes.post('/:threadId/merge', async (c) => {
   }
 
   invalidateGitStatusCache(threadId);
+  invalidateStatusCache(cwd);
   return c.json({ ok: true, output: mergeResult.value });
 });
 
@@ -1060,6 +1067,7 @@ gitRoutes.post('/:threadId/pull', async (c) => {
   });
 
   invalidateGitStatusCache(threadId);
+  invalidateStatusCache(cwd);
   return c.json({ ok: true, output: result.value });
 });
 
@@ -1083,6 +1091,7 @@ gitRoutes.post('/:threadId/stash', async (c) => {
   });
 
   invalidateGitStatusCache(threadId);
+  invalidateStatusCache(cwd);
   return c.json({ ok: true, output: result.value });
 });
 
@@ -1106,6 +1115,7 @@ gitRoutes.post('/:threadId/stash/pop', async (c) => {
   });
 
   invalidateGitStatusCache(threadId);
+  invalidateStatusCache(cwd);
   return c.json({ ok: true, output: result.value });
 });
 
@@ -1140,6 +1150,7 @@ gitRoutes.post('/:threadId/reset-soft', async (c) => {
   });
 
   invalidateGitStatusCache(threadId);
+  invalidateStatusCache(cwd);
   return c.json({ ok: true, output: result.value });
 });
 

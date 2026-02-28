@@ -6,7 +6,7 @@ import { badRequest, internal, type DomainError } from '@funny/shared/errors';
 import { ResultAsync } from 'neverthrow';
 
 import { git } from './git.js';
-import { execute } from './process.js';
+import { gitRead, gitWrite } from './process.js';
 
 export const WORKTREE_DIR_NAME = '.funny-worktrees';
 
@@ -34,16 +34,15 @@ export function createWorktree(
       // Ensure the repo has at least one commit — git worktree requires it.
       // If the repo is brand new (no commits), create an empty initial commit
       // so worktree creation works transparently.
-      const headResult = await execute('git', ['rev-parse', 'HEAD'], {
+      const headResult = await gitRead(['rev-parse', 'HEAD'], {
         cwd: projectPath,
         reject: false,
       });
       if (headResult.exitCode !== 0) {
-        const commitResult = await execute(
-          'git',
-          ['commit', '--allow-empty', '-m', 'Initial commit'],
-          { cwd: projectPath, reject: false },
-        );
+        const commitResult = await gitWrite(['commit', '--allow-empty', '-m', 'Initial commit'], {
+          cwd: projectPath,
+          reject: false,
+        });
         if (commitResult.exitCode !== 0) {
           throw badRequest(
             `Cannot create worktree: the repository has no commits and the auto-commit failed: ${commitResult.stderr}`,
@@ -56,7 +55,7 @@ export function createWorktree(
       // (or vice versa). Fall back to HEAD when the ref is invalid.
       let effectiveBase = baseBranch;
       if (baseBranch) {
-        const branchCheck = await execute('git', ['rev-parse', '--verify', baseBranch], {
+        const branchCheck = await gitRead(['rev-parse', '--verify', baseBranch], {
           cwd: projectPath,
           reject: false,
         });
@@ -113,12 +112,12 @@ export function listWorktrees(projectPath: string): ResultAsync<WorktreeInfo[], 
 }
 
 export async function removeWorktree(projectPath: string, worktreePath: string): Promise<void> {
-  await execute('git', ['worktree', 'remove', '-f', worktreePath], {
+  await gitWrite(['worktree', 'remove', '-f', worktreePath], {
     cwd: projectPath,
     reject: false,
   });
 }
 
 export async function removeBranch(projectPath: string, branchName: string): Promise<void> {
-  await execute('git', ['branch', '-D', branchName], { cwd: projectPath, reject: false });
+  await gitWrite(['branch', '-D', branchName], { cwd: projectPath, reject: false });
 }

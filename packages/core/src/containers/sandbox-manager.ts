@@ -18,7 +18,7 @@ import { homedir } from 'os';
 import { resolve, dirname, join } from 'path';
 import { fileURLToPath } from 'url';
 
-import { execute } from '../git/process.js';
+import { gitRead } from '../git/process.js';
 import type { SandboxState, SandboxManagerOptions } from './types.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -53,7 +53,7 @@ function resolveHostSdkPath(): string {
  */
 async function getHostBranch(worktreePath: string): Promise<string | null> {
   try {
-    const result = await execute('git', ['rev-parse', '--abbrev-ref', 'HEAD'], {
+    const result = await gitRead(['rev-parse', '--abbrev-ref', 'HEAD'], {
       cwd: worktreePath,
       reject: false,
       timeout: 10_000,
@@ -70,7 +70,7 @@ async function getHostBranch(worktreePath: string): Promise<string | null> {
  */
 async function getHostRemoteUrl(worktreePath: string): Promise<string | null> {
   try {
-    const result = await execute('git', ['remote', 'get-url', 'origin'], {
+    const result = await gitRead(['remote', 'get-url', 'origin'], {
       cwd: worktreePath,
       reject: false,
       timeout: 10_000,

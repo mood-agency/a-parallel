@@ -69,10 +69,38 @@ export class ProcessExecutionError extends Error {
   }
 }
 
-// Limits how many git/child processes run at once.
-// Each getStatusSummary() spawns up to 6 processes per worktree thread (in 3 parallel phases); without a
-// cap, a page load with many projects can spawn 200+ processes simultaneously.
+// ─── Concurrency pools ──────────────────────────────────
+// Read-only git commands use --no-optional-locks and don't contend for
+// .git/index.lock, so they can safely run at high concurrency.
+const readPool = pLimit(20);
+
+// Mutating git commands (add, commit, push, …) take locks and must be
+// limited to avoid contention and corruption.
+const writePool = pLimit(4);
+
+// Non-git commands (shell, gh CLI, etc.) — unchanged from original.
 const processPool = pLimit(6);
+
+/**
+ * Execute a read-only git command with --no-optional-locks.
+ * Uses a high-concurrency pool since reads don't contend for locks.
+ */
+export async function gitRead(
+  args: string[],
+  options: ProcessOptions = {},
+): Promise<ProcessResult> {
+  return readPool(() => _executeRaw('git', ['--no-optional-locks', ...args], options));
+}
+
+/**
+ * Execute a mutating git command through the write pool.
+ */
+export async function gitWrite(
+  args: string[],
+  options: ProcessOptions = {},
+): Promise<ProcessResult> {
+  return writePool(() => _executeRaw('git', args, options));
+}
 
 /**
  * Execute a command asynchronously with proper error handling.
