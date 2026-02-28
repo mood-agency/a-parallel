@@ -749,3 +749,18 @@ export interface TriggerReviewRequest {
   model?: string;
   provider?: string;
 }
+
+// ─── Project Port Configuration (.funny.json) ───────────
+
+export interface FunnyPortGroup {
+  name: string;
+  basePort: number;
+  envVars: string[];
+}
+
+export interface FunnyProjectConfig {
+  /** Relative paths to .env files to copy into worktrees (e.g. "packages/server/.env") */
+  envFiles?: string[];
+  /** Port groups — each group gets one unique port shared across its envVars */
+  portGroups?: FunnyPortGroup[];
+}

@@ -54,6 +54,8 @@ export {
   listWorktrees,
   removeWorktree,
   removeBranch,
+  getWorktreeBase,
+  WORKTREE_DIR_NAME,
   type WorktreeInfo,
 } from './worktree.js';
 

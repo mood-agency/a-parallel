@@ -1,4 +1,5 @@
 import { createWorktree, removeWorktree, removeBranch, getCurrentBranch } from '@funny/core/git';
+import { allocateWorktreePorts } from '@funny/core/ports';
 import type { WSEvent } from '@funny/shared';
 import { Hono } from 'hono';
 import { nanoid } from 'nanoid';
@@ -149,6 +150,12 @@ threadRoutes.post('/idle', async (c) => {
     }
     worktreePath = wtResult.value;
     threadBranch = branchName;
+
+    try {
+      await allocateWorktreePorts(project.path, worktreePath);
+    } catch (err) {
+      log.warn('Failed to allocate worktree ports', { threadId, error: String(err) });
+    }
   } else {
     // Local mode: detect the current branch of the project
     const branchResult = await getCurrentBranch(project.path);
@@ -248,6 +255,12 @@ threadRoutes.post('/', async (c) => {
     }
     worktreePath = wtResult.value;
     threadBranch = branchName;
+
+    try {
+      await allocateWorktreePorts(project.path, worktreePath);
+    } catch (err) {
+      log.warn('Failed to allocate worktree ports', { threadId, error: String(err) });
+    }
   } else if (requestWorktreePath) {
     // Local mode reusing an existing worktree directory (e.g. conflict resolution)
     worktreePath = requestWorktreePath;

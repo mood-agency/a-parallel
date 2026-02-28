@@ -5,12 +5,18 @@ import { useTranslation } from 'react-i18next';
 import { useShallow } from 'zustand/react/shallow';
 
 import { Button } from '@/components/ui/button';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { getActiveWS } from '@/hooks/use-ws';
 import { api } from '@/lib/api';
 import { cn } from '@/lib/utils';
 import { useProjectStore } from '@/stores/project-store';
-import { useSettingsStore } from '@/stores/settings-store';
+import { type TerminalShell, shellLabels, useSettingsStore } from '@/stores/settings-store';
 import { useTerminalStore } from '@/stores/terminal-store';
 
 const isTauri = !!(window as unknown as { __TAURI_INTERNALS__: unknown }).__TAURI_INTERNALS__;
@@ -121,11 +127,13 @@ function WebTerminalTabContent({
   cwd,
   active,
   panelVisible,
+  shell: shellOverride,
 }: {
   id: string;
   cwd: string;
   active: boolean;
   panelVisible: boolean;
+  shell?: TerminalShell;
 }) {
   const containerRef = useRef<HTMLDivElement>(null);
   const termRef = useRef<{ terminal: any; fitAddon: any } | null>(null);
@@ -192,7 +200,7 @@ function WebTerminalTabContent({
       });
 
       const dims = fitAddon.proposeDimensions();
-      const shell = useSettingsStore.getState().terminalShell;
+      const shell = shellOverride ?? useSettingsStore.getState().terminalShell;
       const ws = getActiveWS();
       if (ws && ws.readyState === WebSocket.OPEN) {
         ws.send(
@@ -383,21 +391,27 @@ export function TerminalPanel() {
     [panelHeight],
   );
 
-  const handleNewTerminal = useCallback(() => {
-    if (!selectedProjectId) return;
-    const project = projects.find((p) => p.id === selectedProjectId);
-    const cwd = project?.path ?? 'C:\\';
-    const id = crypto.randomUUID();
-    const label = `Terminal ${visibleTabs.length + 1}`;
-    addTab({
-      id,
-      label,
-      cwd,
-      alive: true,
-      projectId: selectedProjectId,
-      type: isTauri ? undefined : 'pty',
-    });
-  }, [projects, selectedProjectId, visibleTabs.length, addTab]);
+  const handleNewTerminal = useCallback(
+    (shell: TerminalShell) => {
+      if (!selectedProjectId) return;
+      const project = projects.find((p) => p.id === selectedProjectId);
+      const cwd = project?.path ?? 'C:\\';
+      const id = crypto.randomUUID();
+      const shellName = shell === 'default' ? 'Terminal' : shellLabels[shell];
+      const sameShellCount = visibleTabs.filter((t) => (t.shell ?? 'default') === shell).length;
+      const label = `${shellName} ${sameShellCount + 1}`;
+      addTab({
+        id,
+        label,
+        cwd,
+        alive: true,
+        projectId: selectedProjectId,
+        type: isTauri ? undefined : 'pty',
+        shell,
+      });
+    },
+    [projects, selectedProjectId, visibleTabs, addTab],
+  );
 
   const handleCloseTab = useCallback(
     (id: string) => {
@@ -465,14 +479,27 @@ export function TerminalPanel() {
             ))}
           </div>
 
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <Button variant="ghost" size="icon-xs" onClick={handleNewTerminal}>
-                <Plus className="h-3.5 w-3.5" />
-              </Button>
-            </TooltipTrigger>
-            <TooltipContent>{t('terminal.newTerminal')}</TooltipContent>
-          </Tooltip>
+          <DropdownMenu>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <DropdownMenuTrigger asChild>
+                  <Button variant="ghost" size="icon-xs">
+                    <Plus className="h-3.5 w-3.5" />
+                  </Button>
+                </DropdownMenuTrigger>
+              </TooltipTrigger>
+              <TooltipContent>{t('terminal.newTerminal')}</TooltipContent>
+            </Tooltip>
+            <DropdownMenuContent align="start" side="top">
+              {(Object.keys(shellLabels) as TerminalShell[])
+                .filter((key) => key !== 'default')
+                .map((shell) => (
+                  <DropdownMenuItem key={shell} onClick={() => handleNewTerminal(shell)}>
+                    {shellLabels[shell]}
+                  </DropdownMenuItem>
+                ))}
+            </DropdownMenuContent>
+          </DropdownMenu>
 
           <Tooltip>
             <TooltipTrigger asChild>
@@ -507,6 +534,7 @@ export function TerminalPanel() {
                   cwd={tab.cwd}
                   active={tab.id === effectiveActiveTabId}
                   panelVisible={panelVisible}
+                  shell={tab.shell}
                 />
               ) : isTauri ? (
                 <TauriTerminalTabContent

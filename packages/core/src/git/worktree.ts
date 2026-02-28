@@ -8,9 +8,9 @@ import { ResultAsync } from 'neverthrow';
 import { git } from './git.js';
 import { execute } from './process.js';
 
-const WORKTREE_DIR_NAME = '.funny-worktrees';
+export const WORKTREE_DIR_NAME = '.funny-worktrees';
 
-async function getWorktreeBase(projectPath: string): Promise<string> {
+export async function getWorktreeBase(projectPath: string): Promise<string> {
   const projectName = basename(projectPath);
   const base = resolve(dirname(projectPath), WORKTREE_DIR_NAME, projectName);
   await mkdir(base, { recursive: true });

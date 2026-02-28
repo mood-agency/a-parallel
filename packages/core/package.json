@@ -9,7 +9,8 @@
     ".": "./src/index.ts",
     "./agents": "./src/agents/index.ts",
     "./git": "./src/git/index.ts",
-    "./containers": "./src/containers/index.ts"
+    "./containers": "./src/containers/index.ts",
+    "./ports": "./src/ports/index.ts"
   },
   "scripts": {
     "test": "vitest run"

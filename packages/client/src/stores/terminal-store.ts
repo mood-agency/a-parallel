@@ -1,5 +1,7 @@
 import { create } from 'zustand';
 
+import type { TerminalShell } from './settings-store';
+
 export interface TerminalTab {
   id: string;
   label: string;
@@ -13,6 +15,8 @@ export interface TerminalTab {
   port?: number;
   /** Type of terminal: 'pty' for interactive shell, 'command' for non-interactive */
   type?: 'pty' | 'command';
+  /** Shell override for this terminal (e.g. 'git-bash', 'powershell') */
+  shell?: TerminalShell;
 }
 
 interface TerminalState {
