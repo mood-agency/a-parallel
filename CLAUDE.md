@@ -64,7 +64,7 @@ bun run db:studio
 
 **Entry point:** `packages/server/src/index.ts` — Hono app with CORS, logger middleware, and route groups mounted under `/api`. WebSocket upgrade at `/ws`.
 
-**Database:** SQLite via better-sqlite3 + Drizzle ORM. DB file lives at `~/.funny/data.db`. Tables are auto-created on startup via `db/migrate.ts` (raw SQL, not Drizzle migrations). Schema in `db/schema.ts` defines: `projects`, `threads`, `messages`, `tool_calls`.
+**Database:** SQLite via `bun:sqlite` (Bun's native SQLite driver) + Drizzle ORM. DB file lives at `~/.funny/data.db`. Tables are auto-created on startup via `db/migrate.ts` (raw SQL, not Drizzle migrations). Schema in `db/schema.ts` defines: `projects`, `threads`, `messages`, `tool_calls`.
 
 **Key services:**
 

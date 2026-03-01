@@ -151,7 +151,7 @@ threadRoutes.post('/idle', async (c) => {
   const resolvedBaseBranch = baseBranch?.trim() || undefined;
 
   if (mode === 'worktree') {
-    // Non-blocking: create thread immediately with setting_up, setup in background
+    // Defer worktree setup: idle threads stay idle until moved to in_progress
     const slug = slugifyTitle(title);
     const projectSlug = slugifyTitle(project.name);
     const branchName = `${projectSlug}/${slug}-${threadId.slice(0, 6)}`;
@@ -166,7 +166,7 @@ threadRoutes.post('/idle', async (c) => {
       permissionMode: 'autoEdit' as const,
       model: 'sonnet' as const,
       source: source || 'web',
-      status: 'setting_up' as const,
+      status: 'idle' as const,
       stage: (stage || 'backlog') as 'backlog' | 'planning',
       branch: branchName,
       baseBranch: resolvedBaseBranch,
@@ -194,64 +194,12 @@ threadRoutes.post('/idle', async (c) => {
       userId,
       cwd: project.path,
       worktreePath: null,
-      stage: 'backlog',
-      status: 'setting_up',
+      stage: thread.stage,
+      status: 'idle',
       initialPrompt: prompt,
     });
 
-    const responseThread = { ...thread };
-
-    // Background setup
-    (async () => {
-      try {
-        emitSetupProgress('worktree', 'Creating worktree', 'running');
-        const wtResult = await createWorktree(project.path, branchName, resolvedBaseBranch);
-        if (wtResult.isErr()) {
-          emitSetupProgress('worktree', 'Creating worktree', 'failed', wtResult.error.message);
-          tm.updateThread(threadId, { status: 'failed' });
-          wsBroker.emitToUser(userId, {
-            type: 'thread:updated',
-            threadId,
-            data: { status: 'failed' },
-          } as WSEvent);
-          return;
-        }
-        const wtPath = wtResult.value;
-        emitSetupProgress('worktree', 'Creating worktree', 'completed');
-
-        try {
-          const setup = await setupWorktree(project.path, wtPath, emitSetupProgress);
-          if (setup.postCreateErrors.length) {
-            log.warn('Worktree postCreate errors', { threadId, errors: setup.postCreateErrors });
-          }
-        } catch (err) {
-          log.warn('Failed to setup worktree', { threadId, error: String(err) });
-        }
-
-        // Update thread with worktree info and transition to idle
-        tm.updateThread(threadId, { worktreePath: wtPath, status: 'idle' });
-        wsBroker.emitToUser(userId, {
-          type: 'worktree:setup_complete',
-          threadId,
-          data: { branch: branchName, worktreePath: wtPath },
-        } as WSEvent);
-        wsBroker.emitToUser(userId, {
-          type: 'thread:updated',
-          threadId,
-          data: { status: 'idle', branch: branchName, worktreePath: wtPath },
-        } as WSEvent);
-      } catch (err) {
-        log.error('Background worktree setup failed', { threadId, error: String(err) });
-        tm.updateThread(threadId, { status: 'failed' });
-        wsBroker.emitToUser(userId, {
-          type: 'thread:updated',
-          threadId,
-          data: { status: 'failed' },
-        } as WSEvent);
-      }
-    })();
-
-    return c.json(responseThread, 201);
+    return c.json(thread, 201);
   }
 
   // Local mode: detect the current branch of the project
@@ -984,44 +932,153 @@ threadRoutes.patch('/:id', async (c) => {
   // Auto-start agent when idle thread is moved to in_progress
   if (parsed.value.stage === 'in_progress' && thread.status === 'idle' && thread.initialPrompt) {
     if (project) {
-      const cwd = thread.worktreePath || project.path;
-      // Read the draft message to get images (if any)
-      const { messages: draftMessages } = tm.getThreadMessages({ threadId: id, limit: 1 });
-      const draftMsg = draftMessages[0];
-      const draftImages = draftMsg?.images ? JSON.parse(draftMsg.images as string) : undefined;
-      // Start agent — skip inserting user message since draft already exists
-      startAgent(
-        id,
-        thread.initialPrompt,
-        cwd,
-        (thread.model || project.defaultModel || 'sonnet') as import('@funny/shared').AgentModel,
-        (thread.permissionMode || 'autoEdit') as import('@funny/shared').PermissionMode,
-        draftImages,
-        undefined,
-        undefined,
-        (thread.provider ||
-          project.defaultProvider ||
-          'claude') as import('@funny/shared').AgentProvider,
-        undefined,
-        !!draftMsg, // skipMessageInsert — draft already exists
-      ).catch((err) => {
-        log.error('Failed to auto-start agent for idle thread', {
-          namespace: 'agent',
-          threadId: id,
-          error: err,
-        });
-        tm.updateThread(id, { status: 'failed', completedAt: new Date().toISOString() });
-        const failEvent = {
-          type: 'agent:status' as const,
-          threadId: id,
-          data: { status: 'failed' },
+      const needsWorktreeSetup =
+        thread.mode === 'worktree' && !thread.worktreePath && thread.branch;
+
+      if (needsWorktreeSetup) {
+        // Deferred worktree setup: create worktree first, then start agent
+        tm.updateThread(id, { status: 'setting_up' });
+        const emitSetupProgress: SetupProgressFn = (step, label, status, error) => {
+          wsBroker.emitToUser(thread.userId, {
+            type: 'worktree:setup',
+            threadId: id,
+            data: { step, label, status, error },
+          });
         };
-        if (thread.userId && thread.userId !== '__local__') {
-          wsBroker.emitToUser(thread.userId, failEvent);
-        } else {
-          wsBroker.emit(failEvent);
-        }
-      });
+        wsBroker.emitToUser(thread.userId, {
+          type: 'thread:updated',
+          threadId: id,
+          data: { status: 'setting_up', stage: 'in_progress' },
+        } as WSEvent);
+
+        // Background: create worktree, run post-create, then start agent
+        (async () => {
+          try {
+            emitSetupProgress('worktree', 'Creating worktree', 'running');
+            const wtResult = await createWorktree(
+              project.path,
+              thread.branch!,
+              thread.baseBranch || undefined,
+            );
+            if (wtResult.isErr()) {
+              emitSetupProgress('worktree', 'Creating worktree', 'failed', wtResult.error.message);
+              tm.updateThread(id, { status: 'failed' });
+              wsBroker.emitToUser(thread.userId, {
+                type: 'thread:updated',
+                threadId: id,
+                data: { status: 'failed' },
+              } as WSEvent);
+              return;
+            }
+            const wtPath = wtResult.value;
+            emitSetupProgress('worktree', 'Creating worktree', 'completed');
+
+            try {
+              const setup = await setupWorktree(project.path, wtPath, emitSetupProgress);
+              if (setup.postCreateErrors.length) {
+                log.warn('Worktree postCreate errors', {
+                  threadId: id,
+                  errors: setup.postCreateErrors,
+                });
+              }
+            } catch (err) {
+              log.warn('Failed to setup worktree', { threadId: id, error: String(err) });
+            }
+
+            // Update thread with worktree info
+            tm.updateThread(id, { worktreePath: wtPath, status: 'pending' });
+            wsBroker.emitToUser(thread.userId, {
+              type: 'worktree:setup_complete',
+              threadId: id,
+              data: { branch: thread.branch, worktreePath: wtPath },
+            } as WSEvent);
+            wsBroker.emitToUser(thread.userId, {
+              type: 'thread:updated',
+              threadId: id,
+              data: { status: 'pending', branch: thread.branch, worktreePath: wtPath },
+            } as WSEvent);
+
+            // Now start the agent
+            const { messages: draftMessages } = tm.getThreadMessages({ threadId: id, limit: 1 });
+            const draftMsg = draftMessages[0];
+            const draftImages = draftMsg?.images
+              ? JSON.parse(draftMsg.images as string)
+              : undefined;
+            await startAgent(
+              id,
+              thread.initialPrompt!,
+              wtPath,
+              (thread.model ||
+                project.defaultModel ||
+                'sonnet') as import('@funny/shared').AgentModel,
+              (thread.permissionMode || 'autoEdit') as import('@funny/shared').PermissionMode,
+              draftImages,
+              undefined,
+              undefined,
+              (thread.provider ||
+                project.defaultProvider ||
+                'claude') as import('@funny/shared').AgentProvider,
+              undefined,
+              !!draftMsg,
+            );
+          } catch (err) {
+            log.error('Failed to setup worktree and start agent', {
+              namespace: 'agent',
+              threadId: id,
+              error: err,
+            });
+            tm.updateThread(id, { status: 'failed', completedAt: new Date().toISOString() });
+            const failEvent = {
+              type: 'agent:status' as const,
+              threadId: id,
+              data: { status: 'failed' },
+            };
+            if (thread.userId && thread.userId !== '__local__') {
+              wsBroker.emitToUser(thread.userId, failEvent);
+            } else {
+              wsBroker.emit(failEvent);
+            }
+          }
+        })();
+      } else {
+        // Worktree already exists or local mode: start agent directly
+        const cwd = thread.worktreePath || project.path;
+        const { messages: draftMessages } = tm.getThreadMessages({ threadId: id, limit: 1 });
+        const draftMsg = draftMessages[0];
+        const draftImages = draftMsg?.images ? JSON.parse(draftMsg.images as string) : undefined;
+        startAgent(
+          id,
+          thread.initialPrompt,
+          cwd,
+          (thread.model || project.defaultModel || 'sonnet') as import('@funny/shared').AgentModel,
+          (thread.permissionMode || 'autoEdit') as import('@funny/shared').PermissionMode,
+          draftImages,
+          undefined,
+          undefined,
+          (thread.provider ||
+            project.defaultProvider ||
+            'claude') as import('@funny/shared').AgentProvider,
+          undefined,
+          !!draftMsg,
+        ).catch((err) => {
+          log.error('Failed to auto-start agent for idle thread', {
+            namespace: 'agent',
+            threadId: id,
+            error: err,
+          });
+          tm.updateThread(id, { status: 'failed', completedAt: new Date().toISOString() });
+          const failEvent = {
+            type: 'agent:status' as const,
+            threadId: id,
+            data: { status: 'failed' },
+          };
+          if (thread.userId && thread.userId !== '__local__') {
+            wsBroker.emitToUser(thread.userId, failEvent);
+          } else {
+            wsBroker.emit(failEvent);
+          }
+        });
+      }
     }
   }
 

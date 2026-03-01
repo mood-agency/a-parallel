@@ -175,6 +175,16 @@
         "@openai/codex-sdk": "^0.101.0",
       },
     },
+    "packages/domain-map": {
+      "name": "@funny/domain-map",
+      "version": "0.1.0",
+      "bin": {
+        "domain-map": "./src/cli.ts",
+      },
+      "devDependencies": {
+        "@types/bun": "^1.3.8",
+      },
+    },
     "packages/funny-client": {
       "name": "@funny/funny-client",
       "version": "0.1.0",
@@ -487,6 +497,8 @@
     "@funny/client": ["@funny/client@workspace:packages/client"],
 
     "@funny/core": ["@funny/core@workspace:packages/core"],
+
+    "@funny/domain-map": ["@funny/domain-map@workspace:packages/domain-map"],
 
     "@funny/funny-client": ["@funny/funny-client@workspace:packages/funny-client"],
 

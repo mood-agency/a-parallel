@@ -182,6 +182,13 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     return true;
   }
 
+  if (msg.type === 'RESOLVE_PROJECT') {
+    handleResolveProject(msg.url)
+      .then((data) => sendResponse({ success: true, ...data }))
+      .catch((err: Error) => sendResponse({ success: false, error: err.message }));
+    return true;
+  }
+
   if (msg.type === 'FETCH_SETUP_STATUS') {
     handleFetchSetupStatus()
       .then((data) => sendResponse({ success: true, ...data }))
@@ -234,6 +241,10 @@ async function handleSendToFunny(data: AnnotationData) {
 async function handleFetchProjects(): Promise<any[]> {
   const data = await apiFetch('/api/projects');
   return data.projects || data;
+}
+
+async function handleResolveProject(url: string): Promise<{ project: any; source: string }> {
+  return apiFetch(`/api/projects/resolve?url=${encodeURIComponent(url)}`);
 }
 
 async function handleFetchSetupStatus(): Promise<any> {

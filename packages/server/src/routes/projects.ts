@@ -25,6 +25,24 @@ projectRoutes.get('/', (c) => {
   return c.json(projects);
 });
 
+// GET /api/projects/resolve?url=<url>
+// Returns the project matching the given URL pattern, or null if none match.
+projectRoutes.get('/resolve', (c) => {
+  const userId = c.get('userId') as string;
+  const url = c.req.query('url');
+  if (!url) {
+    return c.json({ error: 'Missing required query parameter: url' }, 400);
+  }
+
+  const projects = pm.listProjects(userId);
+  const matched = projects.find((p) => p.urls?.some((pattern) => url.startsWith(pattern)));
+
+  if (matched) {
+    return c.json({ project: matched, source: 'url_match' });
+  }
+  return c.json({ project: null, source: 'none' });
+});
+
 // POST /api/projects
 projectRoutes.post('/', async (c) => {
   const userId = c.get('userId') as string;
