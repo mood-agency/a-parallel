@@ -87,7 +87,7 @@
     "serverRestarted": "The server was restarted while this task was running. Send a message to continue.",
     "nextPrompt": "What do you want to do next?",
     "agentWorkingQueue": "Agent is working... type to queue a follow-up",
-    "describeTaskDefault": "Describe the task...",
+    "describeTaskDefault": "Describe the task, @ to add a file, / to use a skill",
     "acceptContinue": "Continue",
     "reject": "Don't do that",
     "waitingInputPlaceholder": "Type instructions or feedback...",

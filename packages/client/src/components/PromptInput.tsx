@@ -320,7 +320,7 @@ function BranchPicker({
         navigator.clipboard.writeText(branch);
         toast.success('Branch copied');
       }}
-      triggerClassName="flex items-center gap-1 px-2 py-1 text-xs text-muted-foreground hover:text-foreground transition-colors rounded hover:bg-muted truncate max-w-[200px] focus:outline-none"
+      triggerClassName="flex items-center gap-1 pr-2 py-1 text-xs text-muted-foreground hover:text-foreground transition-colors rounded hover:bg-muted truncate max-w-[200px] focus:outline-none"
       width="w-[30rem]"
     />
   );

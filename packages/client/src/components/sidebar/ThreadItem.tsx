@@ -2,7 +2,7 @@ import type { Thread, ThreadStatus, GitStatusInfo } from '@funny/shared';
 import {
   Archive,
   Trash2,
-  MoreHorizontal,
+  MoreVertical,
   FolderOpenDot,
   Terminal,
   Square,
@@ -202,7 +202,7 @@ export const ThreadItem = memo(function ThreadItem({
                   onClick={(e) => e.stopPropagation()}
                   className="text-muted-foreground hover:text-foreground"
                 >
-                  <MoreHorizontal className="h-3.5 w-3.5" />
+                  <MoreVertical className="h-3.5 w-3.5" />
                 </Button>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="start" side="bottom">

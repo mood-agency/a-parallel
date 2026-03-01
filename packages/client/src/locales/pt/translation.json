@@ -87,7 +87,7 @@
     "serverRestarted": "O servidor foi reiniciado enquanto esta tarefa estava em execução. Envie uma mensagem para continuar.",
     "nextPrompt": "O que você quer fazer a seguir?",
     "agentWorkingQueue": "O agente está trabalhando... digite para enfileirar um acompanhamento",
-    "describeTaskDefault": "Descreva a tarefa...",
+    "describeTaskDefault": "Descreva a tarefa, @ para adicionar arquivo, / para usar skill",
     "acceptContinue": "Continuar",
     "reject": "Não faça isso",
     "waitingInputPlaceholder": "Digite instruções ou feedback...",

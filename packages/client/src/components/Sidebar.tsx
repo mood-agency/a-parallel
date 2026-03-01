@@ -523,7 +523,7 @@ export function AppSidebar() {
               project={project}
               threads={filteredThreadsByProject[project.id] ?? EMPTY_THREADS}
               isExpanded={expandedProjects.has(project.id)}
-              isSelected={selectedProjectId === project.id}
+              isSelected={selectedProjectId === project.id && !selectedThreadId}
               onToggle={handleToggleProject}
               onSelectProject={handleSelectProject}
               onNewThread={handleNewThread}

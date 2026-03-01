@@ -29,3 +29,6 @@ packages/chrome-extension/page-bridge.js
 *.zip
 /test-results
 e2e-report.json
+
+*storybook.log
+storybook-static

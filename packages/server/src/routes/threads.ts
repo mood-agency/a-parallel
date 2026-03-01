@@ -382,6 +382,17 @@ threadRoutes.post('/', async (c) => {
 
     tm.createThread(thread);
 
+    // Insert user message immediately so it's available when the client fetches
+    // the thread (worktree setup runs in background and startAgent comes later)
+    if (prompt) {
+      tm.insertMessage({
+        threadId,
+        role: 'user',
+        content: prompt,
+        images: images?.length ? JSON.stringify(images) : null,
+      });
+    }
+
     threadEventBus.emit('thread:created', {
       threadId,
       projectId,
@@ -449,6 +460,8 @@ threadRoutes.post('/', async (c) => {
             disallowedTools,
             allowedTools,
             resolvedProvider,
+            undefined, // mcpServers
+            true, // skipMessageInsert — already inserted at thread creation
           );
         } catch (err: any) {
           log.error('Failed to start agent after worktree setup', { threadId, error: err });

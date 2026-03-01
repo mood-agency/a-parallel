@@ -57,7 +57,6 @@ import { useUIStore } from '@/stores/ui-store';
 
 import { D4CAnimation } from './D4CAnimation';
 import { ImageLightbox } from './ImageLightbox';
-import { InlineProgressSteps } from './InlineProgressSteps';
 import { PromptInput } from './PromptInput';
 import { AgentResultCard, AgentInterruptedCard, AgentStoppedCard } from './thread/AgentStatusCards';
 import { CompactionEventCard } from './thread/CompactionEventCard';
@@ -67,6 +66,7 @@ import { ProjectHeader } from './thread/ProjectHeader';
 import { PromptTimeline } from './thread/PromptTimeline';
 import { ToolCallCard } from './ToolCallCard';
 import { ToolCallGroup } from './ToolCallGroup';
+import { WorktreeSetupProgress } from './WorktreeSetupProgress';
 
 // Regex to match file paths like /foo/bar.ts, C:\foo\bar.ts, or file_path:line_number patterns
 const FILE_PATH_RE = /(?:[A-Za-z]:[\\/]|\/)[^\s:*?"<>|,()]+(?::\d+)?/g;
@@ -1298,12 +1298,7 @@ export function ThreadView() {
       <div className="flex h-full min-w-0 flex-1 flex-col">
         <ProjectHeader />
         <div className="flex flex-1 items-center justify-center px-4">
-          <div className="w-full max-w-md space-y-4">
-            <h3 className="text-sm font-medium text-foreground">
-              {t('thread.settingUpWorktree', 'Setting up worktree...')}
-            </h3>
-            <InlineProgressSteps steps={activeThread.setupProgress ?? []} />
-          </div>
+          <WorktreeSetupProgress steps={activeThread.setupProgress ?? []} />
         </div>
       </div>
     );
