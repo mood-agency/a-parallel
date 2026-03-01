@@ -56,6 +56,7 @@ import { startScheduler } from './services/automation-scheduler.js';
 import { registerAllHandlers } from './services/handlers/handler-registry.js';
 import type { HandlerServiceContext } from './services/handlers/types.js';
 import { startExternalThreadSweep } from './services/ingest-mapper.js';
+import * as mq from './services/message-queue.js';
 import * as pm from './services/project-manager.js';
 import * as ptyManager from './services/pty-manager.js';
 import { saveThreadEvent } from './services/thread-event-service.js';
@@ -238,6 +239,9 @@ const handlerCtx: HandlerServiceContext = {
   deriveGitSyncState,
   invalidateGitStatusCache: invalidateGitStatusCacheByProject,
   saveThreadEvent,
+  dequeueMessage: mq.dequeue,
+  queueCount: mq.queueCount,
+  peekMessage: mq.peek,
   log: (msg) => log.info(msg, { namespace: 'handler' }),
 };
 registerAllHandlers(handlerCtx);
