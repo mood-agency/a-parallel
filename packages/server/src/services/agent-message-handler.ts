@@ -453,10 +453,17 @@ export class AgentMessageHandler {
     if (summaryResult.isErr()) return;
     const summary = summaryResult.value;
 
+    const branchKey = thread.branch
+      ? `${thread.projectId}:${thread.branch}`
+      : thread.baseBranch
+        ? `tid:${threadId}`
+        : thread.projectId;
+
     this.emitWS(threadId, 'git:status', {
       statuses: [
         {
           threadId,
+          branchKey,
           state: deriveGitSyncState(summary),
           ...summary,
         },

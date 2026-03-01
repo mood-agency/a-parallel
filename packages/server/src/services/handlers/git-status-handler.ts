@@ -77,6 +77,12 @@ async function emitGitStatus(event: GitChangedEvent, ctx: HandlerServiceContext)
   // Invalidate the HTTP cache so subsequent fetches don't return stale data
   ctx.invalidateGitStatusCache(project.id);
 
+  const branchKey = thread.branch
+    ? `${thread.projectId}:${thread.branch}`
+    : thread.baseBranch
+      ? `tid:${threadId}`
+      : thread.projectId;
+
   ctx.emitToUser(userId, {
     type: 'git:status',
     threadId,
@@ -84,6 +90,7 @@ async function emitGitStatus(event: GitChangedEvent, ctx: HandlerServiceContext)
       statuses: [
         {
           threadId,
+          branchKey,
           state: ctx.deriveGitSyncState(summary),
           ...summary,
         },

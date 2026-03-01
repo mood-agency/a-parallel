@@ -63,7 +63,7 @@ import { openFileInEditor, getEditorLabel } from '@/lib/editor-utils';
 import { cn } from '@/lib/utils';
 import { useCommitProgressStore } from '@/stores/commit-progress-store';
 import { useDraftStore } from '@/stores/draft-store';
-import { useGitStatusStore } from '@/stores/git-status-store';
+import { useGitStatusStore, useGitStatusForThread } from '@/stores/git-status-store';
 import { useProjectStore } from '@/stores/project-store';
 import { useSettingsStore, deriveToolLists } from '@/stores/settings-store';
 import { editorLabels } from '@/stores/settings-store';
@@ -256,9 +256,7 @@ export function ReviewPane() {
   const threadBranch = useThreadStore((s) => s.activeThread?.branch);
   const hasWorktreePath = useThreadStore((s) => !!s.activeThread?.worktreePath);
   const isAgentRunning = useThreadStore((s) => s.activeThread?.status === 'running');
-  const gitStatus = useGitStatusStore((s) =>
-    effectiveThreadId ? s.statusByThread[effectiveThreadId] : undefined,
-  );
+  const gitStatus = useGitStatusForThread(effectiveThreadId);
   const [mergeInProgress, setMergeInProgress] = useState(false);
   const [pushInProgress, setPushInProgress] = useState(false);
   const [prInProgress, setPrInProgress] = useState(false);

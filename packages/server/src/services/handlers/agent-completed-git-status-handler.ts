@@ -44,6 +44,12 @@ export const agentCompletedGitStatusHandler: EventHandler<'agent:completed'> = {
     // Invalidate the HTTP cache so subsequent fetches don't return stale data
     ctx.invalidateGitStatusCache(project.id);
 
+    const branchKey = thread.branch
+      ? `${thread.projectId}:${thread.branch}`
+      : thread.baseBranch
+        ? `tid:${threadId}`
+        : thread.projectId;
+
     ctx.emitToUser(userId, {
       type: 'git:status',
       threadId,
@@ -51,6 +57,7 @@ export const agentCompletedGitStatusHandler: EventHandler<'agent:completed'> = {
         statuses: [
           {
             threadId,
+            branchKey,
             state: ctx.deriveGitSyncState(summary),
             ...summary,
           },

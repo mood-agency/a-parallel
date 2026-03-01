@@ -103,26 +103,33 @@ export function ThreadList({ onArchiveThread, onDeleteThread }: ThreadListProps)
     return { threads: visible, totalCount: result.length };
   }, [threadsByProject, projects]);
 
-  // Read the full statusByThread and pick only visible entries via useMemo.
+  // Read the branch-keyed status and reverse lookup to resolve per-thread.
   // Individual GitStatusInfo references are stable (only change when that
-  // thread's status actually updates), so ThreadItem memo is not defeated.
-  const statusByThread = useGitStatusStore((s) => s.statusByThread);
+  // branch's status actually updates), so ThreadItem memo is not defeated.
+  const statusByBranch = useGitStatusStore((s) => s.statusByBranch);
+  const threadToBranchKey = useGitStatusStore((s) => s.threadToBranchKey);
   const gitStatusByThread = useMemo(() => {
     const result: Record<string, GitStatusInfo> = {};
     for (const t of threads) {
-      if (statusByThread[t.id]) {
-        result[t.id] = statusByThread[t.id];
+      const bk = threadToBranchKey[t.id];
+      if (bk && statusByBranch[bk]) {
+        result[t.id] = statusByBranch[bk];
       }
     }
     return result;
-  }, [threads, statusByThread]);
+  }, [threads, statusByBranch, threadToBranchKey]);
 
   // Eagerly fetch git status for visible threads that don't have it yet.
   // This ensures icons and diff stats show up in the global thread list without requiring a click.
   useEffect(() => {
-    const { fetchForThread, statusByThread } = useGitStatusStore.getState();
+    const {
+      fetchForThread,
+      threadToBranchKey: tbk,
+      statusByBranch: sbb,
+    } = useGitStatusStore.getState();
     for (const thread of threads) {
-      if (!statusByThread[thread.id]) {
+      const bk = tbk[thread.id];
+      if (!bk || !sbb[bk]) {
         fetchForThread(thread.id);
       }
     }

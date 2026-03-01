@@ -77,6 +77,22 @@ function validateFilePaths(cwd: string, paths: string[]): string | null {
   return null;
 }
 
+/** Compute a stable cache key that groups threads sharing the same git working state. */
+export function computeBranchKey(thread: {
+  id: string;
+  projectId: string;
+  branch?: string | null;
+  worktreePath?: string | null;
+  baseBranch?: string | null;
+}): string {
+  // Merged threads (worktree cleaned up): unique per thread
+  if (!thread.branch && !thread.worktreePath && thread.baseBranch) return `tid:${thread.id}`;
+  // Threads with a branch (worktree or local): group by project + branch
+  if (thread.branch) return `${thread.projectId}:${thread.branch}`;
+  // Local threads without a branch: group by project
+  return thread.projectId;
+}
+
 // In-memory cache for bulk git status to avoid spawning excessive git processes.
 const _gitStatusCache = new Map<string, { data: any; ts: number }>();
 const GIT_STATUS_CACHE_TTL_MS = 5_000; // 5 seconds
@@ -133,7 +149,14 @@ gitRoutes.get('/status', async (c) => {
         );
         if (summaryResult.isErr()) return null;
         const summary = summaryResult.value;
-        return Object.assign({ threadId: thread.id, state: deriveGitSyncState(summary) }, summary);
+        return Object.assign(
+          {
+            threadId: thread.id,
+            branchKey: computeBranchKey(thread),
+            state: deriveGitSyncState(summary),
+          },
+          summary,
+        );
       }),
     ),
     localStatusPromise,
@@ -146,6 +169,7 @@ gitRoutes.get('/status', async (c) => {
       .filter(Boolean),
     ...mergedThreads.map((t) => ({
       threadId: t.id,
+      branchKey: computeBranchKey(t),
       state: 'merged' as const,
       dirtyFileCount: 0,
       unpushedCommitCount: 0,
@@ -157,6 +181,7 @@ gitRoutes.get('/status', async (c) => {
     ...(localSummary
       ? localThreads.map((t) => ({
           threadId: t.id,
+          branchKey: computeBranchKey(t),
           state: deriveGitSyncState(localSummary),
           ...localSummary,
         }))
@@ -550,6 +575,7 @@ gitRoutes.get('/:threadId/status', async (c) => {
   if (!thread.worktreePath && !thread.branch && thread.baseBranch) {
     return c.json({
       threadId,
+      branchKey: computeBranchKey(thread),
       state: 'merged' as const,
       dirtyFileCount: 0,
       unpushedCommitCount: 0,
@@ -571,6 +597,7 @@ gitRoutes.get('/:threadId/status', async (c) => {
 
   return c.json({
     threadId,
+    branchKey: computeBranchKey(thread),
     state: deriveGitSyncState(summary),
     ...summary,
   });
@@ -1031,6 +1058,7 @@ gitRoutes.post('/:threadId/merge', async (c) => {
         statuses: [
           {
             threadId,
+            branchKey: `tid:${threadId}`,
             state: 'merged' as const,
             dirtyFileCount: 0,
             unpushedCommitCount: 0,

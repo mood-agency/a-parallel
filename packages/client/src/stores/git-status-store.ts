@@ -4,33 +4,52 @@ import { create } from 'zustand';
 import { api } from '@/lib/api';
 
 /** Git status for a project root (no threadId) */
-export type ProjectGitStatus = Omit<GitStatusInfo, 'threadId'>;
+export type ProjectGitStatus = Omit<GitStatusInfo, 'threadId' | 'branchKey'>;
+
+/**
+ * Compute a stable cache key that groups threads sharing the same git working state.
+ * Matches the server-side `computeBranchKey` logic.
+ */
+export function branchKey(thread: {
+  id: string;
+  projectId: string;
+  branch?: string | null;
+  worktreePath?: string | null;
+  baseBranch?: string | null;
+}): string {
+  if (!thread.branch && !thread.worktreePath && thread.baseBranch) return `tid:${thread.id}`;
+  if (thread.branch) return `${thread.projectId}:${thread.branch}`;
+  return thread.projectId;
+}
 
 interface GitStatusState {
-  statusByThread: Record<string, GitStatusInfo>;
+  /** Git status keyed by branchKey (threads sharing a branch share one entry) */
+  statusByBranch: Record<string, GitStatusInfo>;
+  /** Reverse lookup: threadId → branchKey (populated from API responses) */
+  threadToBranchKey: Record<string, string>;
   statusByProject: Record<string, ProjectGitStatus>;
   loadingProjects: Set<string>;
-  _loadingThreads: Set<string>;
+  _loadingBranchKeys: Set<string>;
   _loadingProjectStatus: Set<string>;
 
   fetchForProject: (projectId: string) => Promise<void>;
   fetchForThread: (threadId: string) => Promise<void>;
   fetchProjectStatus: (projectId: string) => Promise<void>;
   updateFromWS: (statuses: GitStatusInfo[]) => void;
-  clearForThread: (threadId: string) => void;
+  clearForBranch: (bk: string) => void;
 }
 
 const FETCH_COOLDOWN_MS = 5_000;
-const THREAD_FETCH_COOLDOWN_MS = 2_000;
+const BRANCH_FETCH_COOLDOWN_MS = 2_000;
 const PROJECT_STATUS_COOLDOWN_MS = 2_000;
 const _lastFetchByProject = new Map<string, number>();
-const _lastFetchByThread = new Map<string, number>();
+const _lastFetchByBranch = new Map<string, number>();
 const _lastFetchByProjectStatus = new Map<string, number>();
 
 /** @internal Clear cooldown map — only for tests */
 export function _resetCooldowns() {
   _lastFetchByProject.clear();
-  _lastFetchByThread.clear();
+  _lastFetchByBranch.clear();
   _lastFetchByProjectStatus.clear();
 }
 
@@ -47,28 +66,29 @@ function statusEqual(a: GitStatusInfo, b: GitStatusInfo): boolean {
   );
 }
 
-/** Only spread statusByThread when at least one entry actually changed */
+/** Only spread statusByBranch when at least one entry actually changed */
 function mergeStatuses(
-  state: Pick<GitStatusState, 'statusByThread'>,
+  state: Pick<GitStatusState, 'statusByBranch'>,
   updates: Record<string, GitStatusInfo>,
-): { statusByThread: Record<string, GitStatusInfo> } | Record<string, never> {
+): { statusByBranch: Record<string, GitStatusInfo> } | Record<string, never> {
   let changed = false;
-  for (const [tid, next] of Object.entries(updates)) {
-    const prev = state.statusByThread[tid];
+  for (const [bk, next] of Object.entries(updates)) {
+    const prev = state.statusByBranch[bk];
     if (!prev || !statusEqual(prev, next)) {
       changed = true;
       break;
     }
   }
   if (!changed) return {};
-  return { statusByThread: { ...state.statusByThread, ...updates } };
+  return { statusByBranch: { ...state.statusByBranch, ...updates } };
 }
 
 export const useGitStatusStore = create<GitStatusState>((set, get) => ({
-  statusByThread: {},
+  statusByBranch: {},
+  threadToBranchKey: {},
   statusByProject: {},
   loadingProjects: new Set(),
-  _loadingThreads: new Set(),
+  _loadingBranchKeys: new Set(),
   _loadingProjectStatus: new Set(),
 
   fetchForProject: async (projectId) => {
@@ -83,10 +103,15 @@ export const useGitStatusStore = create<GitStatusState>((set, get) => ({
     const result = await api.getGitStatuses(projectId);
     if (result.isOk()) {
       const updates: Record<string, GitStatusInfo> = {};
+      const keyMap: Record<string, string> = {};
       for (const s of result.value.statuses) {
-        updates[s.threadId] = s;
+        updates[s.branchKey] = s;
+        keyMap[s.threadId] = s.branchKey;
       }
-      set((state) => mergeStatuses(state, updates));
+      set((state) => ({
+        ...mergeStatuses(state, updates),
+        threadToBranchKey: { ...state.threadToBranchKey, ...keyMap },
+      }));
     }
     // Silently ignore errors — git status is best-effort
     set((s) => {
@@ -97,24 +122,40 @@ export const useGitStatusStore = create<GitStatusState>((set, get) => ({
   },
 
   fetchForThread: async (threadId) => {
-    if (get()._loadingThreads.has(threadId)) return;
-    // Skip if fetched recently (prevents duplicate calls from ProjectHeader + ReviewPane)
+    // Use existing branchKey mapping for cooldown; fall back to threadId on first call
+    const bk = get().threadToBranchKey[threadId];
+    const cooldownKey = bk || `pending:${threadId}`;
+
+    if (bk && get()._loadingBranchKeys.has(bk)) return;
+    // Skip if fetched recently (shared cooldown per branch)
     const now = Date.now();
-    const lastFetch = _lastFetchByThread.get(threadId) ?? 0;
-    if (now - lastFetch < THREAD_FETCH_COOLDOWN_MS) return;
-    _lastFetchByThread.set(threadId, now);
-    set((s) => ({ _loadingThreads: new Set([...s._loadingThreads, threadId]) }));
+    const lastFetch = _lastFetchByBranch.get(cooldownKey) ?? 0;
+    if (now - lastFetch < BRANCH_FETCH_COOLDOWN_MS) return;
+    _lastFetchByBranch.set(cooldownKey, now);
+
+    if (bk) {
+      set((s) => ({ _loadingBranchKeys: new Set([...s._loadingBranchKeys, bk]) }));
+    }
     try {
       const result = await api.getGitStatus(threadId);
       if (result.isOk()) {
-        set((state) => mergeStatuses(state, { [threadId]: result.value }));
+        const status = result.value;
+        const key = status.branchKey;
+        // Update cooldown with the real branchKey
+        _lastFetchByBranch.set(key, now);
+        set((state) => ({
+          ...mergeStatuses(state, { [key]: status }),
+          threadToBranchKey: { ...state.threadToBranchKey, [threadId]: key },
+        }));
       }
     } finally {
-      set((s) => {
-        const next = new Set(s._loadingThreads);
-        next.delete(threadId);
-        return { _loadingThreads: next };
-      });
+      if (bk) {
+        set((s) => {
+          const next = new Set(s._loadingBranchKeys);
+          next.delete(bk);
+          return { _loadingBranchKeys: next };
+        });
+      }
     }
   },
 
@@ -141,17 +182,34 @@ export const useGitStatusStore = create<GitStatusState>((set, get) => ({
 
   updateFromWS: (statuses) => {
     const updates: Record<string, GitStatusInfo> = {};
+    const keyMap: Record<string, string> = {};
     for (const s of statuses) {
-      updates[s.threadId] = s;
+      updates[s.branchKey] = s;
+      keyMap[s.threadId] = s.branchKey;
     }
-    set((state) => mergeStatuses(state, updates));
+    set((state) => ({
+      ...mergeStatuses(state, updates),
+      threadToBranchKey: { ...state.threadToBranchKey, ...keyMap },
+    }));
   },
 
-  clearForThread: (threadId) => {
+  clearForBranch: (bk) => {
     set((state) => {
-      const next = { ...state.statusByThread };
-      delete next[threadId];
-      return { statusByThread: next };
+      const next = { ...state.statusByBranch };
+      delete next[bk];
+      return { statusByBranch: next };
     });
   },
 }));
+
+/**
+ * Hook to get git status for a specific thread.
+ * Resolves threadId → branchKey → status.
+ */
+export function useGitStatusForThread(threadId: string | undefined): GitStatusInfo | undefined {
+  return useGitStatusStore((state) => {
+    if (!threadId) return undefined;
+    const bk = state.threadToBranchKey[threadId];
+    return bk ? state.statusByBranch[bk] : undefined;
+  });
+}

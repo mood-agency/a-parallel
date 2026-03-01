@@ -15,7 +15,9 @@ import { useGitStatusStore, _resetCooldowns } from '@/stores/git-status-store';
 
 const mockApi = vi.mocked(api);
 
-function makeStatus(overrides: Partial<GitStatusInfo> & { threadId: string }): GitStatusInfo {
+function makeStatus(
+  overrides: Partial<GitStatusInfo> & { threadId: string; branchKey: string },
+): GitStatusInfo {
   return {
     state: 'dirty',
     dirtyFileCount: 3,
@@ -31,9 +33,10 @@ function makeStatus(overrides: Partial<GitStatusInfo> & { threadId: string }): G
 describe('GitStatusStore', () => {
   beforeEach(() => {
     useGitStatusStore.setState({
-      statusByThread: {},
+      statusByBranch: {},
+      threadToBranchKey: {},
       loadingProjects: new Set(),
-      _loadingThreads: new Set(),
+      _loadingBranchKeys: new Set(),
     });
     _resetCooldowns();
     vi.clearAllMocks();
@@ -41,19 +44,27 @@ describe('GitStatusStore', () => {
 
   // ── 1. Initial state ──────────────────────────────────────
   describe('Initial state', () => {
-    test('has empty statusByThread and loadingProjects', () => {
+    test('has empty statusByBranch and loadingProjects', () => {
       const state = useGitStatusStore.getState();
-      expect(state.statusByThread).toEqual({});
+      expect(state.statusByBranch).toEqual({});
+      expect(state.threadToBranchKey).toEqual({});
       expect(state.loadingProjects.size).toBe(0);
     });
   });
 
   // ── 2. fetchForProject ────────────────────────────────────
   describe('fetchForProject', () => {
-    test('updates statusByThread with statuses from API', async () => {
-      const s1 = makeStatus({ threadId: 't1', state: 'dirty', dirtyFileCount: 2, linesAdded: 5 });
+    test('updates statusByBranch with statuses from API', async () => {
+      const s1 = makeStatus({
+        threadId: 't1',
+        branchKey: 'p1:main',
+        state: 'dirty',
+        dirtyFileCount: 2,
+        linesAdded: 5,
+      });
       const s2 = makeStatus({
         threadId: 't2',
+        branchKey: 'p1:feature',
         state: 'pushed',
         dirtyFileCount: 0,
         unpushedCommitCount: 0,
@@ -63,9 +74,27 @@ describe('GitStatusStore', () => {
 
       await useGitStatusStore.getState().fetchForProject('p1');
 
-      const { statusByThread } = useGitStatusStore.getState();
-      expect(statusByThread['t1']).toEqual(s1);
-      expect(statusByThread['t2']).toEqual(s2);
+      const { statusByBranch, threadToBranchKey } = useGitStatusStore.getState();
+      expect(statusByBranch['p1:main']).toEqual(s1);
+      expect(statusByBranch['p1:feature']).toEqual(s2);
+      expect(threadToBranchKey['t1']).toBe('p1:main');
+      expect(threadToBranchKey['t2']).toBe('p1:feature');
+    });
+
+    test('threads sharing a branch share one cache entry', async () => {
+      const s1 = makeStatus({ threadId: 't1', branchKey: 'p1:main', state: 'dirty' });
+      const s2 = makeStatus({ threadId: 't2', branchKey: 'p1:main', state: 'dirty' });
+
+      mockApi.getGitStatuses.mockReturnValueOnce(okAsync({ statuses: [s1, s2] }) as any);
+
+      await useGitStatusStore.getState().fetchForProject('p1');
+
+      const { statusByBranch, threadToBranchKey } = useGitStatusStore.getState();
+      // Both threads map to the same branchKey
+      expect(threadToBranchKey['t1']).toBe('p1:main');
+      expect(threadToBranchKey['t2']).toBe('p1:main');
+      // One entry in statusByBranch (last writer wins, both are identical)
+      expect(statusByBranch['p1:main']).toEqual(s2);
     });
 
     test('handles API errors gracefully', async () => {
@@ -76,11 +105,11 @@ describe('GitStatusStore', () => {
       await useGitStatusStore.getState().fetchForProject('p1');
 
       // State should remain unchanged
-      expect(useGitStatusStore.getState().statusByThread).toEqual({});
+      expect(useGitStatusStore.getState().statusByBranch).toEqual({});
     });
 
     test('deduplicates concurrent calls for the same project', async () => {
-      const s1 = makeStatus({ threadId: 't1' });
+      const s1 = makeStatus({ threadId: 't1', branchKey: 'p1:main' });
 
       // Use a deferred promise so the first call stays in-flight
       let resolve!: () => void;
@@ -131,14 +160,21 @@ describe('GitStatusStore', () => {
 
   // ── 3. fetchForThread ─────────────────────────────────────
   describe('fetchForThread', () => {
-    test('updates statusByThread for a single thread', async () => {
-      const s1 = makeStatus({ threadId: 't1', state: 'unpushed', unpushedCommitCount: 3 });
+    test('updates statusByBranch for a single thread', async () => {
+      const s1 = makeStatus({
+        threadId: 't1',
+        branchKey: 'p1:dev',
+        state: 'unpushed',
+        unpushedCommitCount: 3,
+      });
 
       mockApi.getGitStatus.mockReturnValueOnce(okAsync(s1) as any);
 
       await useGitStatusStore.getState().fetchForThread('t1');
 
-      expect(useGitStatusStore.getState().statusByThread['t1']).toEqual(s1);
+      const { statusByBranch, threadToBranchKey } = useGitStatusStore.getState();
+      expect(statusByBranch['p1:dev']).toEqual(s1);
+      expect(threadToBranchKey['t1']).toBe('p1:dev');
     });
 
     test('handles API errors gracefully', async () => {
@@ -148,11 +184,11 @@ describe('GitStatusStore', () => {
       // Should not throw
       await useGitStatusStore.getState().fetchForThread('t1');
 
-      expect(useGitStatusStore.getState().statusByThread).toEqual({});
+      expect(useGitStatusStore.getState().statusByBranch).toEqual({});
     });
 
     test('deduplicates concurrent calls for the same thread', async () => {
-      const s1 = makeStatus({ threadId: 't1' });
+      const s1 = makeStatus({ threadId: 't1', branchKey: 'p1:main' });
       mockApi.getGitStatus.mockReturnValue(okAsync(s1) as any);
 
       const p1 = useGitStatusStore.getState().fetchForThread('t1');
@@ -164,90 +200,172 @@ describe('GitStatusStore', () => {
       expect(mockApi.getGitStatus).toHaveBeenCalledTimes(1);
     });
 
-    test('removes thread from _loadingThreads after completion', async () => {
-      mockApi.getGitStatus.mockReturnValueOnce(okAsync(makeStatus({ threadId: 't1' })) as any);
+    test('shares cooldown for threads on the same branch', async () => {
+      const s1 = makeStatus({ threadId: 't1', branchKey: 'p1:main' });
+      mockApi.getGitStatus.mockReturnValue(okAsync(s1) as any);
+
+      // First call for t1 populates the branchKey mapping
+      await useGitStatusStore.getState().fetchForThread('t1');
+
+      // Manually map t2 to the same branchKey (simulating what fetchForProject would do)
+      useGitStatusStore.setState((s) => ({
+        threadToBranchKey: { ...s.threadToBranchKey, t2: 'p1:main' },
+      }));
+
+      // Second call for t2 should skip due to shared cooldown
+      await useGitStatusStore.getState().fetchForThread('t2');
+
+      // Only one API call (for t1)
+      expect(mockApi.getGitStatus).toHaveBeenCalledTimes(1);
+    });
+
+    test('removes branchKey from _loadingBranchKeys after completion', async () => {
+      // Pre-populate the mapping so loading tracking works
+      useGitStatusStore.setState({ threadToBranchKey: { t1: 'p1:main' } });
+      mockApi.getGitStatus.mockReturnValueOnce(
+        okAsync(makeStatus({ threadId: 't1', branchKey: 'p1:main' })) as any,
+      );
 
       await useGitStatusStore.getState().fetchForThread('t1');
 
-      expect(useGitStatusStore.getState()._loadingThreads.has('t1')).toBe(false);
+      expect(useGitStatusStore.getState()._loadingBranchKeys.has('p1:main')).toBe(false);
     });
 
-    test('removes thread from _loadingThreads even on error', async () => {
+    test('removes branchKey from _loadingBranchKeys even on error', async () => {
+      useGitStatusStore.setState({ threadToBranchKey: { t1: 'p1:main' } });
       const error: DomainError = { type: 'INTERNAL', message: 'fail' };
       mockApi.getGitStatus.mockReturnValueOnce(errAsync(error) as any);
 
       await useGitStatusStore.getState().fetchForThread('t1');
 
-      expect(useGitStatusStore.getState()._loadingThreads.has('t1')).toBe(false);
+      expect(useGitStatusStore.getState()._loadingBranchKeys.has('p1:main')).toBe(false);
     });
   });
 
   // ── 4. updateFromWS ──────────────────────────────────────
   describe('updateFromWS', () => {
-    test('bulk updates statusByThread', () => {
-      const s1 = makeStatus({ threadId: 't1', state: 'dirty', dirtyFileCount: 2 });
-      const s2 = makeStatus({ threadId: 't2', state: 'pushed', dirtyFileCount: 0 });
+    test('bulk updates statusByBranch', () => {
+      const s1 = makeStatus({
+        threadId: 't1',
+        branchKey: 'p1:main',
+        state: 'dirty',
+        dirtyFileCount: 2,
+      });
+      const s2 = makeStatus({
+        threadId: 't2',
+        branchKey: 'p1:feature',
+        state: 'pushed',
+        dirtyFileCount: 0,
+      });
 
       useGitStatusStore.getState().updateFromWS([s1, s2]);
 
-      const { statusByThread } = useGitStatusStore.getState();
-      expect(statusByThread['t1']).toEqual(s1);
-      expect(statusByThread['t2']).toEqual(s2);
+      const { statusByBranch, threadToBranchKey } = useGitStatusStore.getState();
+      expect(statusByBranch['p1:main']).toEqual(s1);
+      expect(statusByBranch['p1:feature']).toEqual(s2);
+      expect(threadToBranchKey['t1']).toBe('p1:main');
+      expect(threadToBranchKey['t2']).toBe('p1:feature');
     });
 
     test('merges with existing data', () => {
-      const existing = makeStatus({ threadId: 't1', state: 'dirty', dirtyFileCount: 5 });
+      const existing = makeStatus({
+        threadId: 't1',
+        branchKey: 'p1:main',
+        state: 'dirty',
+        dirtyFileCount: 5,
+      });
       useGitStatusStore.setState({
-        statusByThread: { t1: existing },
+        statusByBranch: { 'p1:main': existing },
+        threadToBranchKey: { t1: 'p1:main' },
       });
 
-      const updated = makeStatus({ threadId: 't2', state: 'clean', dirtyFileCount: 0 });
+      const updated = makeStatus({
+        threadId: 't2',
+        branchKey: 'p1:feature',
+        state: 'clean',
+        dirtyFileCount: 0,
+      });
       useGitStatusStore.getState().updateFromWS([updated]);
 
-      const { statusByThread } = useGitStatusStore.getState();
+      const { statusByBranch } = useGitStatusStore.getState();
       // Existing entry should still be present
-      expect(statusByThread['t1']).toEqual(existing);
+      expect(statusByBranch['p1:main']).toEqual(existing);
       // New entry should be added
-      expect(statusByThread['t2']).toEqual(updated);
+      expect(statusByBranch['p1:feature']).toEqual(updated);
     });
 
-    test('overwrites existing thread data with new data', () => {
-      const original = makeStatus({ threadId: 't1', state: 'dirty', dirtyFileCount: 5 });
+    test('overwrites existing branch data with new data', () => {
+      const original = makeStatus({
+        threadId: 't1',
+        branchKey: 'p1:main',
+        state: 'dirty',
+        dirtyFileCount: 5,
+      });
       useGitStatusStore.setState({
-        statusByThread: { t1: original },
+        statusByBranch: { 'p1:main': original },
+        threadToBranchKey: { t1: 'p1:main' },
       });
 
-      const updated = makeStatus({ threadId: 't1', state: 'clean', dirtyFileCount: 0 });
+      const updated = makeStatus({
+        threadId: 't1',
+        branchKey: 'p1:main',
+        state: 'clean',
+        dirtyFileCount: 0,
+      });
       useGitStatusStore.getState().updateFromWS([updated]);
 
-      expect(useGitStatusStore.getState().statusByThread['t1']).toEqual(updated);
+      expect(useGitStatusStore.getState().statusByBranch['p1:main']).toEqual(updated);
+    });
+
+    test('WS update for one thread is visible via sibling thread lookup', () => {
+      // t1 and t2 share the same branchKey
+      useGitStatusStore.setState({
+        threadToBranchKey: { t1: 'p1:main', t2: 'p1:main' },
+      });
+
+      const update = makeStatus({
+        threadId: 't1',
+        branchKey: 'p1:main',
+        state: 'dirty',
+        dirtyFileCount: 3,
+      });
+      useGitStatusStore.getState().updateFromWS([update]);
+
+      const { statusByBranch, threadToBranchKey } = useGitStatusStore.getState();
+      // Both threads resolve to the same status
+      const bk1 = threadToBranchKey['t1'];
+      const bk2 = threadToBranchKey['t2'];
+      expect(bk1).toBe(bk2);
+      expect(statusByBranch[bk1!]).toEqual(update);
+      expect(statusByBranch[bk2!]).toEqual(update);
     });
   });
 
-  // ── 5. clearForThread ─────────────────────────────────────
-  describe('clearForThread', () => {
-    test('removes the thread entry', () => {
-      const s1 = makeStatus({ threadId: 't1' });
-      const s2 = makeStatus({ threadId: 't2' });
+  // ── 5. clearForBranch ─────────────────────────────────────
+  describe('clearForBranch', () => {
+    test('removes the branch entry', () => {
+      const s1 = makeStatus({ threadId: 't1', branchKey: 'p1:main' });
+      const s2 = makeStatus({ threadId: 't2', branchKey: 'p1:feature' });
       useGitStatusStore.setState({
-        statusByThread: { t1: s1, t2: s2 },
+        statusByBranch: { 'p1:main': s1, 'p1:feature': s2 },
+        threadToBranchKey: { t1: 'p1:main', t2: 'p1:feature' },
       });
 
-      useGitStatusStore.getState().clearForThread('t1');
+      useGitStatusStore.getState().clearForBranch('p1:main');
 
-      const { statusByThread } = useGitStatusStore.getState();
-      expect(statusByThread['t1']).toBeUndefined();
+      const { statusByBranch } = useGitStatusStore.getState();
+      expect(statusByBranch['p1:main']).toBeUndefined();
       // Other entries should remain
-      expect(statusByThread['t2']).toEqual(s2);
+      expect(statusByBranch['p1:feature']).toEqual(s2);
     });
 
-    test('does not crash when clearing a non-existent thread', () => {
-      useGitStatusStore.setState({ statusByThread: {} });
+    test('does not crash when clearing a non-existent branchKey', () => {
+      useGitStatusStore.setState({ statusByBranch: {} });
 
       // Should not throw
-      useGitStatusStore.getState().clearForThread('nonexistent');
+      useGitStatusStore.getState().clearForBranch('nonexistent');
 
-      expect(useGitStatusStore.getState().statusByThread).toEqual({});
+      expect(useGitStatusStore.getState().statusByBranch).toEqual({});
     });
   });
 });

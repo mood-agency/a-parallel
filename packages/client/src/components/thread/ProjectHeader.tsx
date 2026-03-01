@@ -60,7 +60,7 @@ import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip
 import { usePreviewWindow } from '@/hooks/use-preview-window';
 import { api } from '@/lib/api';
 import { stageConfig } from '@/lib/thread-utils';
-import { useGitStatusStore } from '@/stores/git-status-store';
+import { useGitStatusStore, useGitStatusForThread } from '@/stores/git-status-store';
 import { useProjectStore } from '@/stores/project-store';
 import { editorLabels, type Editor } from '@/stores/settings-store';
 import { useTerminalStore } from '@/stores/terminal-store';
@@ -427,9 +427,7 @@ export const ProjectHeader = memo(function ProjectHeader() {
   const terminalPanelVisible = useTerminalStore((s) => s.panelVisible);
   const setPanelVisible = useTerminalStore((s) => s.setPanelVisible);
   const addTab = useTerminalStore((s) => s.addTab);
-  const gitStatus = useGitStatusStore((s) =>
-    activeThreadId ? s.statusByThread[activeThreadId] : undefined,
-  );
+  const gitStatus = useGitStatusForThread(activeThreadId ?? undefined);
   const projectGitStatus = useGitStatusStore((s) =>
     !activeThreadId && selectedProjectId ? s.statusByProject[selectedProjectId] : undefined,
   );

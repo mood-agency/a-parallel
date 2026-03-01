@@ -118,7 +118,8 @@ export function AllThreadsView() {
   const allThreadsProjectId = useUIStore((s) => s.allThreadsProjectId);
   const threadsByProject = useThreadStore((s) => s.threadsByProject);
   const projects = useProjectStore((s) => s.projects);
-  const statusByThread = useGitStatusStore((s) => s.statusByThread);
+  const statusByBranch = useGitStatusStore((s) => s.statusByBranch);
+  const threadToBranchKey = useGitStatusStore((s) => s.threadToBranchKey);
 
   // View mode derived from pathname: /kanban = board, /list (or anything else) = list
   // When ?status= param is present, force list view
@@ -294,7 +295,8 @@ export function AllThreadsView() {
     // Git status filter (multi-select)
     if (gitFilter.size > 0) {
       result = result.filter((t) => {
-        const gs = statusByThread[t.id];
+        const bk = threadToBranchKey[t.id];
+        const gs = bk ? statusByBranch[bk] : undefined;
         return gs ? gitFilter.has(gs.state) : false;
       });
     }
@@ -319,7 +321,8 @@ export function AllThreadsView() {
     statusFilter,
     gitFilter,
     modeFilter,
-    statusByThread,
+    statusByBranch,
+    threadToBranchKey,
     projectFilter,
     projectNameById,
     sortField,
@@ -384,13 +387,14 @@ export function AllThreadsView() {
   const gitCounts = useMemo(() => {
     const counts: Record<string, number> = {};
     for (const t of allThreads) {
-      const gs = statusByThread[t.id];
+      const bk = threadToBranchKey[t.id];
+      const gs = bk ? statusByBranch[bk] : undefined;
       if (gs) {
         counts[gs.state] = (counts[gs.state] || 0) + 1;
       }
     }
     return counts;
-  }, [allThreads, statusByThread]);
+  }, [allThreads, statusByBranch, threadToBranchKey]);
 
   const threadStatuses: ThreadStatus[] = [
     'running',
@@ -754,7 +758,8 @@ export function AllThreadsView() {
               hideSearch={true}
               contentSnippets={contentMatches}
               renderExtraBadges={(thread) => {
-                const gs = statusByThread[thread.id];
+                const _bk = threadToBranchKey[thread.id];
+                const gs = _bk ? statusByBranch[_bk] : undefined;
                 const gitConf = gs ? gitSyncStateConfig[gs.state] : null;
                 return (
                   <>

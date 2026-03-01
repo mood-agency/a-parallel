@@ -500,7 +500,17 @@ export function KanbanView({
     newStage: ThreadStage;
     gitState: string;
   } | null>(null);
-  const statusByThread = useGitStatusStore((s) => s.statusByThread);
+  const _statusByBranch = useGitStatusStore((s) => s.statusByBranch);
+  const _threadToBranchKey = useGitStatusStore((s) => s.threadToBranchKey);
+  // Resolve branch-keyed statuses to a threadId-keyed map for child components
+  const statusByThread = useMemo(() => {
+    const result: Record<string, GitStatusInfo> = {};
+    for (const t of threads) {
+      const bk = _threadToBranchKey[t.id];
+      if (bk && _statusByBranch[bk]) result[t.id] = _statusByBranch[bk];
+    }
+    return result;
+  }, [threads, _statusByBranch, _threadToBranchKey]);
 
   // Highlight the card the user came from, then fade it out
   const [highlightThreadId, setHighlightThreadId] = useState<string | undefined>(

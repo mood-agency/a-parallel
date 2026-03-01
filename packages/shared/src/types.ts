@@ -476,6 +476,7 @@ export type GitSyncState = 'dirty' | 'unpushed' | 'pushed' | 'merged' | 'clean';
 
 export interface GitStatusInfo {
   threadId: string;
+  branchKey: string;
   state: GitSyncState;
   dirtyFileCount: number;
   unpushedCommitCount: number;

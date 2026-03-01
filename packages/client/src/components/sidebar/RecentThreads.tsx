@@ -40,7 +40,8 @@ export function RecentThreads({ onArchiveThread, onDeleteThread }: RecentThreads
   const threadsByProject = useThreadStore((s) => s.threadsByProject);
   const selectedThreadId = useThreadStore((s) => s.selectedThreadId);
   const projects = useProjectStore((s) => s.projects);
-  const gitStatusByThread = useGitStatusStore((s) => s.statusByThread);
+  const statusByBranch = useGitStatusStore((s) => s.statusByBranch);
+  const threadToBranchKey = useGitStatusStore((s) => s.threadToBranchKey);
   const [isExpanded, setIsExpanded] = useState(true);
 
   const { recentThreads, totalCount } = useMemo(() => {
@@ -74,9 +75,14 @@ export function RecentThreads({ onArchiveThread, onDeleteThread }: RecentThreads
 
   // Eagerly fetch git status for visible worktree threads that don't have it yet
   useEffect(() => {
-    const { fetchForThread, statusByThread } = useGitStatusStore.getState();
+    const {
+      fetchForThread,
+      threadToBranchKey: tbk,
+      statusByBranch: sbb,
+    } = useGitStatusStore.getState();
     for (const thread of recentThreads) {
-      if (thread.mode === 'worktree' && !statusByThread[thread.id]) {
+      const bk = tbk[thread.id];
+      if (thread.mode === 'worktree' && (!bk || !sbb[bk])) {
         fetchForThread(thread.id);
       }
     }
@@ -98,44 +104,47 @@ export function RecentThreads({ onArchiveThread, onDeleteThread }: RecentThreads
       </CollapsibleTrigger>
       <CollapsibleContent className="data-[state=open]:animate-slide-down">
         <div className="mt-0.5 min-w-0 space-y-0.5">
-          {recentThreads.map((thread) => (
-            <ThreadItem
-              key={thread.id}
-              thread={thread}
-              projectPath={thread.projectPath}
-              isSelected={selectedThreadId === thread.id}
-              subtitle={thread.projectName}
-              projectColor={thread.projectColor}
-              timeValue={timeAgo(thread.completedAt ?? thread.createdAt, t)}
-              gitStatus={gitStatusByThread[thread.id]}
-              onSelect={() => {
-                const store = useThreadStore.getState();
-                if (
-                  store.selectedThreadId === thread.id &&
-                  (!store.activeThread || store.activeThread.id !== thread.id)
-                ) {
-                  store.selectThread(thread.id);
+          {recentThreads.map((thread) => {
+            const bk = threadToBranchKey[thread.id];
+            return (
+              <ThreadItem
+                key={thread.id}
+                thread={thread}
+                projectPath={thread.projectPath}
+                isSelected={selectedThreadId === thread.id}
+                subtitle={thread.projectName}
+                projectColor={thread.projectColor}
+                timeValue={timeAgo(thread.completedAt ?? thread.createdAt, t)}
+                gitStatus={bk ? statusByBranch[bk] : undefined}
+                onSelect={() => {
+                  const store = useThreadStore.getState();
+                  if (
+                    store.selectedThreadId === thread.id &&
+                    (!store.activeThread || store.activeThread.id !== thread.id)
+                  ) {
+                    store.selectThread(thread.id);
+                  }
+                  navigate(`/projects/${thread.projectId}/threads/${thread.id}`);
+                }}
+                onArchive={() =>
+                  onArchiveThread(
+                    thread.id,
+                    thread.projectId,
+                    thread.title,
+                    thread.mode === 'worktree' && !!thread.branch && thread.provider !== 'external',
+                  )
                 }
-                navigate(`/projects/${thread.projectId}/threads/${thread.id}`);
-              }}
-              onArchive={() =>
-                onArchiveThread(
-                  thread.id,
-                  thread.projectId,
-                  thread.title,
-                  thread.mode === 'worktree' && !!thread.branch && thread.provider !== 'external',
-                )
-              }
-              onDelete={() =>
-                onDeleteThread(
-                  thread.id,
-                  thread.projectId,
-                  thread.title,
-                  thread.mode === 'worktree' && !!thread.branch && thread.provider !== 'external',
-                )
-              }
-            />
-          ))}
+                onDelete={() =>
+                  onDeleteThread(
+                    thread.id,
+                    thread.projectId,
+                    thread.title,
+                    thread.mode === 'worktree' && !!thread.branch && thread.provider !== 'external',
+                  )
+                }
+              />
+            );
+          })}
           {totalCount > 5 && (
             <ViewAllButton
               onClick={() => navigate('/list?status=completed,failed,stopped,interrupted')}

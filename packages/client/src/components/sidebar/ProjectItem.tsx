@@ -7,7 +7,6 @@ import {
   Folder,
   FolderOpen,
   FolderOpenDot,
-  Search,
   Trash2,
   MoreVertical,
   Terminal,
@@ -85,11 +84,15 @@ export const ProjectItem = memo(function ProjectItem({
   const visibleThreadIds = useMemo(() => threads.map((t) => t.id), [threads]);
   const gitStatusFingerprint = useGitStatusStore(
     useCallback(
-      (s: { statusByThread: Record<string, import('@funny/shared').GitStatusInfo> }) => {
+      (s: {
+        statusByBranch: Record<string, import('@funny/shared').GitStatusInfo>;
+        threadToBranchKey: Record<string, string>;
+      }) => {
         // Build a stable fingerprint from only the relevant threads
         let fp = '';
         for (const id of visibleThreadIds) {
-          const st = s.statusByThread[id];
+          const bk = s.threadToBranchKey[id];
+          const st = bk ? s.statusByBranch[bk] : undefined;
           if (st)
             fp += `${id}:${st.state}:${st.dirtyFileCount}:${st.unpushedCommitCount}:${st.linesAdded}:${st.linesDeleted},`;
         }
@@ -99,11 +102,12 @@ export const ProjectItem = memo(function ProjectItem({
     ),
   );
   // Derive the actual status objects only when the fingerprint changes
-  const statusByThread = useGitStatusStore.getState().statusByThread;
+  const { statusByBranch, threadToBranchKey } = useGitStatusStore.getState();
   const gitStatusForThreads = useMemo(() => {
     const result: Record<string, import('@funny/shared').GitStatusInfo> = {};
     for (const id of visibleThreadIds) {
-      if (statusByThread[id]) result[id] = statusByThread[id];
+      const bk = threadToBranchKey[id];
+      if (bk && statusByBranch[bk]) result[id] = statusByBranch[bk];
     }
     return result;
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -167,24 +171,26 @@ export const ProjectItem = memo(function ProjectItem({
     <Collapsible open={isExpanded} className="min-w-0" data-project-id={project.id}>
       <div
         ref={dragRef}
+        data-testid={`project-item-${project.id}`}
         className={cn(
           'group/project flex items-center rounded-md select-none',
-          !isSelected && 'hover:bg-accent/50',
+          isSelected
+            ? 'bg-accent text-foreground'
+            : 'hover:bg-accent/50 text-muted-foreground hover:text-foreground',
           isDragging && 'opacity-50',
           isDropTarget && 'ring-2 ring-ring',
         )}
+        onClick={() => onSelectProject(project.id)}
       >
         <div
-          data-testid={`project-item-${project.id}`}
           className={cn(
             'flex-1 flex items-center gap-0 px-2 py-1 text-xs text-left min-w-0',
-            isSelected ? 'text-foreground' : 'text-muted-foreground hover:text-foreground',
             isDragging ? 'cursor-grabbing' : 'cursor-pointer',
           )}
         >
           <CollapsibleTrigger
             data-testid={`project-toggle-${project.id}`}
-            className="-ml-0.5 flex-shrink-0 rounded p-0.5 hover:bg-accent/50"
+            className="-ml-0.5 flex-shrink-0 rounded p-0.5 hover:bg-accent/80"
             onClick={(e) => {
               e.stopPropagation();
               onToggle(project.id);
@@ -196,17 +202,12 @@ export const ProjectItem = memo(function ProjectItem({
               <Folder className="h-3.5 w-3.5" />
             )}
           </CollapsibleTrigger>
-          <button
-            type="button"
+          <span
             data-testid={`project-name-${project.id}`}
-            className="ml-1.5 flex min-w-0 items-center gap-1.5"
-            onClick={(e) => {
-              e.stopPropagation();
-              onSelectProject(project.id);
-            }}
+            className="ml-1.5 flex min-w-0 flex-1 items-center gap-1.5"
           >
             <span className="truncate text-sm font-medium">{project.name}</span>
-          </button>
+          </span>
         </div>
         <div className="mr-2 flex items-center gap-0.5">
           <div
@@ -217,23 +218,6 @@ export const ProjectItem = memo(function ProjectItem({
                 : 'opacity-0 pointer-events-none group-hover/project:opacity-100 group-hover/project:pointer-events-auto',
             )}
           >
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <Button
-                  variant="ghost"
-                  size="icon-xs"
-                  data-testid={`project-search-threads-${project.id}`}
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    onShowAllThreads(project.id);
-                  }}
-                  className="text-muted-foreground hover:text-foreground"
-                >
-                  <Search className="h-3.5 w-3.5" />
-                </Button>
-              </TooltipTrigger>
-              <TooltipContent side="bottom">{t('sidebar.searchThreads')}</TooltipContent>
-            </Tooltip>
             <DropdownMenu onOpenChange={setOpenDropdown}>
               <DropdownMenuTrigger asChild>
                 <Button
