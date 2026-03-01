@@ -40,7 +40,8 @@ pub async fn get_diff_summary(
 
   let status_platform = repo
     .status(gix::progress::Discard)
-    .map_err(|e| napi::Error::from_reason(format!("Failed to create status: {e}")))?;
+    .map_err(|e| napi::Error::from_reason(format!("Failed to create status: {e}")))?
+    .untracked_files(gix::status::UntrackedFiles::Files);
 
   // into_index_worktree_iter takes pathspec patterns (empty = all files)
   let empty_patterns: Vec<BString> = Vec::new();
