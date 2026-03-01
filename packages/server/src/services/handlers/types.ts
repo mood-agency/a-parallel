@@ -32,6 +32,10 @@ export interface HandlerServiceContext {
     cwd: string,
     model?: string,
     permissionMode?: string,
+    images?: any[],
+    disallowedTools?: string[],
+    allowedTools?: string[],
+    provider?: string,
   ): Promise<void>;
 
   // Git
@@ -41,6 +45,11 @@ export interface HandlerServiceContext {
 
   // Thread events
   saveThreadEvent(threadId: string, type: string, data: Record<string, unknown>): Promise<void>;
+
+  // Message queue
+  dequeueMessage(threadId: string): Record<string, any> | undefined;
+  queueCount(threadId: string): number;
+  peekMessage(threadId: string): Record<string, any> | undefined;
 
   // Logging
   log(message: string): void;

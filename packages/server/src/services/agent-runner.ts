@@ -13,7 +13,6 @@ import type { ThreadEvent } from '@funny/shared/thread-machine';
 import { log } from '../lib/logger.js';
 import { AgentMessageHandler, type ProjectLookup } from './agent-message-handler.js';
 import { AgentStateTracker } from './agent-state.js';
-import * as mq from './message-queue.js';
 import * as pm from './project-manager.js';
 import type { IThreadManager, IWSBroker } from './server-interfaces.js';
 import { buildThreadContext, needsContextRecovery } from './thread-context-builder.js';
@@ -85,30 +84,11 @@ export class AgentRunner {
       this.threadManager.updateThread(threadId, { status, completedAt: new Date().toISOString() });
       this.emitWS(threadId, 'agent:status', { status });
       this.emitAgentCompleted(threadId, 'stopped');
-      // Process queue after manual stop
-      this.processQueue(threadId).catch((err) => {
-        log.error('Queue drain failed after stop', {
-          namespace: 'queue',
-          threadId,
-          error: String(err),
-        });
-      });
     });
 
     this.orchestrator.on('agent:session-cleared', (threadId: string) => {
       log.warn('Clearing stale sessionId after resume failure', { namespace: 'agent', threadId });
       this.threadManager.updateThread(threadId, { sessionId: null });
-    });
-
-    // Drain queue when agent completes (completed or failed)
-    threadEventBus.on('agent:completed', (event) => {
-      this.processQueue(event.threadId).catch((err) => {
-        log.error('Queue drain failed after completion', {
-          namespace: 'queue',
-          threadId: event.threadId,
-          error: String(err),
-        });
-      });
     });
 
     // Adopt surviving agent processes from a previous --watch restart.
@@ -204,7 +184,12 @@ export class AgentRunner {
     this.threadManager.updateThread(threadId, { status: newStatus, provider });
 
     // Auto-transition stage to 'in_progress' from 'backlog', 'planning', or 'review'
-    if (currentThread && (currentThread.stage === 'review' || currentThread.stage === 'backlog' || currentThread.stage === 'planning')) {
+    if (
+      currentThread &&
+      (currentThread.stage === 'review' ||
+        currentThread.stage === 'backlog' ||
+        currentThread.stage === 'planning')
+    ) {
       const fromStage = currentThread.stage;
       this.threadManager.updateThread(threadId, { stage: 'in_progress' });
       threadEventBus.emit('thread:stage-changed', {
@@ -310,54 +295,6 @@ export class AgentRunner {
       });
       this.emitWS(threadId, 'agent:status', { status: 'failed' });
       throw err;
-    }
-  }
-
-  /**
-   * Process the next queued message for a thread (if the project uses queue mode).
-   * Called after agent completion, failure, or stop.
-   */
-  private async processQueue(threadId: string): Promise<void> {
-    const thread = this.threadManager.getThread(threadId);
-    if (!thread) return;
-
-    const project = pm.getProject(thread.projectId);
-    if (!project || (project.followUpMode ?? 'interrupt') !== 'queue') return;
-
-    const next = mq.dequeue(threadId);
-    if (!next) return;
-
-    log.info('Auto-sending queued message', { namespace: 'queue', threadId, messageId: next.id });
-
-    const effectiveCwd = thread.worktreePath ?? project.path;
-
-    try {
-      await this.startAgent(
-        threadId,
-        next.content,
-        effectiveCwd,
-        (next.model || thread.model || 'sonnet') as AgentModel,
-        (next.permissionMode || thread.permissionMode || 'autoEdit') as PermissionMode,
-        next.images ? JSON.parse(next.images) : undefined,
-        next.disallowedTools ? JSON.parse(next.disallowedTools) : undefined,
-        next.allowedTools ? JSON.parse(next.allowedTools) : undefined,
-        (next.provider || thread.provider || 'claude') as AgentProvider,
-      );
-
-      // Emit updated queue count
-      const remaining = mq.queueCount(threadId);
-      const peekNext = mq.peek(threadId);
-      this.emitWS(threadId, 'thread:queue_update' as WSEvent['type'], {
-        threadId,
-        queuedCount: remaining,
-        nextMessage: peekNext?.content?.slice(0, 100),
-      });
-    } catch (err: any) {
-      log.error('Failed to auto-send queued message', {
-        namespace: 'queue',
-        threadId,
-        error: err.message,
-      });
     }
   }
 

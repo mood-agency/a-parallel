@@ -1,32 +1,24 @@
-import { createWorktree, removeWorktree, removeBranch, getCurrentBranch } from '@funny/core/git';
-import { setupWorktree, type SetupProgressFn } from '@funny/core/ports';
-import type { WSEvent } from '@funny/shared';
 import { Hono } from 'hono';
-import { nanoid } from 'nanoid';
 
 import { log } from '../lib/logger.js';
-import {
-  startAgent,
-  stopAgent,
-  isAgentRunning,
-  cleanupThreadState,
-} from '../services/agent-runner.js';
-import { stopCommandsByCwd } from '../services/command-runner.js';
-import { cleanupExternalThread } from '../services/ingest-mapper.js';
 import * as mq from '../services/message-queue.js';
-import * as pm from '../services/project-manager.js';
-import { threadEventBus } from '../services/thread-event-bus.js';
 import { getThreadEvents } from '../services/thread-event-service.js';
 import * as tm from '../services/thread-manager.js';
-import { wsBroker } from '../services/ws-broker.js';
-import type { HonoEnv } from '../types/hono-env.js';
-import { augmentPromptWithFiles } from '../utils/file-mentions.js';
-import { resultToResponse } from '../utils/result-response.js';
 import {
-  requireThread,
-  requireThreadWithMessages,
-  requireProject,
-} from '../utils/route-helpers.js';
+  createIdleThread,
+  createAndStartThread,
+  sendMessage,
+  stopThread,
+  approveToolCall,
+  updateThread as updateThreadService,
+  deleteThread as deleteThreadService,
+  cancelQueuedMessage,
+  deleteComment as deleteCommentService,
+  ThreadServiceError,
+} from '../services/thread-service.js';
+import type { HonoEnv } from '../types/hono-env.js';
+import { resultToResponse } from '../utils/result-response.js';
+import { requireThread, requireThreadWithMessages } from '../utils/route-helpers.js';
 import {
   createThreadSchema,
   createIdleThreadSchema,
@@ -38,19 +30,39 @@ import {
 
 export const threadRoutes = new Hono<HonoEnv>();
 
-/** Create a URL-safe slug from a title for branch naming */
-function slugifyTitle(title: string, maxLength = 40): string {
-  return (
-    title
-      .toLowerCase()
-      .replace(/[^a-z0-9\s-]/g, '')
-      .trim()
-      .replace(/\s+/g, '-')
-      .replace(/-+/g, '-')
-      .slice(0, maxLength)
-      .replace(/-$/, '') || 'thread'
+/** Format a ThreadServiceError into an HTTP response */
+function handleServiceError(c: any, error: unknown) {
+  if (error instanceof ThreadServiceError) {
+    return c.json({ error: error.message }, error.statusCode);
+  }
+
+  const err = error as any;
+  const isBinaryError =
+    err.message?.includes('Could not find the claude CLI binary') ||
+    err.message?.includes('CLAUDE_BINARY_PATH');
+
+  if (isBinaryError) {
+    return c.json(
+      {
+        error: 'Claude CLI not installed',
+        message:
+          'The Claude Code CLI is not installed or not found in PATH. Please install it from https://docs.anthropic.com/en/docs/agents/overview',
+        details: err.message,
+      },
+      503,
+    );
+  }
+
+  return c.json(
+    {
+      error: 'Internal server error',
+      message: err.message || 'Unknown error occurred',
+    },
+    500,
   );
 }
+
+// ── GET routes (query-only, already thin) ────────────────────────
 
 // GET /api/threads?projectId=xxx&includeArchived=true
 threadRoutes.get('/', (c) => {
@@ -89,10 +101,6 @@ threadRoutes.get('/search/content', (c) => {
 // GET /api/threads/:id?messageLimit=50
 threadRoutes.get('/:id', (c) => {
   const userId = c.get('userId') as string;
-  const messageLimitParam = c.req.query('messageLimit');
-  const _messageLimit = messageLimitParam
-    ? Math.min(200, Math.max(1, parseInt(messageLimitParam, 10)))
-    : undefined;
   const threadResult = requireThreadWithMessages(c.req.param('id'), userId);
   if (threadResult.isErr()) return resultToResponse(c, threadResult);
   return c.json(threadResult.value);
@@ -113,7 +121,7 @@ threadRoutes.get('/:id/messages', (c) => {
   return c.json(result);
 });
 
-// GET /api/threads/:id/events — get all events for a thread
+// GET /api/threads/:id/events
 threadRoutes.get('/:id/events', async (c) => {
   const id = c.req.param('id');
   const userId = c.get('userId') as string;
@@ -124,134 +132,22 @@ threadRoutes.get('/:id/events', async (c) => {
   return c.json({ events });
 });
 
+// ── POST routes (delegated to ThreadService) ────────────────────
+
 // POST /api/threads/idle
 threadRoutes.post('/idle', async (c) => {
   const raw = await c.req.json();
   const parsed = validate(createIdleThreadSchema, raw);
   if (parsed.isErr()) return resultToResponse(c, parsed);
-  const { projectId, title, mode, source, baseBranch, prompt, images, stage } = parsed.value;
-
-  const projectResult = requireProject(projectId);
-  if (projectResult.isErr()) return resultToResponse(c, projectResult);
-  const project = projectResult.value;
 
   const userId = c.get('userId') as string;
-  const threadId = nanoid();
-  let threadBranch: string | undefined;
 
-  const emitSetupProgress: SetupProgressFn = (step, label, status, error) => {
-    wsBroker.emitToUser(userId, {
-      type: 'worktree:setup',
-      threadId,
-      data: { step, label, status, error },
-    });
-  };
-
-  // Create worktree if needed
-  const resolvedBaseBranch = baseBranch?.trim() || undefined;
-
-  if (mode === 'worktree') {
-    // Defer worktree setup: idle threads stay idle until moved to in_progress
-    const slug = slugifyTitle(title);
-    const projectSlug = slugifyTitle(project.name);
-    const branchName = `${projectSlug}/${slug}-${threadId.slice(0, 6)}`;
-
-    const thread = {
-      id: threadId,
-      projectId,
-      userId,
-      title,
-      mode,
-      provider: 'claude' as const,
-      permissionMode: 'autoEdit' as const,
-      model: 'sonnet' as const,
-      source: source || 'web',
-      status: 'idle' as const,
-      stage: (stage || 'backlog') as 'backlog' | 'planning',
-      branch: branchName,
-      baseBranch: resolvedBaseBranch,
-      worktreePath: undefined as string | undefined,
-      initialPrompt: prompt,
-      cost: 0,
-      createdAt: new Date().toISOString(),
-      createdBy: userId,
-    };
-
-    tm.createThread(thread);
-
-    if (prompt) {
-      tm.insertMessage({
-        threadId,
-        role: 'user',
-        content: prompt,
-        images: images?.length ? JSON.stringify(images) : null,
-      });
-    }
-
-    threadEventBus.emit('thread:created', {
-      threadId,
-      projectId,
-      userId,
-      cwd: project.path,
-      worktreePath: null,
-      stage: thread.stage,
-      status: 'idle',
-      initialPrompt: prompt,
-    });
-
+  try {
+    const thread = await createIdleThread({ ...parsed.value, userId });
     return c.json(thread, 201);
+  } catch (error) {
+    return handleServiceError(c, error);
   }
-
-  // Local mode: detect the current branch of the project
-  const branchResult = await getCurrentBranch(project.path);
-  if (branchResult.isOk()) {
-    threadBranch = branchResult.value;
-  }
-
-  const thread = {
-    id: threadId,
-    projectId,
-    userId,
-    title,
-    mode,
-    provider: 'claude' as const,
-    permissionMode: 'autoEdit' as const,
-    model: 'sonnet' as const,
-    source: source || 'web',
-    status: 'idle' as const,
-    stage: (stage || 'backlog') as 'backlog' | 'planning',
-    branch: threadBranch,
-    baseBranch: resolvedBaseBranch || (mode === 'local' ? threadBranch : undefined),
-    worktreePath: undefined,
-    initialPrompt: prompt,
-    cost: 0,
-    createdAt: new Date().toISOString(),
-    createdBy: userId,
-  };
-
-  tm.createThread(thread);
-
-  if (prompt) {
-    tm.insertMessage({
-      threadId,
-      role: 'user',
-      content: prompt,
-      images: images?.length ? JSON.stringify(images) : null,
-    });
-  }
-
-  threadEventBus.emit('thread:created', {
-    threadId,
-    projectId,
-    userId,
-    cwd: project.path,
-    worktreePath: null,
-    stage: 'backlog',
-    status: 'idle',
-    initialPrompt: prompt,
-  });
-
-  return c.json(thread, 201);
 });
 
 // POST /api/threads
@@ -259,287 +155,15 @@ threadRoutes.post('/', async (c) => {
   const raw = await c.req.json();
   const parsed = validate(createThreadSchema, raw);
   if (parsed.isErr()) return resultToResponse(c, parsed);
-  const {
-    projectId,
-    title,
-    mode,
-    provider,
-    model,
-    permissionMode,
-    source,
-    baseBranch,
-    prompt,
-    images,
-    allowedTools,
-    disallowedTools,
-    fileReferences,
-    worktreePath: requestWorktreePath,
-    parentThreadId,
-  } = parsed.value;
-
-  const projectResult = requireProject(projectId);
-  if (projectResult.isErr()) return resultToResponse(c, projectResult);
-  const project = projectResult.value;
 
   const userId = c.get('userId') as string;
-  const threadId = nanoid();
-  let worktreePath: string | undefined;
-  let threadBranch: string | undefined;
 
-  const emitSetupProgress: SetupProgressFn = (step, label, status, error) => {
-    wsBroker.emitToUser(userId, {
-      type: 'worktree:setup',
-      threadId,
-      data: { step, label, status, error },
-    });
-  };
-
-  // Create worktree if needed
-  const resolvedBaseBranch = baseBranch?.trim() || undefined;
-
-  // Resolve defaults: explicit value > project default > hardcoded fallback
-  const resolvedProvider = provider || project.defaultProvider || 'claude';
-  const resolvedModel = model || project.defaultModel || 'sonnet';
-  const resolvedPermissionMode = permissionMode || project.defaultPermissionMode || 'autoEdit';
-
-  if (mode === 'worktree' && !requestWorktreePath) {
-    // Non-blocking worktree creation: create thread immediately, setup in background
-    const slug = slugifyTitle(title || prompt);
-    const projectSlug = slugifyTitle(project.name);
-    const branchName = `${projectSlug}/${slug}-${threadId.slice(0, 6)}`;
-
-    const thread = {
-      id: threadId,
-      projectId,
-      userId,
-      title: title || prompt,
-      mode,
-      provider: resolvedProvider,
-      permissionMode: resolvedPermissionMode,
-      model: resolvedModel,
-      source: source || 'web',
-      status: 'setting_up' as const,
-      branch: branchName,
-      baseBranch: resolvedBaseBranch,
-      worktreePath: undefined as string | undefined,
-      parentThreadId,
-      cost: 0,
-      createdAt: new Date().toISOString(),
-      createdBy: userId,
-    };
-
-    tm.createThread(thread);
-
-    // Insert user message immediately so it's available when the client fetches
-    // the thread (worktree setup runs in background and startAgent comes later)
-    if (prompt) {
-      tm.insertMessage({
-        threadId,
-        role: 'user',
-        content: prompt,
-        images: images?.length ? JSON.stringify(images) : null,
-      });
-    }
-
-    threadEventBus.emit('thread:created', {
-      threadId,
-      projectId,
-      userId,
-      cwd: project.path,
-      worktreePath: null,
-      stage: 'in_progress' as const,
-      status: 'setting_up',
-    });
-
-    // Return immediately — worktree creation runs in background
-    const responseThread = { ...thread };
-
-    // Background setup: create worktree, run post-create commands, start agent
-    (async () => {
-      try {
-        emitSetupProgress('worktree', 'Creating worktree', 'running');
-        const wtResult = await createWorktree(project.path, branchName, resolvedBaseBranch);
-        if (wtResult.isErr()) {
-          emitSetupProgress('worktree', 'Creating worktree', 'failed', wtResult.error.message);
-          tm.updateThread(threadId, { status: 'failed' });
-          wsBroker.emitToUser(userId, {
-            type: 'thread:updated',
-            threadId,
-            data: { status: 'failed' },
-          } as WSEvent);
-          return;
-        }
-        const wtPath = wtResult.value;
-        emitSetupProgress('worktree', 'Creating worktree', 'completed');
-
-        try {
-          const setup = await setupWorktree(project.path, wtPath, emitSetupProgress);
-          if (setup.postCreateErrors.length) {
-            log.warn('Worktree postCreate errors', { threadId, errors: setup.postCreateErrors });
-          }
-        } catch (err) {
-          log.warn('Failed to setup worktree', { threadId, error: String(err) });
-        }
-
-        // Update thread with worktree info and transition to pending
-        tm.updateThread(threadId, { worktreePath: wtPath, status: 'pending' });
-        wsBroker.emitToUser(userId, {
-          type: 'worktree:setup_complete',
-          threadId,
-          data: { branch: branchName, worktreePath: wtPath },
-        } as WSEvent);
-        wsBroker.emitToUser(userId, {
-          type: 'thread:updated',
-          threadId,
-          data: { status: 'pending', branch: branchName, worktreePath: wtPath },
-        } as WSEvent);
-
-        // Now start the agent
-        const cwd = wtPath;
-        const augmentedPrompt = await augmentPromptWithFiles(prompt, fileReferences, cwd);
-        try {
-          await startAgent(
-            threadId,
-            augmentedPrompt,
-            cwd,
-            resolvedModel,
-            resolvedPermissionMode,
-            images,
-            disallowedTools,
-            allowedTools,
-            resolvedProvider,
-            undefined, // mcpServers
-            true, // skipMessageInsert — already inserted at thread creation
-          );
-        } catch (err: any) {
-          log.error('Failed to start agent after worktree setup', { threadId, error: err });
-          tm.updateThread(threadId, { status: 'failed' });
-          wsBroker.emitToUser(userId, {
-            type: 'thread:updated',
-            threadId,
-            data: { status: 'failed' },
-          } as WSEvent);
-        }
-      } catch (err) {
-        log.error('Background worktree setup failed', { threadId, error: String(err) });
-        tm.updateThread(threadId, { status: 'failed' });
-        wsBroker.emitToUser(userId, {
-          type: 'thread:updated',
-          threadId,
-          data: { status: 'failed' },
-        } as WSEvent);
-      }
-    })();
-
-    return c.json(responseThread, 201);
-  }
-
-  // Non-worktree paths (local mode, or reusing an existing worktree)
-  if (requestWorktreePath) {
-    worktreePath = requestWorktreePath;
-    const branchResult = await getCurrentBranch(requestWorktreePath);
-    if (branchResult.isOk()) {
-      threadBranch = branchResult.value;
-    }
-  } else {
-    // Local mode: detect the current branch of the project
-    const branchResult = await getCurrentBranch(project.path);
-    if (branchResult.isOk()) {
-      threadBranch = branchResult.value;
-
-      // If a specific branch was requested in local mode, validate it matches the current branch
-      if (resolvedBaseBranch && resolvedBaseBranch !== threadBranch) {
-        return c.json(
-          {
-            error: `Cannot create local thread on branch "${resolvedBaseBranch}". Current branch is "${threadBranch}". Enable "Create worktree" to work on a different branch.`,
-          },
-          400,
-        );
-      }
-    }
-  }
-
-  const thread = {
-    id: threadId,
-    projectId,
-    userId,
-    title: title || prompt,
-    mode,
-    provider: resolvedProvider,
-    permissionMode: resolvedPermissionMode,
-    model: resolvedModel,
-    source: source || 'web',
-    status: 'pending' as const,
-    branch: threadBranch,
-    baseBranch: resolvedBaseBranch || (mode === 'local' ? threadBranch : undefined),
-    worktreePath,
-    parentThreadId,
-    cost: 0,
-    createdAt: new Date().toISOString(),
-    createdBy: userId,
-  };
-
-  tm.createThread(thread);
-
-  const cwd = worktreePath ?? project.path;
-
-  threadEventBus.emit('thread:created', {
-    threadId,
-    projectId,
-    userId,
-    cwd,
-    worktreePath: worktreePath ?? null,
-    stage: 'in_progress' as const,
-    status: 'pending',
-  });
-
-  const pMode = resolvedPermissionMode;
-
-  // Augment prompt with file contents if file references were provided
-  const augmentedPrompt = await augmentPromptWithFiles(prompt, fileReferences, cwd);
-
-  // Start agent and handle errors (especially Claude CLI not installed)
   try {
-    await startAgent(
-      threadId,
-      augmentedPrompt,
-      cwd,
-      resolvedModel,
-      pMode,
-      images,
-      disallowedTools,
-      allowedTools,
-      resolvedProvider,
-    );
-  } catch (err: any) {
-    log.error('Failed to start agent', { namespace: 'agent', threadId, error: err });
-
-    const isBinaryError =
-      err.message?.includes('Could not find the claude CLI binary') ||
-      err.message?.includes('CLAUDE_BINARY_PATH');
-
-    if (isBinaryError) {
-      return c.json(
-        {
-          error: 'Claude CLI not installed',
-          message:
-            'The Claude Code CLI is not installed or not found in PATH. Please install it from https://docs.anthropic.com/en/docs/agents/overview',
-          details: err.message,
-        },
-        503,
-      );
-    }
-
-    return c.json(
-      {
-        error: 'Failed to start agent',
-        message: err.message || 'Unknown error occurred while starting the agent',
-      },
-      500,
-    );
+    const thread = await createAndStartThread({ ...parsed.value, userId });
+    return c.json(thread, 201);
+  } catch (error) {
+    return handleServiceError(c, error);
   }
-
-  return c.json(thread, 201);
 });
 
 // POST /api/threads/:id/message
@@ -548,184 +172,18 @@ threadRoutes.post('/:id/message', async (c) => {
   const raw = await c.req.json();
   const parsed = validate(sendMessageSchema, raw);
   if (parsed.isErr()) return resultToResponse(c, parsed);
-  const {
-    content,
-    provider,
-    model,
-    permissionMode,
-    images,
-    allowedTools,
-    disallowedTools,
-    fileReferences,
-    baseBranch,
-  } = parsed.value;
 
   const userId = c.get('userId') as string;
   const threadResult = requireThread(id, userId);
   if (threadResult.isErr()) return resultToResponse(c, threadResult);
-  const thread = threadResult.value;
 
-  const cwd = thread.worktreePath ?? pm.getProject(thread.projectId)?.path;
-  if (!cwd) return c.json({ error: 'Project path not found' }, 404);
-
-  const effectiveProvider = (provider ||
-    thread.provider ||
-    'claude') as import('@funny/shared').AgentProvider;
-  const effectiveModel = (model || thread.model || 'sonnet') as import('@funny/shared').AgentModel;
-  const effectivePermission = (permissionMode ||
-    thread.permissionMode ||
-    'autoEdit') as import('@funny/shared').PermissionMode;
-
-  // Update thread's permission mode, model, and baseBranch if they changed
-  const updates: Record<string, any> = {};
-  if (permissionMode && permissionMode !== thread.permissionMode) {
-    updates.permissionMode = permissionMode;
-  }
-  if (model && model !== thread.model) {
-    updates.model = model;
-  }
-  if (baseBranch && baseBranch !== thread.baseBranch) {
-    updates.baseBranch = baseBranch;
-  }
-  if (Object.keys(updates).length > 0) {
-    tm.updateThread(id, updates);
-  }
-
-  // Auto-move idle backlog threads to in_progress when a message is sent
-  let hasDraftMessage = false;
-  if (thread.status === 'idle' && thread.stage === 'backlog') {
-    const stageUpdates: Record<string, any> = { stage: 'in_progress' };
-    // Update title if the prompt changed from the original initialPrompt
-    if (thread.initialPrompt && content !== thread.initialPrompt) {
-      stageUpdates.title = content.slice(0, 200);
-      stageUpdates.initialPrompt = content;
-    }
-    tm.updateThread(id, stageUpdates);
-
-    // Update existing draft message (created when idle thread was added to backlog)
-    const { messages: draftMessages } = tm.getThreadMessages({ threadId: id, limit: 1 });
-    const draftMsg = draftMessages[0];
-    if (draftMsg && draftMsg.role === 'user') {
-      tm.updateMessage(draftMsg.id, {
-        content,
-        images: images?.length ? JSON.stringify(images) : null,
-      });
-      hasDraftMessage = true;
-    }
-  }
-
-  // If the thread was waiting for user input (question/plan), persist the answer
-  // in the tool call's output so it survives refresh even if the agent's tool_result
-  // never arrives (e.g. on resume, the processedToolUseIds map is cleared).
-  if (thread.status === 'waiting') {
-    const pendingTC = tm.findLastUnansweredInteractiveToolCall(id);
-    if (pendingTC) {
-      tm.updateToolCallOutput(pendingTC.id, content);
-    }
-  }
-
-  // Augment prompt with file contents if file references were provided
-  const augmentedContent = await augmentPromptWithFiles(content, fileReferences, cwd);
-
-  // Check if the agent is running and the project uses queue mode
-  const agentRunning = isAgentRunning(id);
-  const project = pm.getProject(thread.projectId);
-  const followUpMode = project?.followUpMode || 'interrupt';
-
-  if (agentRunning && followUpMode === 'queue') {
-    // Queue the message instead of interrupting
-    const queued = mq.enqueue(id, {
-      content: augmentedContent,
-      provider: effectiveProvider,
-      model: effectiveModel,
-      permissionMode: effectivePermission,
-      images: images ? JSON.stringify(images) : undefined,
-      allowedTools: allowedTools ? JSON.stringify(allowedTools) : undefined,
-      disallowedTools: disallowedTools ? JSON.stringify(disallowedTools) : undefined,
-      fileReferences: fileReferences ? JSON.stringify(fileReferences) : undefined,
-    });
-
-    // Save user message in DB immediately so it shows in the chat
-    tm.insertMessage({
-      threadId: id,
-      role: 'user',
-      content,
-      images: images ? JSON.stringify(images) : null,
-      model: effectiveModel,
-      permissionMode: effectivePermission,
-    });
-
-    // Emit queue update via WebSocket
-    const qCount = mq.queueCount(id);
-    const nextMsg = mq.peek(id);
-    const queueEvent = {
-      type: 'thread:queue_update' as const,
-      threadId: id,
-      data: { threadId: id, queuedCount: qCount, nextMessage: nextMsg?.content?.slice(0, 100) },
-    } as WSEvent;
-    if (thread.userId) {
-      wsBroker.emitToUser(thread.userId, queueEvent);
-    } else {
-      wsBroker.emit(queueEvent);
-    }
-
-    return c.json({ ok: true, queued: true, queuedCount: qCount, queuedMessageId: queued.id });
-  }
-
-  // When sending to an idle thread that had a draft, update draft with augmented content
-  if (hasDraftMessage) {
-    const { messages: draftMsgs } = tm.getThreadMessages({ threadId: id, limit: 1 });
-    if (draftMsgs[0]) {
-      tm.updateMessage(draftMsgs[0].id, { content: augmentedContent });
-    }
-  }
-
-  // Default interrupt behavior — start agent (kills existing if running)
   try {
-    await startAgent(
-      id,
-      augmentedContent,
-      cwd,
-      effectiveModel,
-      effectivePermission,
-      images,
-      disallowedTools,
-      allowedTools,
-      effectiveProvider,
-      undefined, // systemPrompt
-      hasDraftMessage, // skipMessageInsert — draft already exists
-    );
-  } catch (err: any) {
-    log.error('Failed to start agent', { namespace: 'agent', threadId: id, error: err });
-
-    // Check if it's a binary-not-found error
-    const isBinaryError =
-      err.message?.includes('Could not find the claude CLI binary') ||
-      err.message?.includes('CLAUDE_BINARY_PATH');
-
-    if (isBinaryError) {
-      return c.json(
-        {
-          error: 'Claude CLI not installed',
-          message:
-            'The Claude Code CLI is not installed or not found in PATH. Please install it from https://docs.anthropic.com/en/docs/agents/overview',
-          details: err.message,
-        },
-        503,
-      );
-    }
-
-    // Other errors
-    return c.json(
-      {
-        error: 'Failed to start agent',
-        message: err.message || 'Unknown error occurred while starting the agent',
-      },
-      500,
-    );
+    const result = await sendMessage({ ...parsed.value, threadId: id, userId });
+    return c.json(result);
+  } catch (error) {
+    log.error('Failed to send message', { namespace: 'agent', threadId: id, error });
+    return handleServiceError(c, error);
   }
-
-  return c.json({ ok: true });
 });
 
 // POST /api/threads/:id/stop
@@ -734,13 +192,13 @@ threadRoutes.post('/:id/stop', async (c) => {
   const userId = c.get('userId') as string;
   const threadResult = requireThread(id, userId);
   if (threadResult.isErr()) return resultToResponse(c, threadResult);
-  const thread = threadResult.value;
-  if (thread.provider === 'external') {
-    cleanupExternalThread(id);
+
+  try {
+    await stopThread(id);
     return c.json({ ok: true });
+  } catch (error) {
+    return handleServiceError(c, error);
   }
-  await stopAgent(id);
-  return c.json({ ok: true });
 });
 
 // POST /api/threads/:id/approve-tool
@@ -750,106 +208,22 @@ threadRoutes.post('/:id/approve-tool', async (c) => {
   const raw = await c.req.json();
   const parsed = validate(approveToolSchema, raw);
   if (parsed.isErr()) return resultToResponse(c, parsed);
-  const {
-    toolName,
-    approved,
-    allowedTools: clientAllowedTools,
-    disallowedTools: clientDisallowedTools,
-  } = parsed.value;
 
   const threadResult = requireThread(id, userId);
   if (threadResult.isErr()) return resultToResponse(c, threadResult);
-  const thread = threadResult.value;
-
-  const cwd = thread.worktreePath ?? pm.getProject(thread.projectId)?.path;
-  if (!cwd) return c.json({ error: 'Project path not found' }, 404);
-
-  // Use client-provided tools list, or fall back to defaults
-  const tools = clientAllowedTools
-    ? [...clientAllowedTools]
-    : [
-        'Read',
-        'Edit',
-        'Write',
-        'Bash',
-        'Glob',
-        'Grep',
-        'WebSearch',
-        'WebFetch',
-        'Task',
-        'TodoWrite',
-        'NotebookEdit',
-      ];
 
   try {
-    const threadProvider = (thread.provider || 'claude') as import('@funny/shared').AgentProvider;
-    if (approved) {
-      // Add the approved tool to allowedTools and remove from disallowedTools
-      if (!tools.includes(toolName)) {
-        tools.push(toolName);
-      }
-      const disallowed = clientDisallowedTools?.filter((t) => t !== toolName);
-      const message = `The user has approved the use of ${toolName}. Please proceed with using it.`;
-      await startAgent(
-        id,
-        message,
-        cwd,
-        (thread.model as import('@funny/shared').AgentModel) || 'sonnet',
-        (thread.permissionMode as import('@funny/shared').PermissionMode) || 'autoEdit',
-        undefined,
-        disallowed,
-        tools,
-        threadProvider,
-      );
-    } else {
-      // User denied permission
-      const message = `The user denied permission to use ${toolName}. Please continue without it.`;
-      await startAgent(
-        id,
-        message,
-        cwd,
-        (thread.model as import('@funny/shared').AgentModel) || 'sonnet',
-        (thread.permissionMode as import('@funny/shared').PermissionMode) || 'autoEdit',
-        undefined,
-        clientDisallowedTools,
-        clientAllowedTools,
-        threadProvider,
-      );
-    }
-  } catch (err: any) {
-    log.error('Failed to start agent', { namespace: 'agent', threadId: id, error: err });
-
-    // Check if it's a binary-not-found error
-    const isBinaryError =
-      err.message?.includes('Could not find the claude CLI binary') ||
-      err.message?.includes('CLAUDE_BINARY_PATH');
-
-    if (isBinaryError) {
-      return c.json(
-        {
-          error: 'Claude CLI not installed',
-          message:
-            'The Claude Code CLI is not installed or not found in PATH. Please install it from https://docs.anthropic.com/en/docs/agents/overview',
-          details: err.message,
-        },
-        503,
-      );
-    }
-
-    // Other errors
-    return c.json(
-      {
-        error: 'Failed to start agent',
-        message: err.message || 'Unknown error occurred while starting the agent',
-      },
-      500,
-    );
+    await approveToolCall({ ...parsed.value, threadId: id, userId });
+    return c.json({ ok: true });
+  } catch (error) {
+    log.error('Failed to approve tool', { namespace: 'agent', threadId: id, error });
+    return handleServiceError(c, error);
   }
-
-  return c.json({ ok: true });
 });
 
-// PATCH /api/threads/:id — update thread fields (e.g. archived)
+// ── PATCH / DELETE routes ───────────────────────────────────────
+
+// PATCH /api/threads/:id
 threadRoutes.patch('/:id', async (c) => {
   const id = c.req.param('id');
   const userId = c.get('userId') as string;
@@ -859,231 +233,13 @@ threadRoutes.patch('/:id', async (c) => {
 
   const threadResult = requireThread(id, userId);
   if (threadResult.isErr()) return resultToResponse(c, threadResult);
-  const thread = threadResult.value;
 
-  const updates: Record<string, any> = {};
-  if (parsed.value.archived !== undefined) {
-    updates.archived = parsed.value.archived ? 1 : 0;
+  try {
+    const updated = await updateThreadService({ ...parsed.value, threadId: id, userId });
+    return c.json(updated);
+  } catch (error) {
+    return handleServiceError(c, error);
   }
-  if (parsed.value.pinned !== undefined) {
-    updates.pinned = parsed.value.pinned ? 1 : 0;
-  }
-  if (parsed.value.stage !== undefined) {
-    updates.stage = parsed.value.stage;
-  }
-
-  const fromStage = thread.stage;
-
-  // Cleanup worktree + branch when archiving (skip for external threads and local threads reusing a worktree)
-  if (
-    parsed.value.archived &&
-    thread.worktreePath &&
-    thread.mode === 'worktree' &&
-    thread.provider !== 'external'
-  ) {
-    const project = pm.getProject(thread.projectId);
-    if (project) {
-      // Kill any running commands (startup commands, dev servers) in this worktree
-      await stopCommandsByCwd(thread.worktreePath).catch(() => {});
-
-      await removeWorktree(project.path, thread.worktreePath).catch((e) => {
-        log.warn('Failed to remove worktree', { namespace: 'cleanup', error: String(e) });
-      });
-      if (thread.branch) {
-        await removeBranch(project.path, thread.branch).catch((e) => {
-          log.warn('Failed to remove branch', { namespace: 'cleanup', error: String(e) });
-        });
-      }
-    }
-    updates.worktreePath = null;
-    updates.branch = null;
-    // Release in-memory agent state and clear queue for the archived thread
-    mq.clearQueue(id);
-    cleanupThreadState(id);
-  }
-
-  if (Object.keys(updates).length > 0) {
-    tm.updateThread(id, updates);
-  }
-
-  // Emit stage-changed events
-  const project = pm.getProject(thread.projectId);
-  const eventCtx = {
-    threadId: id,
-    projectId: thread.projectId,
-    userId: thread.userId,
-    worktreePath: thread.worktreePath ?? null,
-    cwd: thread.worktreePath ?? project?.path ?? '',
-  };
-  if (parsed.value.archived) {
-    threadEventBus.emit('thread:stage-changed', {
-      ...eventCtx,
-      fromStage: fromStage as any,
-      toStage: 'archived',
-    });
-  } else if (parsed.value.stage && parsed.value.stage !== fromStage) {
-    threadEventBus.emit('thread:stage-changed', {
-      ...eventCtx,
-      fromStage: fromStage as any,
-      toStage: parsed.value.stage as any,
-    });
-  }
-
-  // Auto-start agent when idle thread is moved to in_progress
-  if (parsed.value.stage === 'in_progress' && thread.status === 'idle' && thread.initialPrompt) {
-    if (project) {
-      const needsWorktreeSetup =
-        thread.mode === 'worktree' && !thread.worktreePath && thread.branch;
-
-      if (needsWorktreeSetup) {
-        // Deferred worktree setup: create worktree first, then start agent
-        tm.updateThread(id, { status: 'setting_up' });
-        const emitSetupProgress: SetupProgressFn = (step, label, status, error) => {
-          wsBroker.emitToUser(thread.userId, {
-            type: 'worktree:setup',
-            threadId: id,
-            data: { step, label, status, error },
-          });
-        };
-        wsBroker.emitToUser(thread.userId, {
-          type: 'thread:updated',
-          threadId: id,
-          data: { status: 'setting_up', stage: 'in_progress' },
-        } as WSEvent);
-
-        // Background: create worktree, run post-create, then start agent
-        (async () => {
-          try {
-            emitSetupProgress('worktree', 'Creating worktree', 'running');
-            const wtResult = await createWorktree(
-              project.path,
-              thread.branch!,
-              thread.baseBranch || undefined,
-            );
-            if (wtResult.isErr()) {
-              emitSetupProgress('worktree', 'Creating worktree', 'failed', wtResult.error.message);
-              tm.updateThread(id, { status: 'failed' });
-              wsBroker.emitToUser(thread.userId, {
-                type: 'thread:updated',
-                threadId: id,
-                data: { status: 'failed' },
-              } as WSEvent);
-              return;
-            }
-            const wtPath = wtResult.value;
-            emitSetupProgress('worktree', 'Creating worktree', 'completed');
-
-            try {
-              const setup = await setupWorktree(project.path, wtPath, emitSetupProgress);
-              if (setup.postCreateErrors.length) {
-                log.warn('Worktree postCreate errors', {
-                  threadId: id,
-                  errors: setup.postCreateErrors,
-                });
-              }
-            } catch (err) {
-              log.warn('Failed to setup worktree', { threadId: id, error: String(err) });
-            }
-
-            // Update thread with worktree info
-            tm.updateThread(id, { worktreePath: wtPath, status: 'pending' });
-            wsBroker.emitToUser(thread.userId, {
-              type: 'worktree:setup_complete',
-              threadId: id,
-              data: { branch: thread.branch, worktreePath: wtPath },
-            } as WSEvent);
-            wsBroker.emitToUser(thread.userId, {
-              type: 'thread:updated',
-              threadId: id,
-              data: { status: 'pending', branch: thread.branch, worktreePath: wtPath },
-            } as WSEvent);
-
-            // Now start the agent
-            const { messages: draftMessages } = tm.getThreadMessages({ threadId: id, limit: 1 });
-            const draftMsg = draftMessages[0];
-            const draftImages = draftMsg?.images
-              ? JSON.parse(draftMsg.images as string)
-              : undefined;
-            await startAgent(
-              id,
-              thread.initialPrompt!,
-              wtPath,
-              (thread.model ||
-                project.defaultModel ||
-                'sonnet') as import('@funny/shared').AgentModel,
-              (thread.permissionMode || 'autoEdit') as import('@funny/shared').PermissionMode,
-              draftImages,
-              undefined,
-              undefined,
-              (thread.provider ||
-                project.defaultProvider ||
-                'claude') as import('@funny/shared').AgentProvider,
-              undefined,
-              !!draftMsg,
-            );
-          } catch (err) {
-            log.error('Failed to setup worktree and start agent', {
-              namespace: 'agent',
-              threadId: id,
-              error: err,
-            });
-            tm.updateThread(id, { status: 'failed', completedAt: new Date().toISOString() });
-            const failEvent = {
-              type: 'agent:status' as const,
-              threadId: id,
-              data: { status: 'failed' },
-            };
-            if (thread.userId && thread.userId !== '__local__') {
-              wsBroker.emitToUser(thread.userId, failEvent);
-            } else {
-              wsBroker.emit(failEvent);
-            }
-          }
-        })();
-      } else {
-        // Worktree already exists or local mode: start agent directly
-        const cwd = thread.worktreePath || project.path;
-        const { messages: draftMessages } = tm.getThreadMessages({ threadId: id, limit: 1 });
-        const draftMsg = draftMessages[0];
-        const draftImages = draftMsg?.images ? JSON.parse(draftMsg.images as string) : undefined;
-        startAgent(
-          id,
-          thread.initialPrompt,
-          cwd,
-          (thread.model || project.defaultModel || 'sonnet') as import('@funny/shared').AgentModel,
-          (thread.permissionMode || 'autoEdit') as import('@funny/shared').PermissionMode,
-          draftImages,
-          undefined,
-          undefined,
-          (thread.provider ||
-            project.defaultProvider ||
-            'claude') as import('@funny/shared').AgentProvider,
-          undefined,
-          !!draftMsg,
-        ).catch((err) => {
-          log.error('Failed to auto-start agent for idle thread', {
-            namespace: 'agent',
-            threadId: id,
-            error: err,
-          });
-          tm.updateThread(id, { status: 'failed', completedAt: new Date().toISOString() });
-          const failEvent = {
-            type: 'agent:status' as const,
-            threadId: id,
-            data: { status: 'failed' },
-          };
-          if (thread.userId && thread.userId !== '__local__') {
-            wsBroker.emitToUser(thread.userId, failEvent);
-          } else {
-            wsBroker.emit(failEvent);
-          }
-        });
-      }
-    }
-  }
-
-  const updated = tm.getThread(id);
-  return c.json(updated);
 });
 
 // ── Message Queue ────────────────────────────────────────────────
@@ -1104,26 +260,13 @@ threadRoutes.delete('/:id/queue/:messageId', (c) => {
   const userId = c.get('userId') as string;
   const threadResult = requireThread(id, userId);
   if (threadResult.isErr()) return resultToResponse(c, threadResult);
-  const thread = threadResult.value;
 
-  const cancelled = mq.cancel(messageId);
-  if (!cancelled) return c.json({ error: 'Queued message not found' }, 404);
-
-  // Emit updated queue count
-  const qCount = mq.queueCount(id);
-  const nextMsg = mq.peek(id);
-  const queueEvent = {
-    type: 'thread:queue_update' as const,
-    threadId: id,
-    data: { threadId: id, queuedCount: qCount, nextMessage: nextMsg?.content?.slice(0, 100) },
-  } as WSEvent;
-  if (thread.userId) {
-    wsBroker.emitToUser(thread.userId, queueEvent);
-  } else {
-    wsBroker.emit(queueEvent);
+  try {
+    const { queuedCount } = cancelQueuedMessage(id, messageId);
+    return c.json({ ok: true, queuedCount });
+  } catch (error) {
+    return handleServiceError(c, error);
   }
-
-  return c.json({ ok: true, queuedCount: qCount });
 });
 
 // ── Thread Comments ──────────────────────────────────────────────
@@ -1160,21 +303,12 @@ threadRoutes.delete('/:id/comments/:commentId', (c) => {
   const threadResult = requireThread(id, userId);
   if (threadResult.isErr()) return resultToResponse(c, threadResult);
 
-  tm.deleteComment(commentId);
-
-  const thread = threadResult.value;
-  const event = {
-    type: 'thread:comment_deleted' as const,
-    threadId: id,
-    data: { commentId },
-  };
-  if (thread.userId && thread.userId !== '__local__') {
-    wsBroker.emitToUser(thread.userId, event);
-  } else {
-    wsBroker.emit(event);
+  try {
+    deleteCommentService(id, commentId);
+    return c.json({ ok: true });
+  } catch (error) {
+    return handleServiceError(c, error);
   }
-
-  return c.json({ ok: true });
 });
 
 // DELETE /api/threads/:id
@@ -1183,46 +317,11 @@ threadRoutes.delete('/:id', async (c) => {
   const userId = c.get('userId') as string;
   const threadResult = requireThread(id, userId);
   if (threadResult.isErr()) return resultToResponse(c, threadResult);
-  const thread = threadResult.value;
 
-  if (thread) {
-    threadEventBus.emit('thread:deleted', {
-      threadId: id,
-      projectId: thread.projectId,
-      userId: thread.userId,
-      worktreePath: thread.worktreePath ?? null,
-    });
-
-    if (isAgentRunning(id)) {
-      try {
-        await stopAgent(id);
-      } catch (err) {
-        log.error('Failed to stop agent', { namespace: 'agent', threadId: id, error: err });
-      }
-    }
-
-    // Only remove worktree/branch for worktree-mode threads (skip local threads reusing a worktree and external threads)
-    if (thread.worktreePath && thread.mode === 'worktree' && thread.provider !== 'external') {
-      // Kill any running commands (startup commands, dev servers) in this worktree
-      await stopCommandsByCwd(thread.worktreePath).catch(() => {});
-
-      const project = pm.getProject(thread.projectId);
-      if (project) {
-        await removeWorktree(project.path, thread.worktreePath).catch((e) => {
-          log.warn('Failed to remove worktree', { namespace: 'cleanup', error: String(e) });
-        });
-        if (thread.branch) {
-          await removeBranch(project.path, thread.branch).catch((e) => {
-            log.warn('Failed to remove branch', { namespace: 'cleanup', error: String(e) });
-          });
-        }
-      }
-    }
-
-    mq.clearQueue(id);
-    cleanupThreadState(id);
-    tm.deleteThread(id);
+  try {
+    await deleteThreadService(id);
+    return c.json({ ok: true });
+  } catch (error) {
+    return handleServiceError(c, error);
   }
-
-  return c.json({ ok: true });
 });

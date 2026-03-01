@@ -12,9 +12,6 @@ import {
   commit,
   push,
   pull,
-  createPR,
-  mergeBranch,
-  git,
   getStatusSummary,
   invalidateStatusCache,
   deriveGitSyncState,
@@ -23,22 +20,29 @@ import {
   stashPop,
   stashList,
   resetSoft,
-  type GitIdentityOptions,
-  removeWorktree,
-  removeBranch,
   sanitizePath,
 } from '@funny/core/git';
 import { badRequest, internal } from '@funny/shared/errors';
 import { Hono } from 'hono';
 import { err, ok } from 'neverthrow';
 
-import { getAuthMode } from '../lib/auth-mode.js';
 import { log } from '../lib/logger.js';
-import { getGitIdentity, getGithubToken } from '../services/profile-service.js';
-import { threadEventBus } from '../services/thread-event-bus.js';
-import { saveThreadEvent } from '../services/thread-event-service.js';
+import {
+  stage as gitServiceStage,
+  unstage as gitServiceUnstage,
+  revert as gitServiceRevert,
+  commitChanges as gitServiceCommit,
+  pushChanges as gitServicePush,
+  pullChanges as gitServicePull,
+  stashChanges as gitServiceStash,
+  popStash as gitServicePopStash,
+  softReset as gitServiceSoftReset,
+  merge as gitServiceMerge,
+  createPullRequest as gitServiceCreatePR,
+  resolveIdentity,
+  validateFilePaths,
+} from '../services/git-service.js';
 import * as tm from '../services/thread-manager.js';
-import { wsBroker } from '../services/ws-broker.js';
 import type { HonoEnv } from '../types/hono-env.js';
 import { resultToResponse } from '../utils/result-response.js';
 import { requireThread, requireThreadCwd, requireProject } from '../utils/route-helpers.js';
@@ -51,31 +55,6 @@ import {
 } from '../validation/schemas.js';
 
 export const gitRoutes = new Hono<HonoEnv>();
-
-/**
- * Resolve per-user git identity.
- * In local mode, uses the '__local__' profile for GitHub token support.
- * In multi-user mode, uses the authenticated user's profile.
- */
-function resolveIdentity(userId: string): GitIdentityOptions | undefined {
-  const effectiveUserId =
-    getAuthMode() === 'local' || userId === '__local__' ? '__local__' : userId;
-  const author = getGitIdentity(effectiveUserId) ?? undefined;
-  const githubToken = getGithubToken(effectiveUserId) ?? undefined;
-  if (!author && !githubToken) return undefined;
-  return { author, githubToken };
-}
-
-/**
- * Validate that all file paths stay within the working directory.
- */
-function validateFilePaths(cwd: string, paths: string[]): string | null {
-  for (const p of paths) {
-    const result = sanitizePath(cwd, p);
-    if (result.isErr()) return `Invalid path: ${p}`;
-  }
-  return null;
-}
 
 /** Compute a stable cache key that groups threads sharing the same git working state. */
 export function computeBranchKey(thread: {
@@ -108,6 +87,20 @@ export function invalidateGitStatusCacheByProject(projectId: string) {
   _gitStatusCache.delete(projectId);
 }
 
+/** Resolve project path from projectId and verify ownership. */
+function requireProjectCwd(
+  projectId: string,
+  userId?: string,
+): import('neverthrow').Result<string, import('@funny/shared/errors').DomainError> {
+  const projectResult = requireProject(projectId, userId);
+  if (projectResult.isErr()) return projectResult.map(() => '');
+  return ok(projectResult.value.path);
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// Bulk git status
+// ═══════════════════════════════════════════════════════════════════════════
+
 // GET /api/git/status?projectId=xxx — bulk git status for all worktree threads
 gitRoutes.get('/status', async (c) => {
   const projectId = c.req.query('projectId');
@@ -128,12 +121,9 @@ gitRoutes.get('/status', async (c) => {
   const worktreeThreads = threads.filter(
     (t) => t.mode === 'worktree' && t.worktreePath && t.branch,
   );
-  // Threads whose worktrees were cleaned up after merge
   const mergedThreads = threads.filter((t) => !t.worktreePath && !t.branch && t.baseBranch);
-  // Local threads (no worktree) — share the project directory
   const localThreads = threads.filter((t) => !t.worktreePath && !(!t.branch && t.baseBranch));
 
-  // Compute project-level status once for all local threads
   const localStatusPromise =
     localThreads.length > 0
       ? getStatusSummary(project.path).then((r) => (r.isOk() ? r.value : null))
@@ -200,17 +190,7 @@ gitRoutes.get('/status', async (c) => {
 // "/project/:projectId/..." is not captured by "/:threadId/...".
 // ═══════════════════════════════════════════════════════════════════════════
 
-/** Resolve project path from projectId and verify ownership. */
-function requireProjectCwd(
-  projectId: string,
-  userId?: string,
-): import('neverthrow').Result<string, import('@funny/shared/errors').DomainError> {
-  const projectResult = requireProject(projectId, userId);
-  if (projectResult.isErr()) return projectResult.map(() => '');
-  return ok(projectResult.value.path);
-}
-
-// GET /api/git/project/:projectId/status — git status for the project root directory
+// GET /api/git/project/:projectId/status
 gitRoutes.get('/project/:projectId/status', async (c) => {
   const userId = c.get('userId') as string;
   const cwdResult = requireProjectCwd(c.req.param('projectId'), userId);
@@ -563,7 +543,11 @@ gitRoutes.post('/project/:projectId/gitignore', async (c) => {
   return c.json({ ok: true });
 });
 
-// GET /api/git/:threadId/status — single thread git status
+// ═══════════════════════════════════════════════════════════════════════════
+// Thread-scoped git routes — delegate to GitService for event emission
+// ═══════════════════════════════════════════════════════════════════════════
+
+// GET /api/git/:threadId/status
 gitRoutes.get('/:threadId/status', async (c) => {
   const threadId = c.req.param('threadId');
   const userId = c.get('userId') as string;
@@ -571,7 +555,6 @@ gitRoutes.get('/:threadId/status', async (c) => {
   if (threadResult.isErr()) return resultToResponse(c, threadResult);
   const thread = threadResult.value;
 
-  // Thread was a worktree that got merged & cleaned up — return "merged" directly
   if (!thread.worktreePath && !thread.branch && thread.baseBranch) {
     return c.json({
       threadId,
@@ -603,7 +586,7 @@ gitRoutes.get('/:threadId/status', async (c) => {
   });
 });
 
-// GET /api/git/:threadId/diff/summary — lightweight file list without diff content
+// GET /api/git/:threadId/diff/summary
 gitRoutes.get('/:threadId/diff/summary', async (c) => {
   const userId = c.get('userId') as string;
   const cwdResult = requireThreadCwd(c.req.param('threadId'), userId);
@@ -626,7 +609,7 @@ gitRoutes.get('/:threadId/diff/summary', async (c) => {
   return c.json(result.value);
 });
 
-// GET /api/git/:threadId/diff/file — diff content for a single file
+// GET /api/git/:threadId/diff/file
 gitRoutes.get('/:threadId/diff/file', async (c) => {
   const userId = c.get('userId') as string;
   const cwdResult = requireThreadCwd(c.req.param('threadId'), userId);
@@ -642,7 +625,7 @@ gitRoutes.get('/:threadId/diff/file', async (c) => {
   return c.json({ diff: result.value });
 });
 
-// GET /api/git/:threadId/diff — full diff (legacy, kept for backward compatibility)
+// GET /api/git/:threadId/diff
 gitRoutes.get('/:threadId/diff', async (c) => {
   const userId = c.get('userId') as string;
   const cwdResult = requireThreadCwd(c.req.param('threadId'), userId);
@@ -671,20 +654,13 @@ gitRoutes.post('/:threadId/stage', async (c) => {
   const pathError = validateFilePaths(cwd, parsed.value.paths);
   if (pathError) return c.json({ error: pathError }, 400);
 
-  const result = await stageFiles(cwd, parsed.value.paths);
-  if (result.isErr()) return resultToResponse(c, result);
-
-  const thread = requireThread(threadId, userId);
-  threadEventBus.emit('git:staged', {
-    threadId,
-    userId,
-    projectId: thread.isOk() ? thread.value.projectId : '',
-    paths: parsed.value.paths,
-    cwd,
-  });
+  try {
+    await gitServiceStage(threadId, userId, cwd, parsed.value.paths);
+  } catch (e: any) {
+    return resultToResponse(c, err(internal(e.message)));
+  }
 
   invalidateGitStatusCache(threadId);
-  invalidateStatusCache(cwd);
   return c.json({ ok: true });
 });
 
@@ -703,20 +679,13 @@ gitRoutes.post('/:threadId/unstage', async (c) => {
   const pathError = validateFilePaths(cwd, parsed.value.paths);
   if (pathError) return c.json({ error: pathError }, 400);
 
-  const result = await unstageFiles(cwd, parsed.value.paths);
-  if (result.isErr()) return resultToResponse(c, result);
-
-  const thread = requireThread(threadId, userId);
-  threadEventBus.emit('git:unstaged', {
-    threadId,
-    userId,
-    projectId: thread.isOk() ? thread.value.projectId : '',
-    paths: parsed.value.paths,
-    cwd,
-  });
+  try {
+    await gitServiceUnstage(threadId, userId, cwd, parsed.value.paths);
+  } catch (e: any) {
+    return resultToResponse(c, err(internal(e.message)));
+  }
 
   invalidateGitStatusCache(threadId);
-  invalidateStatusCache(cwd);
   return c.json({ ok: true });
 });
 
@@ -735,20 +704,13 @@ gitRoutes.post('/:threadId/revert', async (c) => {
   const pathError = validateFilePaths(cwd, parsed.value.paths);
   if (pathError) return c.json({ error: pathError }, 400);
 
-  const result = await revertFiles(cwd, parsed.value.paths);
-  if (result.isErr()) return resultToResponse(c, result);
-
-  const thread = requireThread(threadId, userId);
-  threadEventBus.emit('git:reverted', {
-    threadId,
-    userId,
-    projectId: thread.isOk() ? thread.value.projectId : '',
-    paths: parsed.value.paths,
-    cwd,
-  });
+  try {
+    await gitServiceRevert(threadId, userId, cwd, parsed.value.paths);
+  } catch (e: any) {
+    return resultToResponse(c, err(internal(e.message)));
+  }
 
   invalidateGitStatusCache(threadId);
-  invalidateStatusCache(cwd);
   return c.json({ ok: true });
 });
 
@@ -764,23 +726,19 @@ gitRoutes.post('/:threadId/commit', async (c) => {
   const parsed = validate(commitSchema, raw);
   if (parsed.isErr()) return resultToResponse(c, parsed);
 
-  const identity = resolveIdentity(userId);
-  const result = await commit(cwd, parsed.value.message, identity, parsed.value.amend);
-  if (result.isErr()) return resultToResponse(c, result);
-
-  const thread = requireThread(threadId, userId);
-  threadEventBus.emit('git:committed', {
-    threadId,
-    userId,
-    projectId: thread.isOk() ? thread.value.projectId : '',
-    message: parsed.value.message,
-    amend: parsed.value.amend,
-    cwd,
-  });
-
-  invalidateGitStatusCache(threadId);
-  invalidateStatusCache(cwd);
-  return c.json({ ok: true, output: result.value });
+  try {
+    const output = await gitServiceCommit(
+      threadId,
+      userId,
+      cwd,
+      parsed.value.message,
+      parsed.value.amend,
+    );
+    invalidateGitStatusCache(threadId);
+    return c.json({ ok: true, output });
+  } catch (e: any) {
+    return resultToResponse(c, err(internal(e.message)));
+  }
 });
 
 // POST /api/git/:threadId/push
@@ -790,21 +748,13 @@ gitRoutes.post('/:threadId/push', async (c) => {
   const cwdResult = requireThreadCwd(threadId, userId);
   if (cwdResult.isErr()) return resultToResponse(c, cwdResult);
 
-  const identity = resolveIdentity(userId);
-  const result = await push(cwdResult.value, identity);
-  if (result.isErr()) return resultToResponse(c, result);
-
-  const thread = requireThread(threadId, userId);
-  threadEventBus.emit('git:pushed', {
-    threadId,
-    userId,
-    projectId: thread.isOk() ? thread.value.projectId : '',
-    cwd: cwdResult.value,
-  });
-
-  invalidateGitStatusCache(threadId);
-  invalidateStatusCache(cwd);
-  return c.json({ ok: true, output: result.value });
+  try {
+    const output = await gitServicePush(threadId, userId, cwdResult.value);
+    invalidateGitStatusCache(threadId);
+    return c.json({ ok: true, output });
+  } catch (e: any) {
+    return resultToResponse(c, err(internal(e.message)));
+  }
 });
 
 // POST /api/git/:threadId/pr
@@ -813,41 +763,23 @@ gitRoutes.post('/:threadId/pr', async (c) => {
   const userId = c.get('userId') as string;
   const cwdResult = requireThreadCwd(threadId, userId);
   if (cwdResult.isErr()) return resultToResponse(c, cwdResult);
-  const cwd = cwdResult.value;
-  const thread = tm.getThread(threadId);
 
   const raw = await c.req.json().catch(() => ({}));
   const parsed = validate(createPRSchema, raw);
   if (parsed.isErr()) return resultToResponse(c, parsed);
 
-  const identity = resolveIdentity(userId);
-  const result = await createPR(
-    cwd,
-    parsed.value.title,
-    parsed.value.body,
-    thread?.baseBranch ?? undefined,
-    identity,
-  );
-  if (result.isErr()) return resultToResponse(c, result);
-
-  const prUrl = result.value;
-  const prData = { title: parsed.value.title, url: prUrl };
-  await saveThreadEvent(threadId, 'git:pr_created', prData);
-  wsBroker.emitToUser(userId, {
-    type: 'thread:event',
-    threadId,
-    data: {
-      event: {
-        id: crypto.randomUUID(),
-        threadId,
-        type: 'git:pr_created',
-        data: JSON.stringify(prData),
-        createdAt: new Date().toISOString(),
-      },
-    },
-  });
-
-  return c.json({ ok: true, url: prUrl });
+  try {
+    const url = await gitServiceCreatePR({
+      threadId,
+      userId,
+      cwd: cwdResult.value,
+      title: parsed.value.title,
+      body: parsed.value.body,
+    });
+    return c.json({ ok: true, url });
+  } catch (e: any) {
+    return resultToResponse(c, err(internal(e.message)));
+  }
 });
 
 // POST /api/git/:threadId/generate-commit-message
@@ -873,8 +805,6 @@ gitRoutes.post('/:threadId/generate-commit-message', async (c) => {
     .map((d) => `--- ${d.status}: ${d.path} ---\n${d.diff || '(no diff)'}`)
     .join('\n\n');
 
-  // Truncate diff to stay within command-line length limits (~32k on Windows).
-  // Reserve space for the prompt template and CLI args.
   const MAX_DIFF_LEN = 20_000;
   if (diffSummary.length > MAX_DIFF_LEN) {
     diffSummary = diffSummary.slice(0, MAX_DIFF_LEN) + '\n\n... (diff truncated for length)';
@@ -893,7 +823,6 @@ No quotes, no markdown, no extra explanation.
 
 ${diffSummary}`;
 
-  // Use SDK query() for one-shot commit message generation
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), 60_000);
 
@@ -946,8 +875,6 @@ ${diffSummary}`;
   }
 
   const trimmed = output.text.trim();
-
-  // Detect CLI/SDK error messages returned as text instead of exceptions
   const errorPatterns = [
     /invalid api key/i,
     /authentication.*error/i,
@@ -986,98 +913,27 @@ gitRoutes.post('/:threadId/merge', async (c) => {
   const userId = c.get('userId') as string;
   const threadResult = requireThread(threadId, userId);
   if (threadResult.isErr()) return resultToResponse(c, threadResult);
-  const thread = threadResult.value;
-
-  if (thread.mode !== 'worktree' || !thread.branch) {
-    return resultToResponse(c, err(badRequest('Merge is only available for worktree threads')));
-  }
-
-  const projectResult = requireProject(thread.projectId);
-  if (projectResult.isErr()) return resultToResponse(c, projectResult);
-  const project = projectResult.value;
 
   const raw = await c.req.json().catch(() => ({}));
   const parsed = validate(mergeSchema, raw);
   if (parsed.isErr()) return resultToResponse(c, parsed);
 
-  const targetBranch = parsed.value.targetBranch || thread.baseBranch;
-  if (!targetBranch) {
-    return resultToResponse(
-      c,
-      err(badRequest('No target branch specified and no baseBranch set on thread')),
-    );
-  }
-
-  const identity = resolveIdentity(userId);
-  const mergeResult = await mergeBranch(
-    project.path,
-    thread.branch,
-    targetBranch,
-    identity,
-    thread.worktreePath ?? undefined,
-  );
-  if (mergeResult.isErr()) return resultToResponse(c, mergeResult);
-
-  threadEventBus.emit('git:merged', {
-    threadId,
-    userId,
-    projectId: thread.projectId,
-    sourceBranch: thread.branch,
-    targetBranch,
-    output: mergeResult.value,
-  });
-
-  if (parsed.value.push) {
-    const env = identity?.githubToken ? { GH_TOKEN: identity.githubToken } : undefined;
-    const pushResult = await git(['push', 'origin', targetBranch], project.path, env);
-    if (pushResult.isErr()) {
-      return resultToResponse(
-        c,
-        err(badRequest(`Merge succeeded but push failed: ${pushResult.error.message}`)),
-      );
-    }
-  }
-
-  if (parsed.value.cleanup && thread.worktreePath) {
-    await removeWorktree(project.path, thread.worktreePath).catch((e) =>
-      log.warn('Failed to remove worktree after merge', { namespace: 'git', error: String(e) }),
-    );
-    await removeBranch(project.path, thread.branch).catch((e) =>
-      log.warn('Failed to remove branch after merge', { namespace: 'git', error: String(e) }),
-    );
-    tm.updateThread(threadId, { worktreePath: null, branch: null, mode: 'local' });
-    // Do NOT call cleanupThreadState — the thread remains active for follow-ups.
-    // In-memory deduplication maps (processedToolUseIds, cliToDbMsgId) must be
-    // preserved so session resume can deduplicate re-sent content.
-
-    // Broadcast merged status so Kanban cards update immediately
-    wsBroker.emitToUser(userId, {
-      type: 'git:status',
+  try {
+    const output = await gitServiceMerge({
       threadId,
-      data: {
-        statuses: [
-          {
-            threadId,
-            branchKey: `tid:${threadId}`,
-            state: 'merged' as const,
-            dirtyFileCount: 0,
-            unpushedCommitCount: 0,
-            hasRemoteBranch: false,
-            isMergedIntoBase: true,
-            linesAdded: 0,
-            linesDeleted: 0,
-          },
-        ],
-      },
+      userId,
+      targetBranch: parsed.value.targetBranch,
+      push: parsed.value.push,
+      cleanup: parsed.value.cleanup,
     });
+    invalidateGitStatusCache(threadId);
+    return c.json({ ok: true, output });
+  } catch (e: any) {
+    return resultToResponse(c, err(internal(e.message)));
   }
-
-  invalidateGitStatusCache(threadId);
-  invalidateStatusCache(cwd);
-  return c.json({ ok: true, output: mergeResult.value });
 });
 
-// GET /api/git/:threadId/log — recent commit log
+// GET /api/git/:threadId/log
 gitRoutes.get('/:threadId/log', async (c) => {
   const userId = c.get('userId') as string;
   const threadId = c.req.param('threadId');
@@ -1096,80 +952,55 @@ gitRoutes.get('/:threadId/log', async (c) => {
   return c.json({ entries: result.value });
 });
 
-// POST /api/git/:threadId/pull — pull from remote (ff-only)
+// POST /api/git/:threadId/pull
 gitRoutes.post('/:threadId/pull', async (c) => {
   const threadId = c.req.param('threadId');
   const userId = c.get('userId') as string;
   const cwdResult = requireThreadCwd(threadId, userId);
   if (cwdResult.isErr()) return resultToResponse(c, cwdResult);
 
-  const identity = resolveIdentity(userId);
-  const result = await pull(cwdResult.value, identity);
-  if (result.isErr()) return resultToResponse(c, result);
-
-  const thread = requireThread(threadId, userId);
-  threadEventBus.emit('git:pulled', {
-    threadId,
-    userId,
-    projectId: thread.isOk() ? thread.value.projectId : '',
-    cwd: cwdResult.value,
-    output: result.value,
-  });
-
-  invalidateGitStatusCache(threadId);
-  invalidateStatusCache(cwd);
-  return c.json({ ok: true, output: result.value });
+  try {
+    const output = await gitServicePull(threadId, userId, cwdResult.value);
+    invalidateGitStatusCache(threadId);
+    return c.json({ ok: true, output });
+  } catch (e: any) {
+    return resultToResponse(c, err(internal(e.message)));
+  }
 });
 
-// POST /api/git/:threadId/stash — stash current changes
+// POST /api/git/:threadId/stash
 gitRoutes.post('/:threadId/stash', async (c) => {
   const threadId = c.req.param('threadId');
   const userId = c.get('userId') as string;
   const cwdResult = requireThreadCwd(threadId, userId);
   if (cwdResult.isErr()) return resultToResponse(c, cwdResult);
 
-  const result = await stash(cwdResult.value);
-  if (result.isErr()) return resultToResponse(c, result);
-
-  const thread = requireThread(threadId, userId);
-  threadEventBus.emit('git:stashed', {
-    threadId,
-    userId,
-    projectId: thread.isOk() ? thread.value.projectId : '',
-    cwd: cwdResult.value,
-    output: result.value,
-  });
-
-  invalidateGitStatusCache(threadId);
-  invalidateStatusCache(cwd);
-  return c.json({ ok: true, output: result.value });
+  try {
+    const output = await gitServiceStash(threadId, userId, cwdResult.value);
+    invalidateGitStatusCache(threadId);
+    return c.json({ ok: true, output });
+  } catch (e: any) {
+    return resultToResponse(c, err(internal(e.message)));
+  }
 });
 
-// POST /api/git/:threadId/stash/pop — pop most recent stash
+// POST /api/git/:threadId/stash/pop
 gitRoutes.post('/:threadId/stash/pop', async (c) => {
   const threadId = c.req.param('threadId');
   const userId = c.get('userId') as string;
   const cwdResult = requireThreadCwd(threadId, userId);
   if (cwdResult.isErr()) return resultToResponse(c, cwdResult);
 
-  const result = await stashPop(cwdResult.value);
-  if (result.isErr()) return resultToResponse(c, result);
-
-  const thread = requireThread(threadId, userId);
-  threadEventBus.emit('git:stash-popped', {
-    threadId,
-    userId,
-    projectId: thread.isOk() ? thread.value.projectId : '',
-    cwd: cwdResult.value,
-    output: result.value,
-  });
-
-  invalidateGitStatusCache(threadId);
-  invalidateStatusCache(cwd);
-  return c.json({ ok: true, output: result.value });
+  try {
+    const output = await gitServicePopStash(threadId, userId, cwdResult.value);
+    invalidateGitStatusCache(threadId);
+    return c.json({ ok: true, output });
+  } catch (e: any) {
+    return resultToResponse(c, err(internal(e.message)));
+  }
 });
 
-// GET /api/git/:threadId/stash/list — list stash entries
+// GET /api/git/:threadId/stash/list
 gitRoutes.get('/:threadId/stash/list', async (c) => {
   const userId = c.get('userId') as string;
   const cwdResult = requireThreadCwd(c.req.param('threadId'), userId);
@@ -1180,28 +1011,20 @@ gitRoutes.get('/:threadId/stash/list', async (c) => {
   return c.json({ entries: result.value });
 });
 
-// POST /api/git/:threadId/reset-soft — undo last commit keeping changes
+// POST /api/git/:threadId/reset-soft
 gitRoutes.post('/:threadId/reset-soft', async (c) => {
   const threadId = c.req.param('threadId');
   const userId = c.get('userId') as string;
   const cwdResult = requireThreadCwd(threadId, userId);
   if (cwdResult.isErr()) return resultToResponse(c, cwdResult);
 
-  const result = await resetSoft(cwdResult.value);
-  if (result.isErr()) return resultToResponse(c, result);
-
-  const thread = requireThread(threadId, userId);
-  threadEventBus.emit('git:reset-soft', {
-    threadId,
-    userId,
-    projectId: thread.isOk() ? thread.value.projectId : '',
-    cwd: cwdResult.value,
-    output: result.value,
-  });
-
-  invalidateGitStatusCache(threadId);
-  invalidateStatusCache(cwd);
-  return c.json({ ok: true, output: result.value });
+  try {
+    const output = await gitServiceSoftReset(threadId, userId, cwdResult.value);
+    invalidateGitStatusCache(threadId);
+    return c.json({ ok: true, output });
+  } catch (e: any) {
+    return resultToResponse(c, err(internal(e.message)));
+  }
 });
 
 // POST /api/git/:threadId/gitignore

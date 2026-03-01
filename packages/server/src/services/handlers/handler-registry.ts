@@ -10,6 +10,7 @@
 import { log } from '../../lib/logger.js';
 import { threadEventBus, type ThreadEventMap } from '../thread-event-bus.js';
 import { agentCompletedGitStatusHandler } from './agent-completed-git-status-handler.js';
+import { agentCompletedQueueHandler } from './agent-completed-queue-handler.js';
 // ── Import handlers ─────────────────────────────────────────────
 import { commentHandler } from './comment-handler.js';
 import {
@@ -43,6 +44,7 @@ const allHandlers: EventHandler<any>[] = [
   gitStashPopPersistenceHandler,
   gitResetSoftPersistenceHandler,
   agentCompletedGitStatusHandler,
+  agentCompletedQueueHandler,
 ];
 
 // ── Registration ────────────────────────────────────────────────
