@@ -13,14 +13,12 @@ import {
   push,
   pull,
   getStatusSummary,
-  invalidateStatusCache,
   deriveGitSyncState,
   getLog,
   stash,
   stashPop,
   stashList,
   resetSoft,
-  sanitizePath,
 } from '@funny/core/git';
 import { badRequest, internal } from '@funny/shared/errors';
 import { Hono } from 'hono';

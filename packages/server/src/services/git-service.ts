@@ -25,7 +25,6 @@ import {
   removeBranch,
   type GitIdentityOptions,
 } from '@funny/core/git';
-import type { WSEvent } from '@funny/shared';
 
 import { getAuthMode } from '../lib/auth-mode.js';
 import { log } from '../lib/logger.js';
