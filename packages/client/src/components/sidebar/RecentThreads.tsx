@@ -41,7 +41,6 @@ export function RecentThreads({ onArchiveThread, onDeleteThread }: RecentThreads
   const selectedThreadId = useThreadStore((s) => s.selectedThreadId);
   const projects = useProjectStore((s) => s.projects);
   const statusByBranch = useGitStatusStore((s) => s.statusByBranch);
-  const threadToBranchKey = useGitStatusStore((s) => s.threadToBranchKey);
   const [isExpanded, setIsExpanded] = useState(true);
 
   const { recentThreads, totalCount } = useMemo(() => {
@@ -103,7 +102,6 @@ export function RecentThreads({ onArchiveThread, onDeleteThread }: RecentThreads
       <CollapsibleContent className="data-[state=open]:animate-slide-down">
         <div className="mt-0.5 min-w-0 space-y-0.5">
           {recentThreads.map((thread) => {
-            const bk = threadToBranchKey[thread.id];
             return (
               <ThreadItem
                 key={thread.id}
@@ -113,7 +111,7 @@ export function RecentThreads({ onArchiveThread, onDeleteThread }: RecentThreads
                 subtitle={thread.projectName}
                 projectColor={thread.projectColor}
                 timeValue={timeAgo(thread.completedAt ?? thread.createdAt, t)}
-                gitStatus={bk ? statusByBranch[bk] : undefined}
+                gitStatus={statusByBranch[computeBranchKey(thread)]}
                 onSelect={() => {
                   const store = useThreadStore.getState();
                   if (

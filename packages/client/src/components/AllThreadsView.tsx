@@ -25,7 +25,7 @@ import { ProjectChip } from '@/components/ui/project-chip';
 import { api } from '@/lib/api';
 import { gitSyncStateConfig, getStatusLabels } from '@/lib/thread-utils';
 import { cn } from '@/lib/utils';
-import { useGitStatusStore } from '@/stores/git-status-store';
+import { useGitStatusStore, branchKey as computeBranchKey } from '@/stores/git-status-store';
 import { useProjectStore } from '@/stores/project-store';
 import { useThreadStore } from '@/stores/thread-store';
 import { useUIStore } from '@/stores/ui-store';
@@ -119,7 +119,6 @@ export function AllThreadsView() {
   const threadsByProject = useThreadStore((s) => s.threadsByProject);
   const projects = useProjectStore((s) => s.projects);
   const statusByBranch = useGitStatusStore((s) => s.statusByBranch);
-  const threadToBranchKey = useGitStatusStore((s) => s.threadToBranchKey);
 
   // View mode derived from pathname: /kanban = board, /list (or anything else) = list
   // When ?status= param is present, force list view
@@ -295,8 +294,7 @@ export function AllThreadsView() {
     // Git status filter (multi-select)
     if (gitFilter.size > 0) {
       result = result.filter((t) => {
-        const bk = threadToBranchKey[t.id];
-        const gs = bk ? statusByBranch[bk] : undefined;
+        const gs = statusByBranch[computeBranchKey(t)];
         return gs ? gitFilter.has(gs.state) : false;
       });
     }
@@ -322,7 +320,6 @@ export function AllThreadsView() {
     gitFilter,
     modeFilter,
     statusByBranch,
-    threadToBranchKey,
     projectFilter,
     projectNameById,
     sortField,
@@ -387,14 +384,13 @@ export function AllThreadsView() {
   const gitCounts = useMemo(() => {
     const counts: Record<string, number> = {};
     for (const t of allThreads) {
-      const bk = threadToBranchKey[t.id];
-      const gs = bk ? statusByBranch[bk] : undefined;
+      const gs = statusByBranch[computeBranchKey(t)];
       if (gs) {
         counts[gs.state] = (counts[gs.state] || 0) + 1;
       }
     }
     return counts;
-  }, [allThreads, statusByBranch, threadToBranchKey]);
+  }, [allThreads, statusByBranch]);
 
   const threadStatuses: ThreadStatus[] = [
     'running',
@@ -758,8 +754,7 @@ export function AllThreadsView() {
               hideSearch={true}
               contentSnippets={contentMatches}
               renderExtraBadges={(thread) => {
-                const _bk = threadToBranchKey[thread.id];
-                const gs = _bk ? statusByBranch[_bk] : undefined;
+                const gs = statusByBranch[computeBranchKey(thread)];
                 const gitConf = gs ? gitSyncStateConfig[gs.state] : null;
                 return (
                   <>

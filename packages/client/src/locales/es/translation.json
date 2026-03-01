@@ -599,7 +599,7 @@
   "gitStatus": {
     "dirty": "Cambios sin commitear",
     "unpushed": "Commits sin pushear",
-    "pushed": "Pusheado, pendiente de merge",
+    "pushed": "Pusheado",
     "merged": "Branch mergeado",
     "clean": "Limpio"
   },

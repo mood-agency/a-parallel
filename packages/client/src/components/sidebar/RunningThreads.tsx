@@ -25,7 +25,6 @@ export function RunningThreads() {
   const selectedThreadId = useThreadStore((s) => s.selectedThreadId);
   const projects = useProjectStore((s) => s.projects);
   const statusByBranch = useGitStatusStore((s) => s.statusByBranch);
-  const threadToBranchKey = useGitStatusStore((s) => s.threadToBranchKey);
   const [isExpanded, setIsExpanded] = useState(true);
 
   const runningThreads = useMemo(() => {
@@ -82,7 +81,6 @@ export function RunningThreads() {
       <CollapsibleContent className="data-[state=open]:animate-slide-down">
         <div className="mt-0.5 min-w-0 space-y-0.5">
           {runningThreads.map((thread) => {
-            const bk = threadToBranchKey[thread.id];
             return (
               <ThreadItem
                 key={thread.id}
@@ -91,7 +89,7 @@ export function RunningThreads() {
                 isSelected={selectedThreadId === thread.id}
                 subtitle={thread.projectName}
                 projectColor={thread.projectColor}
-                gitStatus={bk ? statusByBranch[bk] : undefined}
+                gitStatus={statusByBranch[computeBranchKey(thread)]}
                 onSelect={() => {
                   const store = useThreadStore.getState();
                   if (

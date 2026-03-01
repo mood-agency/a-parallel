@@ -601,7 +601,7 @@
   "gitStatus": {
     "dirty": "Uncommitted changes",
     "unpushed": "Unpushed commits",
-    "pushed": "Pushed, pending merge",
+    "pushed": "Pushed",
     "merged": "Branch merged",
     "clean": "Clean"
   },

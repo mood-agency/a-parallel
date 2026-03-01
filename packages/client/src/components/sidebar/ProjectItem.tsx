@@ -33,7 +33,7 @@ import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip
 import { api } from '@/lib/api';
 import { openDirectoryInEditor } from '@/lib/editor-utils';
 import { cn } from '@/lib/utils';
-import { useGitStatusStore } from '@/stores/git-status-store';
+import { useGitStatusStore, branchKey as computeBranchKey } from '@/stores/git-status-store';
 import { useSettingsStore } from '@/stores/settings-store';
 import { useThreadStore } from '@/stores/thread-store';
 
@@ -78,40 +78,39 @@ export const ProjectItem = memo(function ProjectItem({
   const navigate = useNavigate();
   const { t } = useTranslation();
   const [openDropdown, setOpenDropdown] = useState(false);
+  // Pre-compute branchKeys from thread data so we don't depend on threadToBranchKey
+  // (which requires a prior fetch per thread to be populated).
+  const threadBranchKeys = useMemo(
+    () => new Map(threads.map((t) => [t.id, computeBranchKey(t)])),
+    [threads],
+  );
   // Select only the git statuses for threads visible in *this* project.
   // The selector returns a fingerprint string so Zustand's Object.is check
   // skips re-renders when unrelated threads' git statuses change.
-  const visibleThreadIds = useMemo(() => threads.map((t) => t.id), [threads]);
   const gitStatusFingerprint = useGitStatusStore(
     useCallback(
-      (s: {
-        statusByBranch: Record<string, import('@funny/shared').GitStatusInfo>;
-        threadToBranchKey: Record<string, string>;
-      }) => {
-        // Build a stable fingerprint from only the relevant threads
+      (s: { statusByBranch: Record<string, import('@funny/shared').GitStatusInfo> }) => {
         let fp = '';
-        for (const id of visibleThreadIds) {
-          const bk = s.threadToBranchKey[id];
-          const st = bk ? s.statusByBranch[bk] : undefined;
+        for (const [id, bk] of threadBranchKeys) {
+          const st = s.statusByBranch[bk];
           if (st)
             fp += `${id}:${st.state}:${st.dirtyFileCount}:${st.unpushedCommitCount}:${st.linesAdded}:${st.linesDeleted},`;
         }
         return fp;
       },
-      [visibleThreadIds],
+      [threadBranchKeys],
     ),
   );
   // Derive the actual status objects only when the fingerprint changes
-  const { statusByBranch, threadToBranchKey } = useGitStatusStore.getState();
+  const { statusByBranch } = useGitStatusStore.getState();
   const gitStatusForThreads = useMemo(() => {
     const result: Record<string, import('@funny/shared').GitStatusInfo> = {};
-    for (const id of visibleThreadIds) {
-      const bk = threadToBranchKey[id];
-      if (bk && statusByBranch[bk]) result[id] = statusByBranch[bk];
+    for (const [id, bk] of threadBranchKeys) {
+      if (statusByBranch[bk]) result[id] = statusByBranch[bk];
     }
     return result;
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [visibleThreadIds, gitStatusFingerprint]);
+  }, [threadBranchKeys, gitStatusFingerprint]);
   // Read selectedThreadId from the store directly, scoped to this project's
   // thread IDs. This avoids passing selectedThreadId as a prop from the parent,
   // which caused *every* ProjectItem to re-render on any thread selection.

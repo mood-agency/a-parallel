@@ -595,7 +595,7 @@
   "gitStatus": {
     "dirty": "Alterações não commitadas",
     "unpushed": "Commits não enviados",
-    "pushed": "Enviado, pendente de merge",
+    "pushed": "Enviado",
     "merged": "Branch mergeado",
     "clean": "Limpo"
   },

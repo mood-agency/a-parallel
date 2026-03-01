@@ -31,7 +31,7 @@ import { api } from '@/lib/api';
 import { stageConfig, statusConfig, timeAgo } from '@/lib/thread-utils';
 import { cn } from '@/lib/utils';
 import { useAppStore } from '@/stores/app-store';
-import { useGitStatusStore } from '@/stores/git-status-store';
+import { useGitStatusStore, branchKey as computeBranchKey } from '@/stores/git-status-store';
 import { useSettingsStore, deriveToolLists } from '@/stores/settings-store';
 import { useThreadStore } from '@/stores/thread-store';
 import { useUIStore } from '@/stores/ui-store';
@@ -501,16 +501,16 @@ export function KanbanView({
     gitState: string;
   } | null>(null);
   const _statusByBranch = useGitStatusStore((s) => s.statusByBranch);
-  const _threadToBranchKey = useGitStatusStore((s) => s.threadToBranchKey);
   // Resolve branch-keyed statuses to a threadId-keyed map for child components
+  // using client-side branchKey so all threads immediately share cached status.
   const statusByThread = useMemo(() => {
     const result: Record<string, GitStatusInfo> = {};
     for (const t of threads) {
-      const bk = _threadToBranchKey[t.id];
-      if (bk && _statusByBranch[bk]) result[t.id] = _statusByBranch[bk];
+      const bk = computeBranchKey(t);
+      if (_statusByBranch[bk]) result[t.id] = _statusByBranch[bk];
     }
     return result;
-  }, [threads, _statusByBranch, _threadToBranchKey]);
+  }, [threads, _statusByBranch]);
 
   // Highlight the card the user came from, then fade it out
   const [highlightThreadId, setHighlightThreadId] = useState<string | undefined>(
