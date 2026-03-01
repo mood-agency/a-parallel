@@ -16,7 +16,8 @@ TODO.md
 TODO.md
 nul
 TODO.md
-/packages/agent/.pipeline
+.pipeline
+playwright-report
 packages/client/.env.test
 packages/server/.env.test
 .gitnexus
