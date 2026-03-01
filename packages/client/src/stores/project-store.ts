@@ -128,20 +128,9 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
       set({ selectedProjectId: null });
       return;
     }
-    const { expandedProjects, selectedProjectId } = get();
-    // Skip redundant work if already selected and expanded
-    const alreadySelected = selectedProjectId === projectId;
-    const alreadyExpanded = expandedProjects.has(projectId);
-    if (alreadySelected && alreadyExpanded) return;
-    // Batch both updates into a single set() to avoid cascading re-renders
-    const patch: Partial<Pick<ProjectState, 'selectedProjectId' | 'expandedProjects'>> = {};
-    if (!alreadySelected) patch.selectedProjectId = projectId;
-    if (!alreadyExpanded) {
-      const next = new Set(expandedProjects);
-      next.add(projectId);
-      patch.expandedProjects = next;
-    }
-    set(patch);
+    const { selectedProjectId } = get();
+    if (selectedProjectId === projectId) return;
+    set({ selectedProjectId: projectId });
     const threadStore = useThreadStore.getState();
     if (!threadStore.threadsByProject[projectId]) {
       threadStore.loadThreadsForProject(projectId);
