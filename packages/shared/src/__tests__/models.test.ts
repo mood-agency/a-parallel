@@ -4,8 +4,11 @@ import {
   resolveModelId,
   getDefaultModel,
   getProviderModels,
+  getProviderModelsWithLabels,
   resolvePermissionMode,
+  resolveResumePermissionMode,
   getDefaultAllowedTools,
+  getAskModeTools,
   isModelForProvider,
 } from '../models.js';
 
@@ -56,6 +59,26 @@ describe('resolveModelId', () => {
     });
   });
 
+  describe('gemini provider', () => {
+    test('resolves gemini-2.5-flash', () => {
+      expect(resolveModelId('gemini', 'gemini-2.5-flash')).toBe('gemini-2.5-flash');
+    });
+
+    test('resolves gemini-3-flash-preview', () => {
+      expect(resolveModelId('gemini', 'gemini-3-flash-preview')).toBe('gemini-3-flash-preview');
+    });
+
+    test('throws on unknown gemini model', () => {
+      expect(() => resolveModelId('gemini', 'sonnet' as any)).toThrow('Unknown Gemini model');
+    });
+  });
+
+  describe('llm-api provider', () => {
+    test('passes model ID through directly', () => {
+      expect(resolveModelId('llm-api', 'any-model-id' as any)).toBe('any-model-id');
+    });
+  });
+
   describe('unknown provider', () => {
     test('throws on completely unknown provider', () => {
       expect(() => resolveModelId('fake' as any, 'sonnet' as any)).toThrow(
@@ -82,6 +105,14 @@ describe('getDefaultModel', () => {
     expect(getDefaultModel('codex')).toBe('o4-mini');
   });
 
+  test('returns gemini-3-flash-preview for gemini', () => {
+    expect(getDefaultModel('gemini')).toBe('gemini-3-flash-preview');
+  });
+
+  test('returns sonnet for llm-api', () => {
+    expect(getDefaultModel('llm-api')).toBe('sonnet');
+  });
+
   test('throws on unknown provider', () => {
     expect(() => getDefaultModel('fake' as any)).toThrow('Unknown provider: fake');
   });
@@ -93,9 +124,10 @@ describe('getProviderModels', () => {
   test('returns all claude models', () => {
     const models = getProviderModels('claude');
     expect(models).toContain('sonnet');
+    expect(models).toContain('sonnet-4.6');
     expect(models).toContain('opus');
     expect(models).toContain('haiku');
-    expect(models).toHaveLength(3);
+    expect(models).toHaveLength(4);
   });
 
   test('returns all codex models', () => {
@@ -104,6 +136,20 @@ describe('getProviderModels', () => {
     expect(models).toContain('o4-mini');
     expect(models).toContain('codex-mini');
     expect(models).toHaveLength(3);
+  });
+
+  test('returns all gemini models', () => {
+    const models = getProviderModels('gemini');
+    expect(models).toContain('gemini-2.0-flash');
+    expect(models).toContain('gemini-2.5-flash');
+    expect(models).toContain('gemini-2.5-pro');
+    expect(models).toContain('gemini-3-flash-preview');
+    expect(models).toContain('gemini-3-pro-preview');
+    expect(models).toHaveLength(5);
+  });
+
+  test('returns empty array for llm-api', () => {
+    expect(getProviderModels('llm-api')).toEqual([]);
   });
 
   test('claude and codex models do not overlap', () => {
@@ -188,6 +234,20 @@ describe('getDefaultAllowedTools', () => {
     expect(getDefaultAllowedTools('codex')).toEqual([]);
   });
 
+  test('gemini returns an empty array', () => {
+    expect(getDefaultAllowedTools('gemini')).toEqual([]);
+  });
+
+  test('llm-api returns lowercase tool names', () => {
+    const tools = getDefaultAllowedTools('llm-api');
+    expect(tools).toContain('bash');
+    expect(tools).toContain('read');
+    expect(tools).toContain('edit');
+    expect(tools).toContain('glob');
+    expect(tools).toContain('grep');
+    expect(tools.length).toBeGreaterThan(0);
+  });
+
   test('unknown provider returns an empty array', () => {
     expect(getDefaultAllowedTools('anything' as any)).toEqual([]);
   });
@@ -243,6 +303,18 @@ describe('isModelForProvider', () => {
     });
   });
 
+  describe('gemini provider', () => {
+    test('returns true for gemini models', () => {
+      expect(isModelForProvider('gemini', 'gemini-2.5-flash')).toBe(true);
+      expect(isModelForProvider('gemini', 'gemini-3-flash-preview')).toBe(true);
+    });
+
+    test('returns false for non-gemini models', () => {
+      expect(isModelForProvider('gemini', 'sonnet')).toBe(false);
+      expect(isModelForProvider('gemini', 'o3')).toBe(false);
+    });
+  });
+
   describe('unknown provider', () => {
     test('returns false for any model', () => {
       expect(isModelForProvider('external' as any, 'sonnet')).toBe(false);
@@ -251,11 +323,87 @@ describe('isModelForProvider', () => {
   });
 });
 
+// ── getProviderModelsWithLabels ──────────────────────────────────
+
+describe('getProviderModelsWithLabels', () => {
+  test('returns labeled models for claude', () => {
+    const models = getProviderModelsWithLabels('claude');
+    expect(models.length).toBeGreaterThan(0);
+    for (const m of models) {
+      expect(m).toHaveProperty('value');
+      expect(m).toHaveProperty('label');
+      expect(typeof m.label).toBe('string');
+    }
+  });
+
+  test('returns labeled models for codex', () => {
+    const models = getProviderModelsWithLabels('codex');
+    expect(models.length).toBeGreaterThan(0);
+    expect(models.some((m) => m.value === 'o3')).toBe(true);
+  });
+
+  test('returns labeled models for gemini', () => {
+    const models = getProviderModelsWithLabels('gemini');
+    expect(models.length).toBeGreaterThan(0);
+    expect(models.some((m) => m.value === 'gemini-2.5-flash')).toBe(true);
+  });
+
+  test('returns empty array for unknown provider', () => {
+    expect(getProviderModelsWithLabels('fake' as any)).toEqual([]);
+  });
+});
+
+// ── resolveResumePermissionMode ─────────────────────────────────
+
+describe('resolveResumePermissionMode', () => {
+  test('downgrades plan to acceptEdits for claude', () => {
+    expect(resolveResumePermissionMode('claude', 'plan')).toBe('acceptEdits');
+  });
+
+  test('passes through non-plan modes for claude', () => {
+    expect(resolveResumePermissionMode('claude', 'bypassPermissions')).toBe('bypassPermissions');
+    expect(resolveResumePermissionMode('claude', 'default')).toBe('default');
+  });
+
+  test('passes through undefined for non-claude providers', () => {
+    expect(resolveResumePermissionMode('codex', undefined)).toBeUndefined();
+    expect(resolveResumePermissionMode('gemini', undefined)).toBeUndefined();
+  });
+});
+
+// ── getAskModeTools ─────────────────────────────────────────────
+
+describe('getAskModeTools', () => {
+  test('returns read-only tools', () => {
+    const tools = getAskModeTools();
+    expect(tools).toContain('Read');
+    expect(tools).toContain('Glob');
+    expect(tools).toContain('Grep');
+    expect(tools).toContain('WebSearch');
+    expect(tools).toContain('WebFetch');
+    expect(tools).toContain('Task');
+  });
+
+  test('does not include write tools', () => {
+    const tools = getAskModeTools();
+    expect(tools).not.toContain('Edit');
+    expect(tools).not.toContain('Write');
+    expect(tools).not.toContain('Bash');
+  });
+
+  test('returns a copy each time', () => {
+    const t1 = getAskModeTools();
+    const t2 = getAskModeTools();
+    expect(t1).toEqual(t2);
+    expect(t1).not.toBe(t2);
+  });
+});
+
 // ── Cross-cutting consistency checks ────────────────────────────
 
 describe('cross-cutting consistency', () => {
   test('default model for each provider is in its model list', () => {
-    for (const provider of ['claude', 'codex'] as const) {
+    for (const provider of ['claude', 'codex', 'gemini'] as const) {
       const defaultModel = getDefaultModel(provider);
       const models = getProviderModels(provider);
       expect(models).toContain(defaultModel);
@@ -263,7 +411,7 @@ describe('cross-cutting consistency', () => {
   });
 
   test('every model in provider list can be resolved to an ID', () => {
-    for (const provider of ['claude', 'codex'] as const) {
+    for (const provider of ['claude', 'codex', 'gemini'] as const) {
       const models = getProviderModels(provider);
       for (const model of models) {
         expect(() => resolveModelId(provider, model)).not.toThrow();
@@ -273,7 +421,7 @@ describe('cross-cutting consistency', () => {
   });
 
   test('every model in provider list passes isModelForProvider', () => {
-    for (const provider of ['claude', 'codex'] as const) {
+    for (const provider of ['claude', 'codex', 'gemini'] as const) {
       const models = getProviderModels(provider);
       for (const model of models) {
         expect(isModelForProvider(provider, model)).toBe(true);
@@ -281,14 +429,23 @@ describe('cross-cutting consistency', () => {
     }
   });
 
-  test('no model belongs to both providers', () => {
-    const claudeModels = getProviderModels('claude');
-    const codexModels = getProviderModels('codex');
-    for (const model of claudeModels) {
-      expect(isModelForProvider('codex', model)).toBe(false);
+  test('no model belongs to multiple providers', () => {
+    const providers = ['claude', 'codex', 'gemini'] as const;
+    for (let i = 0; i < providers.length; i++) {
+      for (let j = i + 1; j < providers.length; j++) {
+        const modelsA = getProviderModels(providers[i]);
+        for (const model of modelsA) {
+          expect(isModelForProvider(providers[j], model)).toBe(false);
+        }
+      }
     }
-    for (const model of codexModels) {
-      expect(isModelForProvider('claude', model)).toBe(false);
+  });
+
+  test('every provider with labels has matching model count', () => {
+    for (const provider of ['claude', 'codex', 'gemini'] as const) {
+      const models = getProviderModels(provider);
+      const labels = getProviderModelsWithLabels(provider);
+      expect(labels).toHaveLength(models.length);
     }
   });
 });

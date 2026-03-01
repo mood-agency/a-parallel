@@ -16,8 +16,10 @@ import {
   extractRepoName,
   stageFiles,
   unstageFiles,
+  revertFiles,
   commit,
   getDiff,
+  getSingleFileDiff,
   getStatusSummary,
   deriveGitSyncState,
   initRepo,
@@ -27,8 +29,12 @@ import {
   stashList,
   resetSoft,
   pull,
+  push,
+  mergeBranch,
   addToGitignore,
   getDiffSummary,
+  invalidateStatusCache,
+  getRemoteUrl,
 } from '../git/git.js';
 import { executeSync } from '../git/process.js';
 
@@ -678,6 +684,245 @@ describe('git operations', () => {
         expect(result.value.total).toBe(3);
         expect(result.value.truncated).toBe(true);
       }
+    });
+  });
+
+  describe('getRemoteUrl', () => {
+    test('returns null when no remote configured', async () => {
+      const result = await getRemoteUrl(repoPath);
+      expect(result.isOk()).toBe(true);
+      if (result.isOk()) {
+        expect(result.value).toBeNull();
+      }
+    });
+  });
+
+  describe('revertFiles', () => {
+    test('no-op with empty paths', async () => {
+      const result = await revertFiles(repoPath, []);
+      expect(result.isOk()).toBe(true);
+    });
+
+    test('reverts unstaged changes to tracked files', async () => {
+      writeFileSync(resolve(repoPath, 'README.md'), '# Modified');
+      const result = await revertFiles(repoPath, ['README.md']);
+      expect(result.isOk()).toBe(true);
+
+      const { readFileSync: readFs } = require('fs');
+      const content = readFs(resolve(repoPath, 'README.md'), 'utf-8');
+      expect(content).toBe('# Test');
+    });
+  });
+
+  describe('getSingleFileDiff', () => {
+    test('returns diff for unstaged tracked file', async () => {
+      writeFileSync(resolve(repoPath, 'README.md'), '# Updated content');
+      const result = await getSingleFileDiff(repoPath, 'README.md', false);
+      expect(result.isOk()).toBe(true);
+      if (result.isOk()) {
+        expect(result.value).toContain('Updated content');
+      }
+    });
+
+    test('returns diff for staged file', async () => {
+      writeFileSync(resolve(repoPath, 'README.md'), '# Staged change');
+      executeSync('git', ['add', 'README.md'], { cwd: repoPath });
+      const result = await getSingleFileDiff(repoPath, 'README.md', true);
+      expect(result.isOk()).toBe(true);
+      if (result.isOk()) {
+        expect(result.value).toContain('Staged change');
+      }
+    });
+
+    test('returns diff for untracked file', async () => {
+      writeFileSync(resolve(repoPath, 'brand-new.txt'), 'hello world');
+      const result = await getSingleFileDiff(repoPath, 'brand-new.txt', false);
+      expect(result.isOk()).toBe(true);
+      if (result.isOk()) {
+        expect(result.value).toContain('hello world');
+      }
+    });
+
+    test('returns empty string for clean file', async () => {
+      const result = await getSingleFileDiff(repoPath, 'README.md', false);
+      expect(result.isOk()).toBe(true);
+      if (result.isOk()) {
+        expect(result.value).toBe('');
+      }
+    });
+  });
+
+  describe('invalidateStatusCache', () => {
+    test('does not throw without arguments', () => {
+      expect(() => invalidateStatusCache()).not.toThrow();
+    });
+
+    test('does not throw with a cwd argument', () => {
+      expect(() => invalidateStatusCache(repoPath)).not.toThrow();
+    });
+  });
+
+  describe('push', () => {
+    test('returns error when no remote configured', async () => {
+      const result = await push(repoPath);
+      expect(result.isErr()).toBe(true);
+    });
+  });
+
+  describe('mergeBranch', () => {
+    test('merges feature branch into target', async () => {
+      // Get default branch name
+      const branchResult = await getCurrentBranch(repoPath);
+      expect(branchResult.isOk()).toBe(true);
+      const defaultBranch = branchResult.isOk() ? branchResult.value : 'master';
+
+      // Create feature branch and commit
+      executeSync('git', ['checkout', '-b', 'feature-merge'], { cwd: repoPath });
+      writeFileSync(resolve(repoPath, 'feature.txt'), 'feature content');
+      executeSync('git', ['add', '.'], { cwd: repoPath });
+      executeSync('git', ['commit', '-m', 'feature commit'], { cwd: repoPath });
+      executeSync('git', ['checkout', defaultBranch], { cwd: repoPath });
+
+      const result = await mergeBranch(repoPath, 'feature-merge', defaultBranch);
+      expect(result.isOk()).toBe(true);
+
+      // Verify file exists after merge
+      const { existsSync } = require('fs');
+      expect(existsSync(resolve(repoPath, 'feature.txt'))).toBe(true);
+    });
+
+    test('fails when working tree has uncommitted changes', async () => {
+      const branchResult = await getCurrentBranch(repoPath);
+      const defaultBranch = branchResult.isOk() ? branchResult.value : 'master';
+
+      executeSync('git', ['checkout', '-b', 'feature-dirty'], { cwd: repoPath });
+      writeFileSync(resolve(repoPath, 'dirty-feature.txt'), 'content');
+      executeSync('git', ['add', '.'], { cwd: repoPath });
+      executeSync('git', ['commit', '-m', 'dirty feature'], { cwd: repoPath });
+      executeSync('git', ['checkout', defaultBranch], { cwd: repoPath });
+
+      // Make uncommitted change
+      writeFileSync(resolve(repoPath, 'uncommitted.txt'), 'dirty');
+
+      const result = await mergeBranch(repoPath, 'feature-dirty', defaultBranch);
+      expect(result.isErr()).toBe(true);
+    });
+  });
+
+  describe('getLog with baseBranch', () => {
+    test('filters commits to only those after base branch divergence', async () => {
+      const branchResult = await getCurrentBranch(repoPath);
+      const defaultBranch = branchResult.isOk() ? branchResult.value : 'master';
+
+      executeSync('git', ['checkout', '-b', 'feature-log'], { cwd: repoPath });
+      writeFileSync(resolve(repoPath, 'log-feature.txt'), 'a');
+      executeSync('git', ['add', '.'], { cwd: repoPath });
+      executeSync('git', ['commit', '-m', 'feature log commit'], { cwd: repoPath });
+
+      const result = await getLog(repoPath, 20, defaultBranch);
+      expect(result.isOk()).toBe(true);
+      if (result.isOk()) {
+        expect(result.value.length).toBe(1);
+        expect(result.value[0].message).toBe('feature log commit');
+      }
+    });
+  });
+
+  describe('getDiff with deleted files', () => {
+    test('detects deleted files', async () => {
+      const { unlinkSync } = require('fs');
+      unlinkSync(resolve(repoPath, 'README.md'));
+      const result = await getDiff(repoPath);
+      expect(result.isOk()).toBe(true);
+      if (result.isOk()) {
+        const deleted = result.value.find((d) => d.path === 'README.md');
+        expect(deleted).toBeDefined();
+        expect(deleted!.status).toBe('deleted');
+      }
+    });
+  });
+
+  describe('getStatusSummary with baseBranch', () => {
+    test('counts unpushed commits relative to baseBranch', async () => {
+      const branchResult = await getCurrentBranch(repoPath);
+      const defaultBranch = branchResult.isOk() ? branchResult.value : 'master';
+
+      executeSync('git', ['checkout', '-b', 'feature-status'], { cwd: repoPath });
+      writeFileSync(resolve(repoPath, 'status1.txt'), 'a');
+      executeSync('git', ['add', '.'], { cwd: repoPath });
+      executeSync('git', ['commit', '-m', 'status commit 1'], { cwd: repoPath });
+      writeFileSync(resolve(repoPath, 'status2.txt'), 'b');
+      executeSync('git', ['add', '.'], { cwd: repoPath });
+      executeSync('git', ['commit', '-m', 'status commit 2'], { cwd: repoPath });
+
+      const result = await getStatusSummary(repoPath, defaultBranch);
+      expect(result.isOk()).toBe(true);
+      if (result.isOk()) {
+        expect(result.value.unpushedCommitCount).toBe(2);
+      }
+    });
+
+    test('counts lines in tracked modifications', async () => {
+      writeFileSync(resolve(repoPath, 'README.md'), '# Line 1\n# Line 2\n# Line 3\n');
+      const result = await getStatusSummary(repoPath);
+      expect(result.isOk()).toBe(true);
+      if (result.isOk()) {
+        expect(result.value.linesAdded).toBeGreaterThan(0);
+      }
+    });
+  });
+
+  describe('getDiffSummary staged vs unstaged marking', () => {
+    test('marks staged files as staged: true', async () => {
+      writeFileSync(resolve(repoPath, 'staged-only.txt'), 'data');
+      executeSync('git', ['add', 'staged-only.txt'], { cwd: repoPath });
+
+      const result = await getDiffSummary(repoPath);
+      expect(result.isOk()).toBe(true);
+      if (result.isOk()) {
+        const staged = result.value.files.find((f) => f.path === 'staged-only.txt');
+        expect(staged).toBeDefined();
+        expect(staged!.staged).toBe(true);
+      }
+    });
+
+    test('marks unstaged files as staged: false', async () => {
+      writeFileSync(resolve(repoPath, 'unstaged-only.txt'), 'data');
+
+      const result = await getDiffSummary(repoPath);
+      expect(result.isOk()).toBe(true);
+      if (result.isOk()) {
+        const unstaged = result.value.files.find((f) => f.path === 'unstaged-only.txt');
+        expect(unstaged).toBeDefined();
+        expect(unstaged!.staged).toBe(false);
+      }
+    });
+  });
+
+  describe('stashList with multiple stashes', () => {
+    test('lists multiple stash entries', async () => {
+      writeFileSync(resolve(repoPath, 'stash1.txt'), 'a');
+      executeSync('git', ['add', '.'], { cwd: repoPath });
+      executeSync('git', ['stash', 'push', '-m', 'first stash'], { cwd: repoPath });
+
+      writeFileSync(resolve(repoPath, 'stash2.txt'), 'b');
+      executeSync('git', ['add', '.'], { cwd: repoPath });
+      executeSync('git', ['stash', 'push', '-m', 'second stash'], { cwd: repoPath });
+
+      const result = await stashList(repoPath);
+      expect(result.isOk()).toBe(true);
+      if (result.isOk()) {
+        expect(result.value.length).toBe(2);
+        expect(result.value[0].message).toContain('second stash');
+        expect(result.value[1].message).toContain('first stash');
+      }
+    });
+  });
+
+  describe('commit without staged changes', () => {
+    test('returns error when nothing is staged', async () => {
+      const result = await commit(repoPath, 'empty commit');
+      expect(result.isErr()).toBe(true);
     });
   });
 });
