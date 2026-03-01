@@ -5,7 +5,7 @@ import { useNavigate } from 'react-router-dom';
 
 import { useMinuteTick } from '@/hooks/use-minute-tick';
 import { timeAgo } from '@/lib/thread-utils';
-import { useGitStatusStore } from '@/stores/git-status-store';
+import { useGitStatusStore, branchKey as computeBranchKey } from '@/stores/git-status-store';
 import { useProjectStore } from '@/stores/project-store';
 import { useThreadStore } from '@/stores/thread-store';
 
@@ -122,14 +122,12 @@ export function ThreadList({ onArchiveThread, onDeleteThread }: ThreadListProps)
   // Eagerly fetch git status for visible threads that don't have it yet.
   // This ensures icons and diff stats show up in the global thread list without requiring a click.
   useEffect(() => {
-    const {
-      fetchForThread,
-      threadToBranchKey: tbk,
-      statusByBranch: sbb,
-    } = useGitStatusStore.getState();
+    const { fetchForThread, statusByBranch: sbb } = useGitStatusStore.getState();
     for (const thread of threads) {
-      const bk = tbk[thread.id];
-      if (!bk || !sbb[bk]) {
+      // Compute branchKey client-side so sibling threads sharing a branch
+      // don't trigger redundant fetches when the server mapping is missing.
+      const bk = computeBranchKey(thread);
+      if (!sbb[bk]) {
         fetchForThread(thread.id);
       }
     }

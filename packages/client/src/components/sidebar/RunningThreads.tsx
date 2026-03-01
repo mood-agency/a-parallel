@@ -6,7 +6,7 @@ import { useNavigate } from 'react-router-dom';
 
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
 import { cn } from '@/lib/utils';
-import { useGitStatusStore } from '@/stores/git-status-store';
+import { useGitStatusStore, branchKey as computeBranchKey } from '@/stores/git-status-store';
 import { useProjectStore } from '@/stores/project-store';
 import { useThreadStore } from '@/stores/thread-store';
 
@@ -52,15 +52,13 @@ export function RunningThreads() {
 
   // Eagerly fetch git status for visible worktree threads that don't have it yet
   useEffect(() => {
-    const {
-      fetchForThread,
-      threadToBranchKey: tbk,
-      statusByBranch: sbb,
-    } = useGitStatusStore.getState();
+    const { fetchForThread, statusByBranch: sbb } = useGitStatusStore.getState();
     for (const thread of runningThreads) {
-      const bk = tbk[thread.id];
-      if (thread.mode === 'worktree' && (!bk || !sbb[bk])) {
-        fetchForThread(thread.id);
+      if (thread.mode === 'worktree') {
+        const bk = computeBranchKey(thread);
+        if (!sbb[bk]) {
+          fetchForThread(thread.id);
+        }
       }
     }
   }, [runningThreads]);

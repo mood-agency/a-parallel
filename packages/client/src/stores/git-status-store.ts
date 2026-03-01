@@ -2,6 +2,7 @@ import type { GitStatusInfo } from '@funny/shared';
 import { create } from 'zustand';
 
 import { api } from '@/lib/api';
+import { useThreadStore } from '@/stores/thread-store';
 
 /** Git status for a project root (no threadId) */
 export type ProjectGitStatus = Omit<GitStatusInfo, 'threadId' | 'branchKey'>;
@@ -51,6 +52,23 @@ export function _resetCooldowns() {
   _lastFetchByProject.clear();
   _lastFetchByBranch.clear();
   _lastFetchByProjectStatus.clear();
+}
+
+/**
+ * Resolve branchKey for a thread: check the server-provided mapping first,
+ * then fall back to computing client-side from thread data in the thread store.
+ * This ensures threads sharing a branch share cooldowns from the very first call.
+ */
+function resolveBranchKey(threadId: string, mapping: Record<string, string>): string | undefined {
+  const fromMapping = mapping[threadId];
+  if (fromMapping) return fromMapping;
+  // Compute client-side from thread data
+  const { threadsByProject } = useThreadStore.getState();
+  for (const threads of Object.values(threadsByProject)) {
+    const thread = threads.find((t) => t.id === threadId);
+    if (thread) return branchKey(thread);
+  }
+  return undefined;
 }
 
 /** Compare two GitStatusInfo objects for equality on the fields that affect rendering */
@@ -122,8 +140,9 @@ export const useGitStatusStore = create<GitStatusState>((set, get) => ({
   },
 
   fetchForThread: async (threadId) => {
-    // Use existing branchKey mapping for cooldown; fall back to threadId on first call
-    const bk = get().threadToBranchKey[threadId];
+    // Resolve branchKey from server mapping or compute client-side from thread data.
+    // This ensures threads sharing a branch share the same cooldown key.
+    const bk = resolveBranchKey(threadId, get().threadToBranchKey);
     const cooldownKey = bk || `pending:${threadId}`;
 
     if (bk && get()._loadingBranchKeys.has(bk)) return;
@@ -204,12 +223,14 @@ export const useGitStatusStore = create<GitStatusState>((set, get) => ({
 
 /**
  * Hook to get git status for a specific thread.
- * Resolves threadId → branchKey → status.
+ * Resolves threadId → branchKey → status, falling back to client-side
+ * branchKey computation so sibling threads on the same branch can
+ * immediately display cached status without waiting for their own fetch.
  */
 export function useGitStatusForThread(threadId: string | undefined): GitStatusInfo | undefined {
   return useGitStatusStore((state) => {
     if (!threadId) return undefined;
-    const bk = state.threadToBranchKey[threadId];
+    const bk = resolveBranchKey(threadId, state.threadToBranchKey);
     return bk ? state.statusByBranch[bk] : undefined;
   });
 }
