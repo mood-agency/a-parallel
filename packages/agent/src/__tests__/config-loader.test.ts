@@ -1,6 +1,13 @@
-import { describe, it, expect, beforeEach, afterEach } from 'bun:test';
+import { describe, it, expect, beforeEach, afterEach, mock } from 'bun:test';
 import { mkdirSync, rmSync, existsSync } from 'fs';
 import { join } from 'path';
+
+import { ok } from 'neverthrow';
+
+// Mock getDefaultBranch so tests don't depend on the host repo's default branch
+mock.module('@funny/core/git', () => ({
+  getDefaultBranch: async () => ok('main'),
+}));
 
 import { loadConfig } from '../config/loader.js';
 
