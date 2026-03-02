@@ -166,6 +166,12 @@ function flushWSBuffer(threadId: string, store: ThreadState) {
       case 'result':
         store.handleWSResult(threadId, event.data);
         break;
+      case 'context_usage':
+        store.handleWSContextUsage(threadId, event.data);
+        break;
+      case 'compact_boundary':
+        store.handleWSCompactBoundary(threadId, event.data);
+        break;
     }
   }
 }

@@ -16,9 +16,9 @@ describe('StartSessionSchema', () => {
     expect(result.success).toBe(true);
   });
 
-  it('rejects missing issue_number', () => {
+  it('accepts empty input (all fields optional)', () => {
     const result = StartSessionSchema.safeParse({});
-    expect(result.success).toBe(false);
+    expect(result.success).toBe(true);
   });
 
   it('rejects non-integer issue_number', () => {

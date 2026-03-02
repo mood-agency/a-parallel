@@ -13,7 +13,7 @@
     "./ports": "./src/ports/index.ts"
   },
   "scripts": {
-    "test": "vitest run"
+    "test": "bun test"
   },
   "dependencies": {
     "@ai-sdk/anthropic": "^3.0.46",

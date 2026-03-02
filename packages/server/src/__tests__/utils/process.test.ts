@@ -1,6 +1,5 @@
-import { describe, test, expect } from 'bun:test';
-
 import { ProcessExecutionError, execute, executeSync, executeWithLogging } from '@funny/core/git';
+import { describe, test, expect } from 'vitest';
 
 describe('ProcessExecutionError', () => {
   test('sets all properties correctly', () => {

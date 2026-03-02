@@ -166,6 +166,8 @@ export class AgentMessageHandler {
         outputTokens: usage.output_tokens,
         cumulativeInputTokens: cumulative,
       });
+    } else {
+      log.debug('No usage data in assistant message', { namespace: 'agent', threadId });
     }
 
     // Handle tool calls (deduplicate — streaming sends cumulative content)

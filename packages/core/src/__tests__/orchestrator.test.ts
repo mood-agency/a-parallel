@@ -1,7 +1,5 @@
 import { EventEmitter } from 'events';
 
-import { describe, test, expect, beforeEach } from 'vitest';
-
 import type {
   IAgentProcess,
   IAgentProcessFactory,

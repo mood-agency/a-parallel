@@ -424,8 +424,11 @@ export function handleWSCompactBoundary(
   threadId: string,
   data: { trigger: 'manual' | 'auto'; preTokens: number; timestamp: string },
 ): void {
-  const { activeThread } = get();
-  if (activeThread?.id !== threadId) return;
+  const { activeThread, selectedThreadId } = get();
+  if (activeThread?.id !== threadId) {
+    if (selectedThreadId === threadId) bufferWSEvent(threadId, 'compact_boundary', data);
+    return;
+  }
 
   set({
     activeThread: {
@@ -449,8 +452,11 @@ export function handleWSContextUsage(
   threadId: string,
   data: { inputTokens: number; outputTokens: number; cumulativeInputTokens: number },
 ): void {
-  const { activeThread } = get();
-  if (activeThread?.id !== threadId) return;
+  const { activeThread, selectedThreadId } = get();
+  if (activeThread?.id !== threadId) {
+    if (selectedThreadId === threadId) bufferWSEvent(threadId, 'context_usage', data);
+    return;
+  }
 
   set({
     activeThread: {

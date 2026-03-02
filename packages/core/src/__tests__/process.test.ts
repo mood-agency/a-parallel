@@ -1,5 +1,3 @@
-import { describe, test, expect } from 'vitest';
-
 import { execute, executeSync, executeResult, ProcessExecutionError } from '../git/process.js';
 
 describe('ProcessExecutionError', () => {

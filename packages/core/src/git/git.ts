@@ -86,10 +86,17 @@ export function isGitRepoSync(path: string): boolean {
  */
 export function getCurrentBranch(cwd: string): ResultAsync<string, DomainError> {
   const native = getNativeGit();
-  if (!native)
-    return new ResultAsync(Promise.resolve(err(internal('Native git module not available'))));
+  if (native) {
+    return ResultAsync.fromPromise(
+      native.getCurrentBranch(cwd).then((b) => b ?? ''),
+      (error) => processError(String(error), 1, ''),
+    );
+  }
+  // CLI fallback
   return ResultAsync.fromPromise(
-    native.getCurrentBranch(cwd).then((b) => b ?? ''),
+    gitRead(['rev-parse', '--abbrev-ref', 'HEAD'], { cwd, reject: false }).then((r) =>
+      r.exitCode === 0 ? r.stdout.trim() : '',
+    ),
     (error) => processError(String(error), 1, ''),
   );
 }

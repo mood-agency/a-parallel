@@ -2,8 +2,6 @@ import { mkdirSync, rmSync } from 'fs';
 import { tmpdir } from 'os';
 import { resolve, join } from 'path';
 
-import { describe, test, expect } from 'vitest';
-
 import {
   validatePath,
   validatePathSync,

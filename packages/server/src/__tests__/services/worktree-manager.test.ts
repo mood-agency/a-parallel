@@ -1,8 +1,8 @@
-import { describe, test, expect, beforeAll, afterAll } from 'bun:test';
 import { mkdirSync, rmSync, existsSync, writeFileSync } from 'fs';
 import { resolve, dirname } from 'path';
 
 import { executeSync } from '@funny/core/git';
+import { describe, test, expect, beforeAll, afterAll } from 'vitest';
 
 const TEST_REPO = resolve(import.meta.dir, '..', '..', '..', '.test-tmp-worktree-repo');
 const WORKTREE_DIR = resolve(dirname(TEST_REPO), '.funny-worktrees');

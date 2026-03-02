@@ -1,5 +1,3 @@
-import { describe, test, expect, beforeEach } from 'vitest';
-
 import { BaseAgentProcess } from '../agents/base-process.js';
 import type {
   ClaudeProcessOptions,

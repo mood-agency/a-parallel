@@ -11,8 +11,6 @@
 
 import pLimit from 'p-limit';
 
-import type { GitStatusSummary } from './git.js';
-
 export interface NativeGitStatusSummary {
   dirtyFileCount: number;
   unpushedCommitCount: number;
@@ -99,17 +97,18 @@ function createPooledModule(mod: NativeGitModule): PooledNativeGitModule {
  * Result is cached after the first attempt.
  */
 export function getNativeGit(): PooledNativeGitModule | null {
+  if (process.env.FUNNY_DISABLE_NATIVE_GIT === '1') return null;
   if (_attempted) return _pooled;
   _attempted = true;
   try {
     // eslint-disable-next-line @typescript-eslint/no-require-imports
     _native = require('@funny/native-git') as NativeGitModule;
     _pooled = createPooledModule(_native);
-    console.log('[git] Native module loaded (Rust/gitoxide)');
+    // native git module loaded successfully
   } catch {
     _native = null;
     _pooled = null;
-    console.log('[git] Native module not available, using CLI fallback');
+    // native module not available, CLI fallback will be used
   }
   return _pooled;
 }

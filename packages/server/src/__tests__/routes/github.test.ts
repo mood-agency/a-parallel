@@ -1,6 +1,5 @@
-import { describe, test, expect, beforeEach } from 'bun:test';
-
 import { Hono } from 'hono';
+import { describe, test, expect, beforeEach } from 'vitest';
 
 import { validate, cloneRepoSchema, githubPollSchema } from '../../validation/schemas.js';
 

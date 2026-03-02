@@ -50,7 +50,7 @@ export class LLMApiProcess extends BaseAgentProcess {
       // Execute with step callbacks for CLIMessage bridging
       const agentResult = await executor.execute(role, context, {
         signal: this.abortController.signal,
-        onMessage: (step: StepInfo) => {
+        onStepFinish: (step: StepInfo) => {
           this.emitStepAsCLIMessages(step);
         },
       });
@@ -148,6 +148,7 @@ export class LLMApiProcess extends BaseAgentProcess {
         message: {
           id: randomUUID(),
           content: [{ type: 'text' as const, text: step.text }],
+          usage: step.usage,
         },
       };
       this.emit('message', cliMsg);

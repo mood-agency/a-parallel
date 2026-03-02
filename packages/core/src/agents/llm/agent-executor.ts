@@ -62,6 +62,7 @@ export interface StepInfo {
   toolCalls: ToolCallInfo[];
   toolResults: ToolResult[];
   finishReason: string;
+  usage?: { input_tokens: number; output_tokens: number };
 }
 
 /** A plain tool definition (no Vercel AI SDK dependency) */
@@ -139,9 +140,7 @@ export class AgentExecutor {
         // Call api-acp runs endpoint
         const url = `${this.baseURL}/v1/runs`;
         const prompt = conversationParts.join('\n\n');
-        console.log(
-          `[AgentExecutor] POST ${url} model=${this.modelId} tools=${runTools.length} step=${steps}`,
-        );
+        // debug: POST ${url} model=${this.modelId} tools=${runTools.length} step=${steps}
         const response = await fetch(url, {
           method: 'POST',
           headers: {
@@ -191,6 +190,7 @@ export class AgentExecutor {
             toolCalls: [],
             toolResults: [],
             finishReason: 'stop',
+            usage: data.usage,
           });
           break;
         }
@@ -236,6 +236,7 @@ export class AgentExecutor {
           toolCalls: runToolCalls,
           toolResults,
           finishReason: 'tool-calls',
+          usage: data.usage,
         });
       }
 

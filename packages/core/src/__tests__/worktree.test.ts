@@ -2,8 +2,6 @@ import { mkdirSync, rmSync, writeFileSync, existsSync } from 'fs';
 import { tmpdir } from 'os';
 import { resolve } from 'path';
 
-import { describe, test, expect, beforeEach, afterEach } from 'vitest';
-
 import { executeSync } from '../git/process.js';
 import { createWorktree, listWorktrees, removeWorktree, removeBranch } from '../git/worktree.js';
 

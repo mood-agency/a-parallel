@@ -1,4 +1,3 @@
-import { describe, test, expect, beforeAll, afterAll } from 'bun:test';
 import { mkdirSync, rmSync, writeFileSync } from 'fs';
 import { resolve } from 'path';
 
@@ -16,6 +15,7 @@ import {
   gitSafeSync,
   executeSync,
 } from '@funny/core/git';
+import { describe, test, expect, beforeAll, afterAll } from 'vitest';
 
 // ── Pure function tests ──────────────────────────────────────────
 

@@ -1,4 +1,4 @@
 #!/usr/bin/env sh
 
-# Run tests before push
-bun test
+# Run tests before push (use workspace-scoped script, not bare bun test)
+bun run test

@@ -1,4 +1,3 @@
-import { describe, test, expect, beforeEach, beforeAll, afterAll } from 'bun:test';
 import { mkdirSync, rmSync, writeFileSync } from 'fs';
 import { resolve } from 'path';
 
@@ -19,6 +18,7 @@ import {
 } from '@funny/core/git';
 import { eq } from 'drizzle-orm';
 import { Hono } from 'hono';
+import { describe, test, expect, beforeEach, beforeAll, afterAll } from 'vitest';
 
 import { createTestDb, seedProject, seedThread } from '../helpers/test-db.js';
 

@@ -381,7 +381,7 @@ describe('getAskModeTools', () => {
     expect(tools).toContain('Grep');
     expect(tools).toContain('WebSearch');
     expect(tools).toContain('WebFetch');
-    expect(tools).toContain('Task');
+    expect(tools).not.toContain('Task');
   });
 
   test('does not include write tools', () => {

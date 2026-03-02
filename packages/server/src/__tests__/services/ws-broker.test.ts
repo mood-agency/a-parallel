@@ -1,4 +1,4 @@
-import { describe, test, expect, beforeEach } from 'bun:test';
+import { describe, test, expect, beforeEach } from 'vitest';
 
 // We need to test WSBroker in isolation, so we recreate the class logic
 // The singleton export makes it hard to reset between tests, so we test the class directly.

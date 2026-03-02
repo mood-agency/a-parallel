@@ -1,5 +1,3 @@
-import { describe, test, expect } from 'bun:test';
-
 import {
   notFound,
   badRequest,
@@ -11,6 +9,7 @@ import {
 } from '@funny/shared/errors';
 import { Hono } from 'hono';
 import { ok, err } from 'neverthrow';
+import { describe, test, expect } from 'vitest';
 
 import { resultToResponse } from '../../utils/result-response.js';
 
