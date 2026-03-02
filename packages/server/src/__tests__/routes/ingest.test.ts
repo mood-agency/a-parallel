@@ -1,10 +1,9 @@
-import { describe, test, expect, mock, beforeEach, afterAll } from 'bun:test';
-
 import { Hono } from 'hono';
+import { describe, test, expect, vi, beforeEach, afterAll } from 'vitest';
 
 // Mock the ingest mapper
-const mockHandleIngestEvent = mock(() => {});
-mock.module('../../services/ingest-mapper.js', () => ({
+const mockHandleIngestEvent = vi.fn(() => ({ threadId: 'test-thread-1' }));
+vi.mock('../../services/ingest-mapper.js', () => ({
   handleIngestEvent: mockHandleIngestEvent,
 }));
 
@@ -67,7 +66,7 @@ describe('Ingest Routes', () => {
     expect(body.error).toContain('event_type');
   });
 
-  test('POST /ingest/webhook rejects missing request_id', async () => {
+  test('POST /ingest/webhook skips events without request_id or thread_id', async () => {
     const res = await app.request('/ingest/webhook', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'X-Webhook-Secret': TEST_SECRET },
@@ -77,7 +76,10 @@ describe('Ingest Routes', () => {
         data: {},
       }),
     });
-    expect(res.status).toBe(400);
+    // System-level events without request_id/thread_id are skipped gracefully
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.skipped).toBe(true);
   });
 
   test('POST /ingest/webhook rejects missing timestamp', async () => {

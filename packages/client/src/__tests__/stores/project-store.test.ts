@@ -13,6 +13,10 @@ const mockFetchForProject = vi.fn();
 vi.mock('@/lib/api', () => ({
   api: {
     listProjects: vi.fn(),
+    listThreads: vi.fn(),
+    listBranches: vi
+      .fn()
+      .mockReturnValue(Promise.resolve({ isOk: () => false, isErr: () => true })),
     renameProject: vi.fn(),
     updateProject: vi.fn(),
     deleteProject: vi.fn(),
@@ -99,13 +103,22 @@ describe('ProjectStore', () => {
     });
 
     test('triggers thread loading in background for all projects', async () => {
+      const { api: realApi } = await import('@/lib/api');
+      const mockListThreads = vi.mocked(realApi.listThreads);
+
       const projects = [makeProject({ id: 'p1' }), makeProject({ id: 'p2' })];
       mockApi.listProjects.mockReturnValueOnce(okAsync(projects) as any);
+      // loadProjects now calls api.listThreads directly for each project (batched)
+      mockListThreads.mockReturnValue(okAsync([]) as any);
 
       await useProjectStore.getState().loadProjects();
 
-      expect(mockLoadThreadsForProject).toHaveBeenCalledWith('p1');
-      expect(mockLoadThreadsForProject).toHaveBeenCalledWith('p2');
+      // The batched thread loading happens in a fire-and-forget Promise.all,
+      // so we wait a tick for it to complete
+      await new Promise((r) => setTimeout(r, 50));
+
+      expect(mockListThreads).toHaveBeenCalledWith('p1', true);
+      expect(mockListThreads).toHaveBeenCalledWith('p2', true);
     });
 
     test('handles API errors gracefully', async () => {
@@ -151,12 +164,13 @@ describe('ProjectStore', () => {
   });
 
   describe('selectProject', () => {
-    test('sets selectedProjectId and auto-expands', () => {
+    test('sets selectedProjectId without auto-expanding', () => {
       useProjectStore.getState().selectProject('p1');
 
       const state = useProjectStore.getState();
       expect(state.selectedProjectId).toBe('p1');
-      expect(state.expandedProjects.has('p1')).toBe(true);
+      // selectProject no longer auto-expands the project
+      expect(state.expandedProjects.has('p1')).toBe(false);
     });
 
     test('does not duplicate in expandedProjects if already expanded', () => {

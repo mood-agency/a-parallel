@@ -64,7 +64,7 @@ describe('extractRepoName', () => {
 
 // ── Integration tests with a temp git repo ──────────────────────
 
-const TEST_REPO = resolve(import.meta.dir, '..', '..', '..', '.test-tmp-git-repo');
+const TEST_REPO = resolve(import.meta.dirname!, '..', '..', '..', '.test-tmp-git-repo');
 
 function setupRepo() {
   mkdirSync(TEST_REPO, { recursive: true });

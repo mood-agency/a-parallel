@@ -15,13 +15,20 @@ vi.mock('react-i18next', () => ({
   }),
 }));
 
-vi.mock('@/lib/api', () => ({
-  api: {
-    listBranches: vi.fn().mockResolvedValue({ branches: [], defaultBranch: 'main' }),
-    listWorktrees: vi.fn().mockResolvedValue([]),
-    listSkills: vi.fn().mockResolvedValue({ skills: [] }),
-  },
-}));
+vi.mock('@/lib/api', async () => {
+  const { okAsync } = await import('neverthrow');
+  return {
+    api: {
+      listBranches: vi
+        .fn()
+        .mockReturnValue(okAsync({ branches: [], defaultBranch: 'main', currentBranch: 'main' })),
+      listWorktrees: vi.fn().mockReturnValue(okAsync([])),
+      listSkills: vi.fn().mockReturnValue(okAsync({ skills: [] })),
+      remoteUrl: vi.fn().mockReturnValue(okAsync({ url: '' })),
+      browseFiles: vi.fn().mockReturnValue(okAsync({ entries: [] })),
+    },
+  };
+});
 
 vi.mock('@/components/ImageLightbox', () => ({
   ImageLightbox: () => null,
@@ -62,7 +69,7 @@ describe('PromptInput', () => {
     expect(onSubmit).toHaveBeenCalledTimes(1);
     expect(onSubmit).toHaveBeenCalledWith(
       'Hello agent',
-      expect.objectContaining({ model: 'opus', mode: 'autoEdit' }),
+      expect.objectContaining({ model: 'sonnet', mode: 'autoEdit' }),
       undefined,
     );
   });
@@ -91,16 +98,16 @@ describe('PromptInput', () => {
   test('stop button shown when running=true, send button when not', () => {
     const onStop = vi.fn();
 
-    // Running state — stop button visible
+    // Running state with empty textarea — stop button visible
     const { unmount } = renderWithProviders(
       <PromptInput onSubmit={vi.fn()} onStop={onStop} running={true} />,
     );
-    expect(screen.getAllByTitle('prompt.stopAgent').length).toBeGreaterThan(0);
+    expect(screen.getAllByLabelText('prompt.stopAgent').length).toBeGreaterThan(0);
     unmount();
 
     // Not running — send button visible (no stop button)
     renderWithProviders(<PromptInput onSubmit={vi.fn()} running={false} />);
-    expect(screen.queryByTitle('prompt.stopAgent')).toBeNull();
+    expect(screen.queryByLabelText('prompt.stopAgent')).toBeNull();
   });
 
   test('submit clears the textarea', async () => {

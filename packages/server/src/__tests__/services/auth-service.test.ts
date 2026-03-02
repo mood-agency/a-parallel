@@ -1,12 +1,13 @@
-import { describe, test, expect, beforeEach, mock, afterAll } from 'bun:test';
 import { mkdirSync, writeFileSync, rmSync, readFileSync } from 'fs';
 import { resolve } from 'path';
 
-const TEST_DIR = resolve(import.meta.dir, '..', '..', '..', '.test-tmp-auth-service');
+import { describe, test, expect, beforeEach, vi, afterAll } from 'vitest';
+
+const TEST_DIR = resolve(import.meta.dirname!, '..', '..', '..', '.test-tmp-auth-service');
 const _TOKEN_PATH = resolve(TEST_DIR, 'auth-token');
 
 // Mock the homedir to use our test dir
-mock.module('os', () => ({
+vi.mock('os', () => ({
   homedir: () => resolve(TEST_DIR, '..'),
   platform: () => process.platform,
 }));

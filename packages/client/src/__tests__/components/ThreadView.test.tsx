@@ -6,6 +6,18 @@ import { useAppStore } from '@/stores/app-store';
 
 import { renderWithProviders } from '../helpers/render';
 
+// ── IntersectionObserver polyfill for jsdom ─────────────────────
+class MockIntersectionObserver {
+  observe() {}
+  unobserve() {}
+  disconnect() {}
+}
+Object.defineProperty(globalThis, 'IntersectionObserver', {
+  writable: true,
+  configurable: true,
+  value: MockIntersectionObserver,
+});
+
 // ── Mocks ───────────────────────────────────────────────────────
 
 vi.mock('react-i18next', () => ({
@@ -16,15 +28,23 @@ vi.mock('react-i18next', () => ({
   }),
 }));
 
-vi.mock('@/lib/api', () => ({
-  api: {
-    sendMessage: vi.fn().mockResolvedValue({}),
-    stopThread: vi.fn().mockResolvedValue({}),
-    listBranches: vi.fn().mockResolvedValue({ branches: [], defaultBranch: 'main' }),
-    listWorktrees: vi.fn().mockResolvedValue([]),
-    listSkills: vi.fn().mockResolvedValue({ skills: [] }),
-  },
-}));
+vi.mock('@/lib/api', async () => {
+  const { okAsync } = await import('neverthrow');
+  return {
+    api: {
+      sendMessage: vi.fn().mockReturnValue(okAsync({})),
+      stopThread: vi.fn().mockReturnValue(okAsync({})),
+      approveTool: vi.fn().mockReturnValue(okAsync({})),
+      listBranches: vi
+        .fn()
+        .mockReturnValue(okAsync({ branches: [], defaultBranch: 'main', currentBranch: 'main' })),
+      listWorktrees: vi.fn().mockReturnValue(okAsync([])),
+      listSkills: vi.fn().mockReturnValue(okAsync({ skills: [] })),
+      remoteUrl: vi.fn().mockReturnValue(okAsync({ url: '' })),
+      browseFiles: vi.fn().mockReturnValue(okAsync({ entries: [] })),
+    },
+  };
+});
 
 vi.mock('@/components/ImageLightbox', () => ({
   ImageLightbox: () => null,
@@ -81,22 +101,22 @@ vi.mock('@/components/PromptInput', () => ({
   PromptInput: () => <div data-testid="prompt-input" />,
 }));
 
-vi.mock('motion/react', () => ({
-  motion: {
-    div: ({ children, ...props }: any) => (
-      <div
-        {...Object.fromEntries(
-          Object.entries(props).filter(
-            ([k]) => !['initial', 'animate', 'transition', 'exit'].includes(k),
-          ),
-        )}
-      >
-        {children}
-      </div>
-    ),
-  },
-  AnimatePresence: ({ children }: any) => <>{children}</>,
-}));
+vi.mock('motion/react', () => {
+  const filterMotionProps = (props: any) =>
+    Object.fromEntries(
+      Object.entries(props).filter(
+        ([k]) => !['initial', 'animate', 'transition', 'exit', 'layout'].includes(k),
+      ),
+    );
+  return {
+    motion: {
+      div: ({ children, ...props }: any) => <div {...filterMotionProps(props)}>{children}</div>,
+      span: ({ children, ...props }: any) => <span {...filterMotionProps(props)}>{children}</span>,
+    },
+    AnimatePresence: ({ children }: any) => <>{children}</>,
+    useReducedMotion: () => false,
+  };
+});
 
 vi.mock('react-markdown', () => ({
   default: ({ children }: any) => <div>{children}</div>,
@@ -167,8 +187,9 @@ describe('ThreadView', () => {
 
     renderWithProviders(<ThreadView />);
 
-    expect(screen.getByText('Hello agent')).toBeInTheDocument();
-    expect(screen.getByText('Hello human')).toBeInTheDocument();
+    // The user message text may appear in multiple places (message + sticky header)
+    expect(screen.getAllByText('Hello agent').length).toBeGreaterThan(0);
+    expect(screen.getAllByText('Hello human').length).toBeGreaterThan(0);
   });
 
   test('shows tool call cards for messages with toolCalls', () => {

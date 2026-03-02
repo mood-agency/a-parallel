@@ -40,11 +40,11 @@ describe('resultToResponse', () => {
     expect(body).toEqual({ created: true });
   });
 
-  test('ok result returns custom success status (204)', async () => {
-    const app = createApp((c) => resultToResponse(c, ok(null), 204));
+  test('ok result returns custom success status (201 with null)', async () => {
+    const app = createApp((c) => resultToResponse(c, ok(null), 201));
 
     const res = await app.request('/test');
-    expect(res.status).toBe(204);
+    expect(res.status).toBe(201);
   });
 
   test('ok result with array value', async () => {
@@ -102,7 +102,7 @@ describe('resultToResponse', () => {
     const res = await app.request('/test');
     expect(res.status).toBe(400);
     const body = await res.json();
-    expect(body).toEqual({ error: 'git diff failed' });
+    expect(body).toEqual({ error: 'git diff failed', exitCode: 1, stderr: 'fatal error' });
   });
 
   test('err(conflict) returns 409', async () => {

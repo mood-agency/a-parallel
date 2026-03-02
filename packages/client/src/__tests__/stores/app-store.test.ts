@@ -9,7 +9,11 @@ vi.mock('@/lib/api', () => ({
   api: {
     listProjects: vi.fn(),
     listThreads: vi.fn(),
+    listBranches: vi
+      .fn()
+      .mockReturnValue(Promise.resolve({ isOk: () => false, isErr: () => true })),
     getThread: vi.fn(),
+    getThreadEvents: vi.fn(),
     archiveThread: vi.fn(),
     getGitStatuses: vi.fn().mockReturnValue({ isOk: () => false, isErr: () => true }),
   },
@@ -99,11 +103,12 @@ describe('AppStore', () => {
       expect(useAppStore.getState().selectedProjectId).toBe('p1');
     });
 
-    test('expands the project', () => {
+    test('does not auto-expand the project', () => {
       mockApi.listThreads.mockReturnValueOnce(okAsync([]) as any);
 
       useAppStore.getState().selectProject('p1');
-      expect(useAppStore.getState().expandedProjects.has('p1')).toBe(true);
+      // selectProject no longer auto-expands; it only sets selectedProjectId
+      expect(useAppStore.getState().expandedProjects.has('p1')).toBe(false);
     });
 
     test('clears selection with null', () => {
@@ -124,6 +129,7 @@ describe('AppStore', () => {
         status: 'completed',
       };
       mockApi.getThread.mockReturnValueOnce(okAsync(mockThread) as any);
+      mockApi.getThreadEvents.mockReturnValueOnce(okAsync([]) as any);
       mockApi.listThreads.mockReturnValueOnce(okAsync([]) as any);
 
       await useAppStore.getState().selectThread('t1');
@@ -142,6 +148,7 @@ describe('AppStore', () => {
     test('clears activeThread and selectedThreadId on fetch error', async () => {
       const error: DomainError = { type: 'NOT_FOUND', message: 'Not found' };
       mockApi.getThread.mockReturnValueOnce(errAsync(error) as any);
+      mockApi.getThreadEvents.mockReturnValueOnce(errAsync(error) as any);
 
       await useAppStore.getState().selectThread('nonexistent');
       expect(useAppStore.getState().activeThread).toBeNull();
@@ -519,6 +526,7 @@ describe('AppStore', () => {
     test('refreshActiveThread silently handles API error', async () => {
       const error: DomainError = { type: 'INTERNAL', message: 'Server down' };
       mockApi.getThread.mockReturnValueOnce(errAsync(error) as any);
+      mockApi.getThreadEvents.mockReturnValueOnce(errAsync(error) as any);
 
       useAppStore.setState({
         activeThread: { id: 't1', messages: [] } as any,

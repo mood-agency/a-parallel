@@ -4,7 +4,7 @@ import { resolve, join } from 'path';
 import { validatePath, validatePathSync, pathExists, sanitizePath } from '@funny/core/git';
 import { describe, test, expect } from 'vitest';
 
-const TEST_DIR = resolve(import.meta.dir, '..', '..', '..', '.test-tmp-path-validation');
+const TEST_DIR = resolve(import.meta.dirname!, '..', '..', '..', '.test-tmp-path-validation');
 
 // Setup / teardown
 function setup() {

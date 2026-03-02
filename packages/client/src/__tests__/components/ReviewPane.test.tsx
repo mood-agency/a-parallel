@@ -156,9 +156,10 @@ describe('ReviewPane', () => {
 
     renderWithProviders(<ReviewPane />);
 
+    // The file list renders only the basename (last segment of the path)
     await waitFor(() => {
-      expect(screen.getByText('src/index.ts')).toBeInTheDocument();
-      expect(screen.getByText('src/utils.ts')).toBeInTheDocument();
+      expect(screen.getByText('index.ts')).toBeInTheDocument();
+      expect(screen.getByText('utils.ts')).toBeInTheDocument();
     });
 
     // Status indicators: M for modified, A for added
@@ -179,7 +180,7 @@ describe('ReviewPane', () => {
     renderWithProviders(<ReviewPane />);
 
     await waitFor(() => {
-      expect(screen.getByText('src/index.ts')).toBeInTheDocument();
+      expect(screen.getByText('index.ts')).toBeInTheDocument();
     });
 
     // Commit title input
@@ -187,9 +188,9 @@ describe('ReviewPane', () => {
     // Commit body textarea
     expect(screen.getByPlaceholderText('review.commitBody')).toBeInTheDocument();
     // Action buttons (use fallback strings from t() calls)
+    // Note: "Commit & Create PR" only appears for worktree threads with worktreePath
     expect(screen.getByText('Commit')).toBeInTheDocument();
     expect(screen.getByText('Commit & Push')).toBeInTheDocument();
-    expect(screen.getByText('Commit & Create PR')).toBeInTheDocument();
   });
 
   test('shows header with title and close button', async () => {

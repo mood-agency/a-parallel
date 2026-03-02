@@ -1,18 +1,22 @@
-import { describe, test, expect, mock, beforeEach } from 'bun:test';
-
 import { Hono } from 'hono';
+import { describe, test, expect, vi, beforeEach } from 'vitest';
 
-const mockListSkills = mock(() => [
-  { name: 'test-skill', description: 'A test skill', source: 'github', scope: 'global' },
-]);
-const mockListProjectSkills = mock(() => []);
-const mockAddSkill = mock(async () => {});
-const mockRemoveSkill = mock(() => {});
-const MOCK_RECOMMENDED = [
-  { name: 'find-skills', description: 'Find skills', identifier: 'vercel-labs/skills@find-skills' },
-];
+const { mockListSkills, mockListProjectSkills, mockAddSkill, mockRemoveSkill, MOCK_RECOMMENDED } =
+  vi.hoisted(() => ({
+    mockListSkills: vi.fn(),
+    mockListProjectSkills: vi.fn(),
+    mockAddSkill: vi.fn(),
+    mockRemoveSkill: vi.fn(),
+    MOCK_RECOMMENDED: [
+      {
+        name: 'find-skills',
+        description: 'Find skills',
+        identifier: 'vercel-labs/skills@find-skills',
+      },
+    ],
+  }));
 
-mock.module('../../services/skills-service.js', () => ({
+vi.mock('../../services/skills-service.js', () => ({
   listSkills: mockListSkills,
   listProjectSkills: mockListProjectSkills,
   addSkill: mockAddSkill,

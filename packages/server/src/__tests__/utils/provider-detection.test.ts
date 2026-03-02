@@ -1,7 +1,7 @@
-import { describe, test, expect, mock, beforeEach } from 'bun:test';
+import { describe, test, expect, vi, beforeEach } from 'vitest';
 
 // Mock claude-binary before importing provider-detection
-mock.module('../../utils/claude-binary.js', () => ({
+vi.mock('../../utils/claude-binary.js', () => ({
   checkClaudeBinaryAvailability: () => ({ available: false, error: 'not found' }),
   validateClaudeBinary: () => {
     throw new Error('not found');
@@ -10,8 +10,8 @@ mock.module('../../utils/claude-binary.js', () => ({
 
 // Mock the SDK imports — return empty objects so dynamic import() succeeds
 // but the SDK check in provider-detection will still treat them as available
-mock.module('@anthropic-ai/claude-agent-sdk', () => ({}));
-mock.module('@openai/codex-sdk', () => ({}));
+vi.mock('@anthropic-ai/claude-agent-sdk', () => ({}));
+vi.mock('@openai/codex-sdk', () => ({}));
 
 import { getAvailableProviders, resetProviderCache } from '../../utils/provider-detection.js';
 

@@ -14,6 +14,7 @@ const t = (key: string, opts?: any) => (opts ? `${key}:${JSON.stringify(opts)}` 
 
 describe('statusConfig', () => {
   const allStatuses: ThreadStatus[] = [
+    'setting_up',
     'idle',
     'pending',
     'running',
@@ -264,6 +265,7 @@ describe('gitSyncStateConfig', () => {
 
 describe('getStatusLabels', () => {
   const allStatuses: ThreadStatus[] = [
+    'setting_up',
     'idle',
     'pending',
     'running',
@@ -284,6 +286,7 @@ describe('getStatusLabels', () => {
 
   test('uses the translation function for each label', () => {
     const labels = getStatusLabels(t);
+    expect(labels.setting_up).toBe('thread.status.settingUp');
     expect(labels.idle).toBe('thread.status.idle');
     expect(labels.pending).toBe('thread.status.pending');
     expect(labels.running).toBe('thread.status.running');
@@ -302,7 +305,8 @@ describe('getStatusLabels', () => {
   test('calls translation function with correct keys', () => {
     const mockT = vi.fn((key: string) => key);
     getStatusLabels(mockT);
-    expect(mockT).toHaveBeenCalledTimes(8);
+    expect(mockT).toHaveBeenCalledTimes(allStatuses.length);
+    expect(mockT).toHaveBeenCalledWith('thread.status.settingUp');
     expect(mockT).toHaveBeenCalledWith('thread.status.idle');
     expect(mockT).toHaveBeenCalledWith('thread.status.completed');
     expect(mockT).toHaveBeenCalledWith('thread.status.failed');

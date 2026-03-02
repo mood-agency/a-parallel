@@ -2,11 +2,14 @@ import type { ToolPermission } from '@funny/shared';
 import { describe, test, expect, vi, beforeEach } from 'vitest';
 
 // Mock the api module so syncToServer calls don't fail
-vi.mock('@/lib/api', () => ({
-  api: {
-    updateProfile: vi.fn(() => Promise.resolve({ isOk: () => true, value: {} })),
-  },
-}));
+vi.mock('@/lib/api', async () => {
+  const { okAsync } = await import('neverthrow');
+  return {
+    api: {
+      updateProfile: vi.fn(() => okAsync({})),
+    },
+  };
+});
 
 import {
   deriveToolLists,

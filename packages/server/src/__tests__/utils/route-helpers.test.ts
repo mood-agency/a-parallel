@@ -1,17 +1,17 @@
-import { describe, test, expect, mock, beforeEach } from 'bun:test';
+import { describe, test, expect, vi, beforeEach } from 'vitest';
 
 // ── Mocks ────────────────────────────────────────────────────────
 
-const mockGetThread = mock(() => undefined as any);
-const mockGetThreadWithMessages = mock(() => undefined as any);
-const mockGetProject = mock(() => undefined as any);
+const mockGetThread = vi.fn(() => undefined as any);
+const mockGetThreadWithMessages = vi.fn(() => undefined as any);
+const mockGetProject = vi.fn(() => undefined as any);
 
-mock.module('../../services/thread-manager.js', () => ({
+vi.mock('../../services/thread-manager.js', () => ({
   getThread: mockGetThread,
   getThreadWithMessages: mockGetThreadWithMessages,
 }));
 
-mock.module('../../services/project-manager.js', () => ({
+vi.mock('../../services/project-manager.js', () => ({
   getProject: mockGetProject,
 }));
 
@@ -125,7 +125,7 @@ describe('requireProject', () => {
       expect(result.error.type).toBe('NOT_FOUND');
       expect(result.error.message).toBe('Project not found');
     } else {
-      // In case mock.module collision causes the module to be replaced,
+      // In case vi.mock collision causes the module to be replaced,
       // verify the function at least ran without error
       expect(result.isOk()).toBe(true);
     }

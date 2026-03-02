@@ -1,4 +1,4 @@
-import { describe, test, expect, mock, beforeEach } from 'bun:test';
+import { describe, test, expect, vi, beforeEach } from 'vitest';
 
 import {
   ThreadEventBus,
@@ -23,7 +23,7 @@ describe('ThreadEventBus', () => {
 
   describe('thread:created', () => {
     test('emit/on works for thread:created event', () => {
-      const handler = mock(() => {});
+      const handler = vi.fn(() => {});
       const payload: ThreadCreatedEvent = {
         threadId: 't-1',
         projectId: 'p-1',
@@ -45,7 +45,7 @@ describe('ThreadEventBus', () => {
 
   describe('thread:stage-changed', () => {
     test('emit/on works for thread:stage-changed event', () => {
-      const handler = mock(() => {});
+      const handler = vi.fn(() => {});
       const payload: ThreadStageChangedEvent = {
         threadId: 't-2',
         projectId: 'p-2',
@@ -66,7 +66,7 @@ describe('ThreadEventBus', () => {
 
   describe('thread:deleted', () => {
     test('emit/on works for thread:deleted event', () => {
-      const handler = mock(() => {});
+      const handler = vi.fn(() => {});
       const payload: ThreadDeletedEvent = {
         threadId: 't-3',
         projectId: 'p-3',
@@ -84,7 +84,7 @@ describe('ThreadEventBus', () => {
 
   describe('agent:started', () => {
     test('emit/on works for agent:started event', () => {
-      const handler = mock(() => {});
+      const handler = vi.fn(() => {});
       const payload: AgentStartedEvent = {
         threadId: 't-4',
         projectId: 'p-4',
@@ -105,7 +105,7 @@ describe('ThreadEventBus', () => {
 
   describe('agent:completed', () => {
     test('emit/on works for agent:completed event', () => {
-      const handler = mock(() => {});
+      const handler = vi.fn(() => {});
       const payload: AgentCompletedEvent = {
         threadId: 't-5',
         projectId: 'p-5',
@@ -124,7 +124,7 @@ describe('ThreadEventBus', () => {
     });
 
     test('handles failed status', () => {
-      const handler = mock(() => {});
+      const handler = vi.fn(() => {});
       const payload: AgentCompletedEvent = {
         threadId: 't-6',
         projectId: 'p-6',
@@ -143,7 +143,7 @@ describe('ThreadEventBus', () => {
     });
 
     test('handles stopped status', () => {
-      const handler = mock(() => {});
+      const handler = vi.fn(() => {});
       const payload: AgentCompletedEvent = {
         threadId: 't-7',
         projectId: 'p-7',
@@ -164,9 +164,9 @@ describe('ThreadEventBus', () => {
 
   describe('multiple listeners', () => {
     test('multiple listeners receive the same event', () => {
-      const handler1 = mock(() => {});
-      const handler2 = mock(() => {});
-      const handler3 = mock(() => {});
+      const handler1 = vi.fn(() => {});
+      const handler2 = vi.fn(() => {});
+      const handler3 = vi.fn(() => {});
       const payload: ThreadCreatedEvent = {
         threadId: 't-multi',
         projectId: 'p-multi',
@@ -193,7 +193,7 @@ describe('ThreadEventBus', () => {
 
   describe('removing listeners', () => {
     test('removing a listener stops it from being called', () => {
-      const handler = mock(() => {});
+      const handler = vi.fn(() => {});
       const payload: ThreadDeletedEvent = {
         threadId: 't-rm',
         projectId: 'p-rm',

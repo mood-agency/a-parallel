@@ -1,6 +1,5 @@
-import { describe, test, expect, mock, beforeEach } from 'bun:test';
-
 import { Hono } from 'hono';
+import { describe, test, expect, vi, beforeEach } from 'vitest';
 
 import type { HonoEnv } from '../../types/hono-env.js';
 
@@ -22,16 +21,27 @@ const mockAutomation = {
   updatedAt: new Date().toISOString(),
 };
 
-const mockListAutomations = mock(() => [mockAutomation]);
-const mockGetAutomation = mock((id: string) => (id === 'auto-1' ? mockAutomation : null));
-const mockCreateAutomation = mock((data: any) => ({ ...mockAutomation, ...data }));
-const mockUpdateAutomation = mock(() => {});
-const mockDeleteAutomation = mock(() => {});
-const mockListRuns = mock(() => []);
-const mockUpdateRun = mock(() => {});
-const mockListInboxRuns = mock(() => []);
+const {
+  mockListAutomations,
+  mockGetAutomation,
+  mockCreateAutomation,
+  mockUpdateAutomation,
+  mockDeleteAutomation,
+  mockListRuns,
+  mockUpdateRun,
+  mockListInboxRuns,
+} = vi.hoisted(() => ({
+  mockListAutomations: vi.fn(),
+  mockGetAutomation: vi.fn(),
+  mockCreateAutomation: vi.fn(),
+  mockUpdateAutomation: vi.fn(),
+  mockDeleteAutomation: vi.fn(),
+  mockListRuns: vi.fn(),
+  mockUpdateRun: vi.fn(),
+  mockListInboxRuns: vi.fn(),
+}));
 
-mock.module('../../services/automation-manager.js', () => ({
+vi.mock('../../services/automation-manager.js', () => ({
   listAutomations: mockListAutomations,
   getAutomation: mockGetAutomation,
   createAutomation: mockCreateAutomation,
@@ -42,7 +52,7 @@ mock.module('../../services/automation-manager.js', () => ({
   listInboxRuns: mockListInboxRuns,
 }));
 
-mock.module('../../services/project-manager.js', () => ({
+vi.mock('../../services/project-manager.js', () => ({
   getProject: (id: string) => (id === 'p1' ? { id: 'p1', name: 'Test', path: '/tmp/test' } : null),
 }));
 

@@ -1,21 +1,24 @@
-import { describe, test, expect, mock, beforeEach } from 'bun:test';
-
 import { Hono } from 'hono';
 import { ok, err } from 'neverthrow';
+import { describe, test, expect, vi, beforeEach } from 'vitest';
 
-// Mock dependencies
-const mockListWorktrees = mock(() => ok([{ path: '/tmp/wt1', branch: 'feature/x' }]));
-const mockCreateWorktree = mock(() => ok('/tmp/wt-new'));
-const mockRemoveWorktree = mock(() => ok(undefined));
+const { mockListWorktrees, mockCreateWorktree, mockRemoveWorktree } = vi.hoisted(() => ({
+  mockListWorktrees: vi.fn(),
+  mockCreateWorktree: vi.fn(),
+  mockRemoveWorktree: vi.fn(),
+}));
 
-mock.module('@funny/core/git', () => ({
+vi.mock('@funny/core/git', () => ({
   listWorktrees: mockListWorktrees,
   createWorktree: mockCreateWorktree,
   removeWorktree: mockRemoveWorktree,
 }));
 
-const mockRequireProject = mock(() => ok({ id: 'p1', path: '/tmp/project', name: 'Test' }));
-mock.module('../../utils/route-helpers.js', () => ({
+const { mockRequireProject } = vi.hoisted(() => ({
+  mockRequireProject: vi.fn(),
+}));
+
+vi.mock('../../utils/route-helpers.js', () => ({
   requireProject: mockRequireProject,
 }));
 

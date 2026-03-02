@@ -1,25 +1,24 @@
-import { describe, test, expect, beforeEach, mock } from 'bun:test';
-
 import { Hono } from 'hono';
+import { describe, test, expect, beforeEach, vi } from 'vitest';
 
 // ---------------------------------------------------------------------------
 // Mocks — must be declared before importing the module under test
 // ---------------------------------------------------------------------------
 
-const mockGetAuthMode = mock(() => 'local' as 'local' | 'multi');
-const mockValidateToken = mock(() => true);
+const mockGetAuthMode = vi.fn(() => 'local' as 'local' | 'multi');
+const mockValidateToken = vi.fn(() => true);
 
-mock.module('../../lib/auth-mode.js', () => ({
+vi.mock('../../lib/auth-mode.js', () => ({
   getAuthMode: mockGetAuthMode,
 }));
 
-mock.module('../../services/auth-service.js', () => ({
+vi.mock('../../services/auth-service.js', () => ({
   validateToken: mockValidateToken,
 }));
 
 // Mock Better Auth — only used in multi mode tests
-const mockGetSession = mock(() => Promise.resolve(null));
-mock.module('../../lib/auth.js', () => ({
+const mockGetSession = vi.fn(() => Promise.resolve(null));
+vi.mock('../../lib/auth.js', () => ({
   auth: {
     api: {
       getSession: mockGetSession,
