@@ -1,3 +1,11 @@
+/**
+ * @domain subdomain: Process Management
+ * @domain subdomain-type: supporting
+ * @domain type: repository
+ * @domain layer: infrastructure
+ * @domain depends: Database
+ */
+
 import { eq, asc } from 'drizzle-orm';
 import { nanoid } from 'nanoid';
 

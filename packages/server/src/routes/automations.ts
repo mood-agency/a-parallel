@@ -1,3 +1,11 @@
+/**
+ * @domain subdomain: Automation
+ * @domain subdomain-type: supporting
+ * @domain type: adapter
+ * @domain layer: infrastructure
+ * @domain depends: AutomationManager, AutomationScheduler
+ */
+
 import { Hono } from 'hono';
 
 import * as am from '../services/automation-manager.js';

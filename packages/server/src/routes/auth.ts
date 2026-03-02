@@ -1,3 +1,11 @@
+/**
+ * @domain subdomain: Authentication
+ * @domain subdomain-type: generic
+ * @domain type: adapter
+ * @domain layer: infrastructure
+ * @domain depends: AuthService
+ */
+
 import { Hono } from 'hono';
 
 import { getAuthToken } from '../services/auth-service.js';

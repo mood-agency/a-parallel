@@ -1,3 +1,10 @@
+/**
+ * @domain subdomain: Project Management
+ * @domain subdomain-type: supporting
+ * @domain type: adapter
+ * @domain layer: infrastructure
+ */
+
 import { readFile, writeFile, stat } from 'fs/promises';
 import { homedir } from 'os';
 import { normalize, resolve } from 'path';

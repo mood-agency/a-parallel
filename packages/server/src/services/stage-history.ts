@@ -1,5 +1,9 @@
 /**
- * Stage history tracking — records thread stage transitions.
+ * @domain subdomain: Thread Management
+ * @domain subdomain-type: core
+ * @domain type: repository
+ * @domain layer: infrastructure
+ * @domain depends: Database
  */
 
 import { nanoid } from 'nanoid';

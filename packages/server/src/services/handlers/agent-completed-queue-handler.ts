@@ -1,5 +1,6 @@
 /**
- * @domain context: Agent Execution
+ * @domain subdomain: Agent Execution
+ * @domain subdomain-type: core
  * @domain type: handler
  * @domain layer: application
  * @domain consumes: agent:completed

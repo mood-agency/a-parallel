@@ -1,5 +1,6 @@
 /**
- * @domain context: Git Operations
+ * @domain subdomain: Git Operations
+ * @domain subdomain-type: supporting
  * @domain type: app-service
  * @domain layer: application
  * @domain emits: git:staged, git:unstaged, git:reverted, git:committed, git:pushed, git:pulled, git:merged, git:stashed, git:stash-popped, git:reset-soft

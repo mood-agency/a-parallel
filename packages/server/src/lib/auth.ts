@@ -1,3 +1,11 @@
+/**
+ * @domain subdomain: Authentication
+ * @domain subdomain-type: generic
+ * @domain type: adapter
+ * @domain layer: infrastructure
+ * @domain depends: Database
+ */
+
 import { randomBytes } from 'crypto';
 import { readFileSync, writeFileSync, existsSync } from 'fs';
 import { resolve } from 'path';

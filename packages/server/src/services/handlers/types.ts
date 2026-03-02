@@ -1,6 +1,9 @@
 /**
- * Reactive Handler types — generic interface for self-describing,
- * declarative event handlers that receive dependencies via injection.
+ * @domain subdomain: Shared Kernel
+ * @domain type: port
+ * @domain layer: domain
+ *
+ * Generic interface for self-describing, declarative event handlers.
  */
 
 import type { ThreadEventMap } from '../thread-event-bus.js';

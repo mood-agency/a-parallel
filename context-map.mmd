@@ -1,0 +1,55 @@
+flowchart LR
+
+  %% Subdomain type styles
+  classDef core fill:#C8E6C9,stroke:#2E7D32,color:#1B5E20,stroke-width:3px
+  classDef supporting fill:#BBDEFB,stroke:#1565C0,color:#0D47A1,stroke-width:2px
+  classDef generic fill:#F5F5F5,stroke:#757575,color:#424242,stroke-width:1px
+  classDef sharedKernel fill:#FFF9C4,stroke:#F9A825,color:#F57F17,stroke-width:2px
+
+  %% Context Map: Funny
+
+  subgraph team_Core["Team: Core"]
+    AgentExecution["AgentExecution\n‹core›\n(6 components)"]:::core
+    ThreadManagement["ThreadManagement\n‹core›\n(16 components)"]:::core
+  end
+
+  subgraph team_Platform["Team: Platform"]
+    GitOps["GitOps\n‹supporting›\n(7 components)"]:::supporting
+    ProjectMgmt["ProjectMgmt\n‹supporting›\n(4 components)"]:::supporting
+    ProcessMgmt["ProcessMgmt\n‹supporting›\n(3 components)"]:::supporting
+    RealtimeComms["RealtimeComms\n‹supporting›\n(1 components)"]:::supporting
+    ExternalIngest["ExternalIngest\n‹supporting›\n(2 components)"]:::supporting
+  end
+
+  subgraph team_Foundation["Team: Foundation"]
+    Auth["Auth\n‹generic›\n(4 components)"]:::generic
+    ExtensionPlatform["ExtensionPlatform\n‹generic›\n(7 components)"]:::generic
+    AnalyticsEngine["AnalyticsEngine\n‹generic›\n(2 components)"]:::generic
+    UserProfile["UserProfile\n‹generic›\n(2 components)"]:::generic
+    AutomationEngine["AutomationEngine\n‹supporting›\n(3 components)"]:::supporting
+  end
+
+  Shared_Kernel[["Shared Kernel\n(13 shared components)"]]:::sharedKernel
+
+
+  %% Strategic relationships
+  AgentExecution --> |"[S] C/S [C]"| ThreadManagement
+  AgentExecution <--> |"Partnership"| GitOps
+  GitOps --> |"Conformist"| ThreadManagement
+  AgentExecution --> |"PL via SharedKernel.ThreadEventBus"| RealtimeComms
+  ExternalIngest --> |"ACL"| ThreadManagement
+  ExtensionPlatform --> |"Conformist"| AgentExecution
+  AgentExecution --> |"[S] C/S [C]"| AutomationEngine
+  Auth --> |"OHS"| AgentExecution
+  Auth --> |"OHS"| ThreadManagement
+  Auth --> |"OHS"| GitOps
+  Auth --> |"OHS"| ProjectMgmt
+  Auth --> |"OHS"| AutomationEngine
+  Auth --> |"OHS"| RealtimeComms
+  Auth --> |"OHS"| ProcessMgmt
+  Auth --> |"OHS"| ExternalIngest
+  Auth --> |"OHS"| ExtensionPlatform
+  Auth --> |"OHS"| AnalyticsEngine
+  Auth --> |"OHS"| UserProfile
+  UserProfile --> |"[S] C/S [C]"| GitOps
+  ThreadManagement --> |"Conformist"| AutomationEngine

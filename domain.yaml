@@ -1,0 +1,350 @@
+# domain.yaml — Strategic Domain Design for Funny
+# ================================================
+# This file defines the DDD strategic architecture.
+# Tactical annotations remain in source code (@domain JSDoc tags).
+#
+# Validate: bun packages/domain-map/src/cli.ts --domain-file domain.yaml --validate packages/server/src
+# Diagram:  bun packages/domain-map/src/cli.ts --domain-file domain.yaml --format context-map packages/server/src
+
+$schema: "./packages/domain-map/domain-schema.json"
+version: "1.0"
+
+# -- Top-Level Domain --
+
+domain:
+  name: Funny
+  description: >
+    Web UI for orchestrating multiple Claude Code agents in parallel
+    using git worktrees for isolation.
+
+# -- Subdomains --
+
+subdomains:
+
+  # === CORE — Competitive differentiators ===
+
+  Agent Execution:
+    type: core
+    description: >
+      Orchestrates Claude CLI agents, manages their lifecycle (start, stop,
+      resume), handles NDJSON message streams, and tracks agent state.
+    bounded-context: AgentExecution
+    publishes:
+      - agent:started
+      - agent:completed
+      - agent:error
+      - agent:stopped
+      - agent:tool_call
+      - agent:result
+    exposes:
+      - startAgent
+      - stopAgent
+      - resumeAgent
+      - isAgentRunning
+
+  Thread Management:
+    type: core
+    description: >
+      Thread CRUD, message persistence, status machine, stage transitions,
+      search, tool call tracking, and comment management.
+    bounded-context: ThreadManagement
+    publishes:
+      - thread:created
+      - thread:stage-changed
+      - thread:deleted
+    exposes:
+      - createThread
+      - getThread
+      - deleteThread
+      - getThreadWithMessages
+      - searchThreads
+
+  # === SUPPORTING — Essential but not differentiators ===
+
+  Git Operations:
+    type: supporting
+    description: >
+      Git diff, stage, unstage, revert, commit, push, pull, merge, stash,
+      PR creation, and worktree management.
+    bounded-context: GitOps
+    publishes:
+      - git:staged
+      - git:unstaged
+      - git:reverted
+      - git:committed
+      - git:pushed
+      - git:pulled
+      - git:merged
+      - git:stashed
+      - git:stash-popped
+      - git:reset-soft
+      - git:changed
+      - git:status
+    exposes:
+      - stageFiles
+      - unstageFiles
+      - commit
+      - push
+      - pull
+      - createPR
+      - createWorktree
+      - removeWorktree
+
+  Project Management:
+    type: supporting
+    description: >
+      Project CRUD with git repo validation, filesystem browsing,
+      and file operations.
+    bounded-context: ProjectMgmt
+    exposes:
+      - createProject
+      - getProject
+      - listProjects
+      - deleteProject
+
+  Automation:
+    type: supporting
+    description: >
+      Scheduled cron-based and triggered automation workflows.
+      Automations spawn agent runs on a schedule.
+    bounded-context: AutomationEngine
+    exposes:
+      - createAutomation
+      - triggerRun
+      - scheduleAutomation
+
+  Real-time Communication:
+    type: supporting
+    description: >
+      WebSocket pub/sub broker for broadcasting events
+      to connected UI clients.
+    bounded-context: RealtimeComms
+    exposes:
+      - emit
+      - emitToUser
+      - broadcast
+
+  Process Management:
+    type: supporting
+    description: >
+      PTY management for interactive terminal sessions,
+      startup commands, and command execution.
+    bounded-context: ProcessMgmt
+    publishes:
+      - command:status
+      - command:output
+    exposes:
+      - runCommand
+      - startPty
+      - stopPty
+
+  External Integration:
+    type: supporting
+    description: >
+      Ingest API for external systems (GitHub Actions, CI/CD).
+      Translates webhook payloads into thread operations.
+    bounded-context: ExternalIngest
+    exposes:
+      - handleIngestEvent
+
+  # === GENERIC — Could be replaced with off-the-shelf ===
+
+  Authentication:
+    type: generic
+    description: >
+      Dual-mode auth. Local mode: bearer token.
+      Multi-user mode: Better Auth with cookie sessions.
+    bounded-context: Auth
+    exposes:
+      - authenticate
+      - createUser
+      - getSession
+
+  Extensions:
+    type: generic
+    description: >
+      MCP server management, plugin discovery/execution,
+      and skills (Claude Code slash commands).
+    bounded-context: ExtensionPlatform
+    exposes:
+      - listMcpServers
+      - addMcpServer
+      - listPlugins
+      - listSkills
+
+  Analytics:
+    type: generic
+    description: >
+      Usage tracking, cost metrics, and reporting.
+    bounded-context: AnalyticsEngine
+    exposes:
+      - trackUsage
+      - getAnalytics
+
+  User Profile:
+    type: generic
+    description: >
+      Per-user git identity, GitHub PAT (encrypted at rest),
+      and user settings.
+    bounded-context: UserProfile
+    exposes:
+      - getProfile
+      - updateProfile
+      - getGitIdentity
+      - getGithubToken
+
+# -- Shared Kernel --
+
+shared-kernel:
+  name: Shared Kernel
+  description: >
+    Database (SQLite/Drizzle), ThreadEventBus, logger, validation schemas,
+    middleware, type contracts, handler registry, and shutdown manager.
+  includes:
+    - ThreadEventBus
+    - Database
+    - Schema
+    - Logger
+    - HandlerRegistry
+    - ValidationSchemas
+    - HonoEnv
+    - ServerInterfaces
+    - ShutdownManager
+    - ErrorHandler
+    - RateLimit
+    - RouteHelpers
+    - DataDir
+
+# -- Context Map --
+
+context-map:
+
+  - upstream: AgentExecution
+    downstream: ThreadManagement
+    relationship: customer-supplier
+    upstream-role: supplier
+    downstream-role: customer
+    description: >
+      AgentRunner creates/updates threads and messages.
+      Thread Management evolves its API to serve Agent Execution.
+    implemented-by:
+      - "AgentRunner -> ThreadManager.insertMessage"
+      - "AgentMessageHandler -> MessageRepository, ToolCallRepository"
+
+  - upstream: AgentExecution
+    downstream: GitOps
+    relationship: partnership
+    description: >
+      Agent completion triggers git status refresh.
+      Git change detection feeds back into agent message handling.
+    implemented-by:
+      - "AgentCompletedGitStatusHandler (consumes agent:completed)"
+      - "GitStatusHandler (consumes git:changed)"
+
+  - upstream: GitOps
+    downstream: ThreadManagement
+    relationship: conformist
+    description: >
+      Git events update thread stage history.
+      Thread Management conforms to git event payloads.
+    implemented-by:
+      - "GitEventPersistenceHandler -> StageHistory"
+
+  - upstream: AgentExecution
+    downstream: RealtimeComms
+    relationship: published-language
+    via: SharedKernel.ThreadEventBus
+    description: >
+      Agent events broadcast to WebSocket clients
+      through the shared event bus.
+    implemented-by:
+      - "ThreadEventBus -> WSBroker.emit"
+
+  - upstream: ExternalIngest
+    downstream: ThreadManagement
+    relationship: anti-corruption-layer
+    description: >
+      IngestMapper translates external webhook payloads
+      into thread/message operations.
+    implemented-by:
+      - "IngestMapper (ACL)"
+
+  - upstream: ExtensionPlatform
+    downstream: AgentExecution
+    relationship: conformist
+    description: >
+      MCP servers and plugins configure agent tool availability.
+      Extensions conform to the agent's tool interface.
+
+  - upstream: AgentExecution
+    downstream: AutomationEngine
+    relationship: customer-supplier
+    upstream-role: supplier
+    downstream-role: customer
+    description: >
+      AutomationScheduler triggers agent runs via startAgent.
+    implemented-by:
+      - "AutomationScheduler -> AgentRunner.startAgent"
+
+  - upstream: Auth
+    downstream: "*"
+    relationship: open-host-service
+    description: >
+      Auth middleware provides standard authentication protocol
+      for all route handlers.
+    implemented-by:
+      - "auth middleware (Hono middleware chain)"
+
+  - upstream: UserProfile
+    downstream: GitOps
+    relationship: customer-supplier
+    upstream-role: supplier
+    downstream-role: customer
+    description: >
+      GitService retrieves git identity and GitHub PAT
+      from ProfileService for commits and pushes.
+    implemented-by:
+      - "GitService -> ProfileService.getGitIdentity"
+
+  - upstream: ThreadManagement
+    downstream: AutomationEngine
+    relationship: conformist
+    description: >
+      AutomationScheduler creates threads via ThreadManager,
+      conforming to the thread creation interface.
+    implemented-by:
+      - "AutomationScheduler -> ThreadManager.createThread"
+
+# -- Team Ownership --
+
+teams:
+
+  Core:
+    description: >
+      Owns the competitive differentiators — agent orchestration
+      and thread management.
+    owns:
+      - AgentExecution
+      - ThreadManagement
+
+  Platform:
+    description: >
+      Owns developer-facing infrastructure — git integration,
+      project management, process execution, real-time communication.
+    owns:
+      - GitOps
+      - ProjectMgmt
+      - ProcessMgmt
+      - RealtimeComms
+      - ExternalIngest
+
+  Foundation:
+    description: >
+      Owns generic and cross-cutting concerns — authentication,
+      extensions, analytics, user profiles, automation.
+    owns:
+      - Auth
+      - ExtensionPlatform
+      - AnalyticsEngine
+      - UserProfile
+      - AutomationEngine

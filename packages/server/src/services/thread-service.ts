@@ -1,5 +1,6 @@
 /**
- * @domain context: Thread Management
+ * @domain subdomain: Thread Management
+ * @domain subdomain-type: core
  * @domain type: app-service
  * @domain layer: application
  * @domain emits: thread:created, thread:stage-changed, thread:deleted

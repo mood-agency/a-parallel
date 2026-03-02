@@ -1,4 +1,11 @@
 /**
+ * @domain subdomain: Agent Execution
+ * @domain subdomain-type: core
+ * @domain type: adapter
+ * @domain layer: infrastructure
+ */
+
+/**
  * Claude CLI binary discovery and validation.
  * Finds the claude/claude.exe binary on the system.
  */

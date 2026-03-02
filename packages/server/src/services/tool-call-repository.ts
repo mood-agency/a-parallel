@@ -1,6 +1,10 @@
 /**
- * ToolCall CRUD operations.
- * Extracted from thread-manager.ts for single-responsibility.
+ * @domain subdomain: Thread Management
+ * @domain subdomain-type: core
+ * @domain type: repository
+ * @domain layer: infrastructure
+ * @domain aggregate: Thread
+ * @domain depends: Database
  */
 
 import { eq, and, isNull, inArray, desc } from 'drizzle-orm';

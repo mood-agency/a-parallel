@@ -1,7 +1,9 @@
 /**
+ * @domain subdomain: Shared Kernel
+ * @domain type: module
+ * @domain layer: domain
+ *
  * Re-exports for backward compatibility during migration.
- * Agent interfaces now live in @funny/core.
- * Server-specific interfaces live in ./server-interfaces.ts.
  */
 export type { IThreadManager, IWSBroker } from './server-interfaces.js';
 export type {

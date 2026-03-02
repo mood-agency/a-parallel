@@ -1,3 +1,10 @@
+/**
+ * @domain subdomain: Shared Kernel
+ * @domain type: adapter
+ * @domain layer: infrastructure
+ * @domain depends: ShutdownManager
+ */
+
 import { Database } from 'bun:sqlite';
 import { resolve } from 'path';
 

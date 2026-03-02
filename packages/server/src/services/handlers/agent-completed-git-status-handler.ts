@@ -1,10 +1,10 @@
 /**
- * Refreshes git status via WebSocket when an agent completes/stops/fails.
- *
- * Without this, the UI can show stale "uncommitted changes" after the agent
- * finishes — the git:changed handler only fires during tool executions,
- * so if the agent's final state differs from the last mid-run snapshot,
- * the client never learns about it.
+ * @domain subdomain: Git Operations
+ * @domain subdomain-type: supporting
+ * @domain type: handler
+ * @domain layer: application
+ * @domain consumes: agent:completed
+ * @domain emits: git:status
  */
 
 import type { AgentCompletedEvent } from '../thread-event-bus.js';

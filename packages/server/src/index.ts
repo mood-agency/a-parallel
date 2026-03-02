@@ -1,3 +1,10 @@
+/**
+ * @domain subdomain: Shared Kernel
+ * @domain type: bounded-context
+ * @domain layer: infrastructure
+ * @domain depends: Thread Management, Agent Execution, Git Operations, Project Management, Authentication, Automation, Analytics, Extensions, Real-time Communication
+ */
+
 // On Windows, bun --watch forks worker processes — each has its own globalThis.
 // Ghost sockets from previous workers (whose child processes inherited the
 // server's listening handle) can block the port. Clean them up before binding.

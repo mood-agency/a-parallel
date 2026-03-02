@@ -1,3 +1,11 @@
+/**
+ * @domain subdomain: Authentication
+ * @domain subdomain-type: generic
+ * @domain type: adapter
+ * @domain layer: infrastructure
+ * @domain depends: AuthService, AuthMode
+ */
+
 import type { Context, Next } from 'hono';
 
 import { getAuthMode } from '../lib/auth-mode.js';

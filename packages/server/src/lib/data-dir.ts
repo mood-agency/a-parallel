@@ -1,3 +1,9 @@
+/**
+ * @domain subdomain: Shared Kernel
+ * @domain type: value-object
+ * @domain layer: infrastructure
+ */
+
 import { mkdirSync } from 'fs';
 import { homedir } from 'os';
 import { resolve } from 'path';

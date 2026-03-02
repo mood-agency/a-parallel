@@ -1,3 +1,11 @@
+/**
+ * @domain subdomain: Thread Management
+ * @domain subdomain-type: core
+ * @domain type: adapter
+ * @domain layer: infrastructure
+ * @domain depends: ThreadService, AgentRunner, ThreadManager, WSBroker
+ */
+
 import { Hono } from 'hono';
 
 import { log } from '../lib/logger.js';

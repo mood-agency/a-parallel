@@ -1,4 +1,10 @@
 /**
+ * @domain subdomain: Shared Kernel
+ * @domain type: adapter
+ * @domain layer: infrastructure
+ */
+
+/**
  * Route helper utilities — return Result<T, DomainError> for common lookups.
  *
  * All thread-access helpers accept a userId parameter to enforce ownership

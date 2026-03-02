@@ -1,3 +1,10 @@
+/**
+ * @domain subdomain: Authentication
+ * @domain subdomain-type: generic
+ * @domain type: value-object
+ * @domain layer: domain
+ */
+
 export type AuthMode = 'local' | 'multi';
 
 export function resolveAuthMode(value: string | undefined): AuthMode {

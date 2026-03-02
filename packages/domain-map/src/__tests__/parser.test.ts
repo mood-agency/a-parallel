@@ -22,14 +22,14 @@ function annotatedSource(tags: Record<string, string>, exportLine?: string): str
 describe('parseFile', () => {
   test('parses a valid @domain annotation block with all required fields', () => {
     const src = annotatedSource(
-      { context: 'ThreadManagement', type: 'app-service', layer: 'application' },
+      { subdomain: 'ThreadManagement', type: 'app-service', layer: 'application' },
       'export class ThreadService {}',
     );
     const result = parseFile('thread-service.ts', src);
     expect(result).toHaveLength(1);
     expect(result[0].filePath).toBe('thread-service.ts');
     expect(result[0].name).toBe('ThreadService');
-    expect(result[0].context).toBe('ThreadManagement');
+    expect(result[0].subdomain).toBe('ThreadManagement');
     expect(result[0].type).toBe('app-service');
     expect(result[0].layer).toBe('application');
     expect(result[0].emits).toEqual([]);
@@ -40,7 +40,7 @@ describe('parseFile', () => {
   test('parses CSV fields (emits, consumes, depends) correctly', () => {
     const src = annotatedSource(
       {
-        context: 'ThreadManagement',
+        subdomain: 'ThreadManagement',
         type: 'app-service',
         layer: 'application',
         emits: 'thread:created, thread:updated',
@@ -70,7 +70,7 @@ describe('parseFile', () => {
     expect(result).toHaveLength(0);
   });
 
-  test('skips blocks with missing required fields (no context)', () => {
+  test('skips blocks with missing required fields (no subdomain)', () => {
     const src = annotatedSource(
       { type: 'app-service', layer: 'application' },
       'export class Incomplete {}',
@@ -81,7 +81,7 @@ describe('parseFile', () => {
 
   test('skips blocks with missing required fields (no type)', () => {
     const src = annotatedSource(
-      { context: 'ThreadManagement', layer: 'application' },
+      { subdomain: 'ThreadManagement', layer: 'application' },
       'export class Incomplete {}',
     );
     const result = parseFile('incomplete.ts', src);
@@ -90,7 +90,7 @@ describe('parseFile', () => {
 
   test('skips blocks with missing required fields (no layer)', () => {
     const src = annotatedSource(
-      { context: 'ThreadManagement', type: 'app-service' },
+      { subdomain: 'ThreadManagement', type: 'app-service' },
       'export class Incomplete {}',
     );
     const result = parseFile('incomplete.ts', src);
@@ -99,7 +99,7 @@ describe('parseFile', () => {
 
   test('skips blocks with invalid type value', () => {
     const src = annotatedSource(
-      { context: 'ThreadManagement', type: 'not-a-real-type', layer: 'application' },
+      { subdomain: 'ThreadManagement', type: 'not-a-real-type', layer: 'application' },
       'export class Invalid {}',
     );
     const result = parseFile('invalid.ts', src);
@@ -108,7 +108,7 @@ describe('parseFile', () => {
 
   test('skips blocks with invalid layer value', () => {
     const src = annotatedSource(
-      { context: 'ThreadManagement', type: 'app-service', layer: 'presentation' },
+      { subdomain: 'ThreadManagement', type: 'app-service', layer: 'presentation' },
       'export class Invalid {}',
     );
     const result = parseFile('invalid.ts', src);
@@ -118,39 +118,39 @@ describe('parseFile', () => {
   test('parses multiple annotation blocks in a single file', () => {
     const blocks = [
       annotatedSource(
-        { context: 'Git', type: 'repository', layer: 'infrastructure' },
+        { subdomain: 'Git', type: 'repository', layer: 'infrastructure' },
         'export class GitRepository {}',
       ),
       '',
       annotatedSource(
-        { context: 'Git', type: 'domain-service', layer: 'domain' },
+        { subdomain: 'Git', type: 'domain-service', layer: 'domain' },
         'export class GitDiffCalculator {}',
       ),
       '',
       annotatedSource(
-        { context: 'ThreadManagement', type: 'app-service', layer: 'application' },
+        { subdomain: 'ThreadManagement', type: 'app-service', layer: 'application' },
         'export class ThreadService {}',
       ),
     ].join('\n');
     const result = parseFile('services.ts', blocks);
     expect(result).toHaveLength(3);
     expect(result[0].name).toBe('GitRepository');
-    expect(result[0].context).toBe('Git');
+    expect(result[0].subdomain).toBe('Git');
     expect(result[0].type).toBe('repository');
     expect(result[0].layer).toBe('infrastructure');
     expect(result[1].name).toBe('GitDiffCalculator');
-    expect(result[1].context).toBe('Git');
+    expect(result[1].subdomain).toBe('Git');
     expect(result[1].type).toBe('domain-service');
     expect(result[1].layer).toBe('domain');
     expect(result[2].name).toBe('ThreadService');
-    expect(result[2].context).toBe('ThreadManagement');
+    expect(result[2].subdomain).toBe('ThreadManagement');
     expect(result[2].type).toBe('app-service');
     expect(result[2].layer).toBe('application');
   });
 
   test('resolves export name from the line after the JSDoc block', () => {
     const src = annotatedSource(
-      { context: 'Auth', type: 'adapter', layer: 'infrastructure' },
+      { subdomain: 'Auth', type: 'adapter', layer: 'infrastructure' },
       'export const AuthAdapter = {};',
     );
     const result = parseFile('auth-adapter.ts', src);
@@ -160,7 +160,7 @@ describe('parseFile', () => {
 
   test('resolves export name for interface export form', () => {
     const src = annotatedSource(
-      { context: 'Auth', type: 'port', layer: 'domain' },
+      { subdomain: 'Auth', type: 'port', layer: 'domain' },
       'export interface AuthPort {}',
     );
     const result = parseFile('auth-port.ts', src);
@@ -169,7 +169,7 @@ describe('parseFile', () => {
   });
 
   test('falls back to filename stem when no export follows', () => {
-    const block = domainBlock({ context: 'Config', type: 'module', layer: 'infrastructure' });
+    const block = domainBlock({ subdomain: 'Config', type: 'module', layer: 'infrastructure' });
     const src = block + '\n\nimport { something } from "./other";\n\nconst internal = 42;';
     const result = parseFile('config-loader.ts', src);
     expect(result).toHaveLength(1);
@@ -177,7 +177,7 @@ describe('parseFile', () => {
   });
 
   test('falls back to filename stem when block is at end of file', () => {
-    const src = domainBlock({ context: 'Config', type: 'module', layer: 'infrastructure' });
+    const src = domainBlock({ subdomain: 'Config', type: 'module', layer: 'infrastructure' });
     const result = parseFile('path/to/my-module.ts', src);
     expect(result).toHaveLength(1);
     expect(result[0].name).toBe('my-module');
@@ -186,7 +186,7 @@ describe('parseFile', () => {
   test('parses optional event and aggregate fields', () => {
     const src = annotatedSource(
       {
-        context: 'Orders',
+        subdomain: 'Orders',
         type: 'domain-event',
         layer: 'domain',
         event: 'order:placed',
@@ -208,7 +208,7 @@ describe('buildGraph', () => {
     return {
       filePath: 'test.ts',
       name: 'TestService',
-      context: 'TestContext',
+      subdomain: 'TestContext',
       type: 'app-service',
       layer: 'application',
       emits: [],
@@ -220,43 +220,43 @@ describe('buildGraph', () => {
 
   test('builds a graph from an array of annotations', () => {
     const annotations: DomainAnnotation[] = [
-      makeAnnotation({ name: 'ServiceA', context: 'CtxA' }),
-      makeAnnotation({ name: 'ServiceB', context: 'CtxB' }),
+      makeAnnotation({ name: 'ServiceA', subdomain: 'CtxA' }),
+      makeAnnotation({ name: 'ServiceB', subdomain: 'CtxB' }),
     ];
     const graph = buildGraph(annotations);
     expect(graph.nodes.size).toBe(2);
-    expect(graph.contexts.size).toBe(2);
+    expect(graph.subdomains.size).toBe(2);
     expect(graph.nodes.has('CtxA::ServiceA')).toBe(true);
     expect(graph.nodes.has('CtxB::ServiceB')).toBe(true);
   });
 
-  test('groups annotations by context', () => {
+  test('groups annotations by subdomain', () => {
     const annotations: DomainAnnotation[] = [
-      makeAnnotation({ name: 'ServiceA', context: 'Shared' }),
-      makeAnnotation({ name: 'ServiceB', context: 'Shared' }),
-      makeAnnotation({ name: 'ServiceC', context: 'Other' }),
+      makeAnnotation({ name: 'ServiceA', subdomain: 'Shared' }),
+      makeAnnotation({ name: 'ServiceB', subdomain: 'Shared' }),
+      makeAnnotation({ name: 'ServiceC', subdomain: 'Other' }),
     ];
     const graph = buildGraph(annotations);
-    expect(graph.contexts.size).toBe(2);
-    expect(graph.contexts.get('Shared')).toEqual(['Shared::ServiceA', 'Shared::ServiceB']);
-    expect(graph.contexts.get('Other')).toEqual(['Other::ServiceC']);
+    expect(graph.subdomains.size).toBe(2);
+    expect(graph.subdomains.get('Shared')).toEqual(['Shared::ServiceA', 'Shared::ServiceB']);
+    expect(graph.subdomains.get('Other')).toEqual(['Other::ServiceC']);
   });
 
   test('collects all unique event names from emits, consumes, and event fields', () => {
     const annotations: DomainAnnotation[] = [
       makeAnnotation({
         name: 'Producer',
-        context: 'CtxA',
+        subdomain: 'CtxA',
         emits: ['event:one', 'event:two'],
       }),
       makeAnnotation({
         name: 'Consumer',
-        context: 'CtxB',
+        subdomain: 'CtxB',
         consumes: ['event:two', 'event:three'],
       }),
       makeAnnotation({
         name: 'EventDef',
-        context: 'CtxA',
+        subdomain: 'CtxA',
         type: 'domain-event',
         layer: 'domain',
         event: 'event:four',
@@ -270,9 +270,9 @@ describe('buildGraph', () => {
     expect(graph.events.has('event:four')).toBe(true);
   });
 
-  test('creates correct node keys as context::name', () => {
+  test('creates correct node keys as subdomain::name', () => {
     const annotations: DomainAnnotation[] = [
-      makeAnnotation({ name: 'ThreadRepo', context: 'Thread Management' }),
+      makeAnnotation({ name: 'ThreadRepo', subdomain: 'Thread Management' }),
     ];
     const graph = buildGraph(annotations);
     expect(graph.nodes.has('Thread Management::ThreadRepo')).toBe(true);
@@ -283,7 +283,7 @@ describe('buildGraph', () => {
   test('handles empty annotations array', () => {
     const graph = buildGraph([]);
     expect(graph.nodes.size).toBe(0);
-    expect(graph.contexts.size).toBe(0);
+    expect(graph.subdomains.size).toBe(0);
     expect(graph.events.size).toBe(0);
   });
 
@@ -291,12 +291,12 @@ describe('buildGraph', () => {
     const annotations: DomainAnnotation[] = [
       makeAnnotation({
         name: 'Emitter',
-        context: 'Ctx',
+        subdomain: 'Ctx',
         emits: ['shared:event'],
       }),
       makeAnnotation({
         name: 'Listener',
-        context: 'Ctx',
+        subdomain: 'Ctx',
         consumes: ['shared:event'],
       }),
     ];

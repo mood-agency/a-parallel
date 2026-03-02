@@ -1,3 +1,10 @@
+/**
+ * @domain subdomain: Shared Kernel
+ * @domain type: adapter
+ * @domain layer: infrastructure
+ * @domain depends: ShutdownManager
+ */
+
 import type { Context, Next } from 'hono';
 
 import { shutdownManager, ShutdownPhase } from '../services/shutdown-manager.js';

@@ -1,5 +1,10 @@
 /**
- * Auth Service — generates and validates a bearer token for API access.
+ * @domain subdomain: Authentication
+ * @domain subdomain-type: generic
+ * @domain type: domain-service
+ * @domain layer: domain
+ *
+ * Generates and validates a bearer token for API access.
  * Token is stored at ~/.funny/auth-token and cached in memory.
  */
 

@@ -1,3 +1,10 @@
+/**
+ * @domain subdomain: Thread Management
+ * @domain subdomain-type: core
+ * @domain type: domain-service
+ * @domain layer: domain
+ */
+
 import { readFile, stat } from 'fs/promises';
 import { join, resolve } from 'path';
 

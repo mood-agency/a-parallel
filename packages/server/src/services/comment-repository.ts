@@ -1,6 +1,9 @@
 /**
- * Comment CRUD operations.
- * Extracted from thread-manager.ts for single-responsibility.
+ * @domain subdomain: Thread Management
+ * @domain subdomain-type: core
+ * @domain type: repository
+ * @domain layer: infrastructure
+ * @domain depends: Database
  */
 
 import { eq, asc, inArray, count as drizzleCount } from 'drizzle-orm';

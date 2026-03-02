@@ -1,6 +1,11 @@
 /**
- * PtyManager — spawns and manages interactive PTY sessions via a helper Node.js process.
- * This architecture avoids compatibility issues between Bun and node-pty on Windows.
+ * @domain subdomain: Process Management
+ * @domain subdomain-type: supporting
+ * @domain type: adapter
+ * @domain layer: infrastructure
+ * @domain depends: WSBroker, ShutdownManager
+ *
+ * Spawns and manages interactive PTY sessions via a helper Node.js process.
  */
 
 import { spawn, type ChildProcess } from 'child_process';

@@ -1,3 +1,9 @@
+/**
+ * @domain subdomain: Shared Kernel
+ * @domain type: adapter
+ * @domain layer: infrastructure
+ */
+
 import type { DomainError, DomainErrorType } from '@funny/shared/errors';
 import type { Context } from 'hono';
 import type { Result } from 'neverthrow';

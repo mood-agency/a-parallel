@@ -1,3 +1,10 @@
+/**
+ * @domain subdomain: Real-time Communication
+ * @domain subdomain-type: supporting
+ * @domain type: event-bus
+ * @domain layer: infrastructure
+ */
+
 import type { WSEvent } from '@funny/shared';
 import type { ServerWebSocket } from 'bun';
 

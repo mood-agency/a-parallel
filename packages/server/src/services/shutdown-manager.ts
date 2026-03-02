@@ -1,13 +1,10 @@
 /**
- * ShutdownManager — centralized cleanup registry.
+ * @domain subdomain: Shared Kernel
+ * @domain type: app-service
+ * @domain layer: infrastructure
  *
- * Services self-register their cleanup functions at import time.
- * On shutdown, the manager executes them in phase order:
- *
- *   Phase 0 (SERVER):   Release the port immediately
- *   Phase 1 (SERVICES): Stop schedulers, kill processes, flush telemetry (parallel)
- *   Phase 2 (DATABASE): Close DB last — other cleanup may still write
- *   Phase 3 (FINAL):    Platform cleanup (Windows tree kill) + process.exit
+ * Centralized cleanup registry. Services self-register their cleanup functions.
+ * On shutdown, executes them in phase order: SERVER → SERVICES → DATABASE → FINAL.
  */
 
 import { log } from '../lib/logger.js';

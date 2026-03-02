@@ -1,7 +1,11 @@
 /**
- * Comment handler — creates system comments when agents complete.
+ * @domain subdomain: Thread Management
+ * @domain subdomain-type: core
+ * @domain type: handler
+ * @domain layer: application
+ * @domain consumes: agent:completed
  *
- * Replaces the old comment-subscriber.ts with the reactive handler pattern.
+ * Creates system comments when agents complete.
  */
 
 import type { AgentCompletedEvent } from '../thread-event-bus.js';

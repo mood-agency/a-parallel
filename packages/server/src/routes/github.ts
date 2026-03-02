@@ -1,4 +1,11 @@
 /**
+ * @domain subdomain: Git Operations
+ * @domain subdomain-type: supporting
+ * @domain type: adapter
+ * @domain layer: infrastructure
+ */
+
+/**
  * GitHub OAuth (Device Flow) + repo listing + clone routes.
  * Mounted at /api/github.
  */

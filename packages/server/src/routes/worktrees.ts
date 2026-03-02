@@ -1,3 +1,10 @@
+/**
+ * @domain subdomain: Git Operations
+ * @domain subdomain-type: supporting
+ * @domain type: adapter
+ * @domain layer: infrastructure
+ */
+
 import { createWorktree, listWorktrees, removeWorktree } from '@funny/core/git';
 import { badRequest } from '@funny/shared/errors';
 import { Hono } from 'hono';

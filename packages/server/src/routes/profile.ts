@@ -1,3 +1,11 @@
+/**
+ * @domain subdomain: User Profile
+ * @domain subdomain-type: generic
+ * @domain type: adapter
+ * @domain layer: infrastructure
+ * @domain depends: ProfileService
+ */
+
 import { Hono } from 'hono';
 
 import * as ps from '../services/profile-service.js';

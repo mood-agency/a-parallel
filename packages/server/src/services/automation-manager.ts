@@ -1,3 +1,12 @@
+/**
+ * @domain subdomain: Automation
+ * @domain subdomain-type: supporting
+ * @domain type: repository
+ * @domain layer: infrastructure
+ * @domain aggregate: Automation
+ * @domain depends: Database, AutomationScheduler
+ */
+
 import { eq, and, or, desc } from 'drizzle-orm';
 import { nanoid } from 'nanoid';
 

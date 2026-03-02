@@ -1,7 +1,10 @@
 /**
- * Plugin Service — reads installed Claude Code plugins.
- * Reads from ~/.claude/plugins/installed_plugins.json and
- * each plugin's .claude-plugin/plugin.json + commands/*.md.
+ * @domain subdomain: Extensions
+ * @domain subdomain-type: generic
+ * @domain type: app-service
+ * @domain layer: application
+ *
+ * Reads installed Claude Code plugins from ~/.claude/plugins.
  */
 
 import { readFileSync, readdirSync, existsSync } from 'fs';

@@ -1,3 +1,9 @@
+/**
+ * @domain subdomain: Shared Kernel
+ * @domain type: published-language
+ * @domain layer: infrastructure
+ */
+
 import { sqliteTable, text, real, integer } from 'drizzle-orm/sqlite-core';
 
 export const projects = sqliteTable('projects', {

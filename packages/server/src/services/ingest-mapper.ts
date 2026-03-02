@@ -1,18 +1,11 @@
 /**
- * IngestMapper — translates external webhook events into thread/message
- * operations and WebSocket emissions.
+ * @domain subdomain: External Integration
+ * @domain subdomain-type: supporting
+ * @domain type: anti-corruption-layer
+ * @domain layer: infrastructure
+ * @domain depends: ProjectManager, ThreadManager, WSBroker, ShutdownManager
  *
- * Designed to be service-agnostic: any external service can create and update
- * threads by sending events that follow the { event_type, request_id, timestamp, data, metadata } contract.
- *
- * Event-type routing:
- *   *.accepted    → create thread
- *   *.cli_message → handle raw CLIMessage (same rendering as regular threads)
- *   *.stopped     → mark stopped
- *   *.message     → insert/update assistant message (legacy/simple)
- *
- * Lifecycle events (*.started, *.completed, *.failed) are handled as
- * FALLBACK only — if cli_message already processed the result, these are skipped.
+ * Translates external webhook events into thread/message operations and WebSocket emissions.
  */
 
 import { getRemoteUrl } from '@funny/core/git';

@@ -1,8 +1,8 @@
 /**
- * MCP OAuth 2.1 Service
- *
- * Handles OAuth discovery, PKCE, authorization, and token exchange
- * for HTTP MCP servers that require authentication.
+ * @domain subdomain: Extensions
+ * @domain subdomain-type: generic
+ * @domain type: adapter
+ * @domain layer: infrastructure
  */
 
 import { randomBytes, createHash } from 'crypto';

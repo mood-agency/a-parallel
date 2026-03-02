@@ -10,7 +10,7 @@ function makeAnnotation(overrides: Partial<DomainAnnotation> = {}): DomainAnnota
   return {
     filePath: 'test.ts',
     name: 'TestService',
-    context: 'TestContext',
+    subdomain: 'TestContext',
     type: 'app-service',
     layer: 'application',
     emits: [],
@@ -24,13 +24,13 @@ function makeAnnotation(overrides: Partial<DomainAnnotation> = {}): DomainAnnota
 
 describe('generateMermaid', () => {
   test('generates a basic flowchart with default direction (LR)', () => {
-    const graph = buildGraph([makeAnnotation({ name: 'MyService', context: 'Ctx' })]);
+    const graph = buildGraph([makeAnnotation({ name: 'MyService', subdomain: 'Ctx' })]);
     const output = generateMermaid(graph);
     expect(output).toContain('flowchart LR');
   });
 
   test('respects direction option (TB)', () => {
-    const graph = buildGraph([makeAnnotation({ name: 'MyService', context: 'Ctx' })]);
+    const graph = buildGraph([makeAnnotation({ name: 'MyService', subdomain: 'Ctx' })]);
     const output = generateMermaid(graph, { direction: 'TB' });
     expect(output).toContain('flowchart TB');
     expect(output).not.toContain('flowchart LR');
@@ -38,12 +38,12 @@ describe('generateMermaid', () => {
 
   test('creates subgraphs per bounded context', () => {
     const graph = buildGraph([
-      makeAnnotation({ name: 'ServiceA', context: 'Auth' }),
-      makeAnnotation({ name: 'ServiceB', context: 'Orders' }),
+      makeAnnotation({ name: 'ServiceA', subdomain: 'Auth' }),
+      makeAnnotation({ name: 'ServiceB', subdomain: 'Orders' }),
     ]);
     const output = generateMermaid(graph);
-    expect(output).toContain('subgraph ctx_Auth["Auth"]');
-    expect(output).toContain('subgraph ctx_Orders["Orders"]');
+    expect(output).toContain('subgraph sd_Auth["Auth"]');
+    expect(output).toContain('subgraph sd_Orders["Orders"]');
     // Both subgraphs should be closed
     const endCount = (output.match(/^\s*end$/gm) || []).length;
     expect(endCount).toBe(2);
@@ -53,12 +53,12 @@ describe('generateMermaid', () => {
     const graph = buildGraph([
       makeAnnotation({
         name: 'OrderService',
-        context: 'Orders',
+        subdomain: 'Orders',
         emits: ['order:placed'],
       }),
       makeAnnotation({
         name: 'NotificationHandler',
-        context: 'Notifications',
+        subdomain: 'Notifications',
         type: 'handler',
         consumes: ['order:placed'],
       }),
@@ -73,12 +73,12 @@ describe('generateMermaid', () => {
     const graph = buildGraph([
       makeAnnotation({
         name: 'OrderService',
-        context: 'Orders',
+        subdomain: 'Orders',
         depends: ['OrderRepository'],
       }),
       makeAnnotation({
         name: 'OrderRepository',
-        context: 'Orders',
+        subdomain: 'Orders',
         type: 'repository',
         layer: 'infrastructure',
       }),
@@ -92,12 +92,12 @@ describe('generateMermaid', () => {
     const graph = buildGraph([
       makeAnnotation({
         name: 'OrderService',
-        context: 'Orders',
+        subdomain: 'Orders',
         depends: ['OrderRepository'],
       }),
       makeAnnotation({
         name: 'OrderRepository',
-        context: 'Orders',
+        subdomain: 'Orders',
         type: 'repository',
         layer: 'infrastructure',
       }),
@@ -109,11 +109,11 @@ describe('generateMermaid', () => {
 
   test('context-level view collapses to one node per context with component count', () => {
     const graph = buildGraph([
-      makeAnnotation({ name: 'ServiceA', context: 'Auth' }),
-      makeAnnotation({ name: 'ServiceB', context: 'Auth' }),
-      makeAnnotation({ name: 'ServiceC', context: 'Orders' }),
+      makeAnnotation({ name: 'ServiceA', subdomain: 'Auth' }),
+      makeAnnotation({ name: 'ServiceB', subdomain: 'Auth' }),
+      makeAnnotation({ name: 'ServiceC', subdomain: 'Orders' }),
     ]);
-    const output = generateMermaid(graph, { contextLevel: true });
+    const output = generateMermaid(graph, { subdomainLevel: true });
     // Should show context nodes with component count, not subgraphs
     expect(output).toContain('Auth');
     expect(output).toContain('(2 components)');
@@ -124,7 +124,7 @@ describe('generateMermaid', () => {
   });
 
   test('includes layer class definitions (domain, application, infrastructure)', () => {
-    const graph = buildGraph([makeAnnotation({ name: 'Svc', context: 'Ctx' })]);
+    const graph = buildGraph([makeAnnotation({ name: 'Svc', subdomain: 'Ctx' })]);
     const output = generateMermaid(graph);
     expect(output).toContain('classDef domain');
     expect(output).toContain('classDef application');
@@ -135,17 +135,17 @@ describe('generateMermaid', () => {
     const graph = buildGraph([
       makeAnnotation({
         name: 'OrderService',
-        context: 'Orders',
+        subdomain: 'Orders',
         emits: ['order:placed'],
       }),
       makeAnnotation({
         name: 'NotificationHandler',
-        context: 'Notifications',
+        subdomain: 'Notifications',
         type: 'handler',
         consumes: ['order:placed'],
       }),
     ]);
-    const output = generateMermaid(graph, { contextLevel: true });
+    const output = generateMermaid(graph, { subdomainLevel: true });
     // Should have an arrow between the two contexts
     expect(output).toContain('Orders');
     expect(output).toContain('Notifications');
@@ -157,19 +157,19 @@ describe('generateMermaid', () => {
     const graph = buildGraph([
       makeAnnotation({
         name: 'DomainSvc',
-        context: 'Ctx',
+        subdomain: 'Ctx',
         type: 'domain-service',
         layer: 'domain',
       }),
       makeAnnotation({
         name: 'AppSvc',
-        context: 'Ctx',
+        subdomain: 'Ctx',
         type: 'app-service',
         layer: 'application',
       }),
       makeAnnotation({
         name: 'InfraSvc',
-        context: 'Ctx',
+        subdomain: 'Ctx',
         type: 'adapter',
         layer: 'infrastructure',
       }),

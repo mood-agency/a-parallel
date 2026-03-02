@@ -1,3 +1,13 @@
+/**
+ * @domain subdomain: Agent Execution
+ * @domain subdomain-type: core
+ * @domain type: handler
+ * @domain layer: application
+ * @domain consumes: agent:message
+ * @domain emits: agent:tool_call, agent:tool_output, agent:result, agent:status, git:changed, thread:stage-changed
+ * @domain depends: AgentStateTracker, ThreadManager, WSBroker, ThreadEventBus
+ */
+
 import type { CLIMessage } from '@funny/core/agents';
 import { getStatusSummary, deriveGitSyncState } from '@funny/core/git';
 import type { WSEvent, ThreadStatus } from '@funny/shared';

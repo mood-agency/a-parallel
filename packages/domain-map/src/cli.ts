@@ -2,10 +2,16 @@
 
 import { resolve } from 'path';
 
+import { generateCatalog } from './generators/catalog.js';
+import { generateContextMap } from './generators/context-map.js';
+import { generateInventory } from './generators/inventory.js';
 import { generateJSON } from './generators/json.js';
 import { generateMermaid } from './generators/mermaid.js';
-import { parseDirectory } from './parser.js';
-import type { CLIOptions, DomainType, DomainGraph } from './types.js';
+import { generateSequence } from './generators/sequence.js';
+import { buildEnrichedGraph, parseDirectory } from './parser.js';
+import { parseStrategicFile } from './strategic-parser.js';
+import type { CLIOptions, DomainType, DomainGraph, EnrichedDomainGraph } from './types.js';
+import { validateConsistency } from './validator.js';
 
 // ── Argument parsing ─────────────────────────────────────────────
 
@@ -15,9 +21,10 @@ function parseArgs(argv: string[]): CLIOptions {
     format: 'mermaid',
     eventsOnly: false,
     direction: 'LR',
+    showBus: false,
   };
 
-  const filterContext: string[] = [];
+  const filterSubdomain: string[] = [];
   const filterType: DomainType[] = [];
 
   let i = 0;
@@ -38,12 +45,21 @@ function parseArgs(argv: string[]): CLIOptions {
 
       case '--format':
       case '-f':
-        options.format = argv[++i] as 'mermaid' | 'json';
+        options.format = argv[++i] as CLIOptions['format'];
         break;
 
-      case '--context':
-      case '-c':
-        filterContext.push(argv[++i]);
+      case '--scenario':
+      case '-s':
+        options.scenario = argv[++i];
+        break;
+
+      case '--show-bus':
+        options.showBus = true;
+        break;
+
+      case '--subdomain':
+      case '-d':
+        filterSubdomain.push(argv[++i]);
         break;
 
       case '--type':
@@ -59,6 +75,14 @@ function parseArgs(argv: string[]): CLIOptions {
         options.direction = argv[++i] as 'LR' | 'TB';
         break;
 
+      case '--domain-file':
+        options.domainFile = argv[++i];
+        break;
+
+      case '--validate':
+        options.validate = true;
+        break;
+
       default:
         // Positional argument: directory
         if (!arg.startsWith('-')) {
@@ -72,7 +96,7 @@ function parseArgs(argv: string[]): CLIOptions {
     i++;
   }
 
-  if (filterContext.length > 0) options.filterContext = filterContext;
+  if (filterSubdomain.length > 0) options.filterSubdomain = filterSubdomain;
   if (filterType.length > 0) options.filterType = filterType;
 
   return options;
@@ -87,42 +111,60 @@ Usage:
 
 Options:
   --output, -o <file>       Write output to file (default: stdout)
-  --format, -f <format>     Output format: mermaid | json (default: mermaid)
-  --context, -c <name>      Filter by bounded context (repeatable)
+  --format, -f <format>     Output format: mermaid | json | sequence | catalog | context-map | inventory (default: mermaid)
+  --subdomain, -d <name>    Filter by subdomain (repeatable)
   --type, -t <type>         Filter by DDD type (repeatable)
-  --events-only             Show only event flow arrows
+  --events-only             Show only event flow arrows (mermaid format)
   --direction <dir>         Mermaid direction: LR | TB (default: LR)
+  --scenario, -s <family>   Filter to event family (e.g., agent, git, thread)
+  --show-bus                Show EventBus as explicit mediator in sequence diagrams
+  --domain-file <path>      Path to strategic domain.yaml file
+  --validate                Cross-validate YAML against code annotations
   --help, -h                Show this help
 
 Examples:
   bun packages/domain-map/src/cli.ts packages/server/src
   bun packages/domain-map/src/cli.ts --format json packages/
-  bun packages/domain-map/src/cli.ts --context "Git Operations" --context "Agent Execution" packages/server/src
+  bun packages/domain-map/src/cli.ts --subdomain "Git Operations" --subdomain "Agent Execution" packages/server/src
   bun packages/domain-map/src/cli.ts --type handler --type domain-service packages/server/src
   bun packages/domain-map/src/cli.ts --events-only --direction TB packages/server/src
+
+  # Event-driven views:
+  bun packages/domain-map/src/cli.ts --format sequence packages/server/src
+  bun packages/domain-map/src/cli.ts --format sequence --scenario agent packages/server/src
+  bun packages/domain-map/src/cli.ts --format sequence --show-bus packages/server/src
+  bun packages/domain-map/src/cli.ts --format catalog packages/server/src
+
+  # File inventory (which files implement each subdomain):
+  bun packages/domain-map/src/cli.ts --format inventory packages/server/src
+  bun packages/domain-map/src/cli.ts --domain-file domain.yaml --format inventory packages/server/src
+
+  # Strategic views (with domain.yaml):
+  bun packages/domain-map/src/cli.ts --domain-file domain.yaml --format context-map packages/server/src
+  bun packages/domain-map/src/cli.ts --domain-file domain.yaml --validate packages/server/src
 `);
 }
 
 // ── Filtering ────────────────────────────────────────────────────
 
 function applyFilters(graph: DomainGraph, options: CLIOptions): DomainGraph {
-  if (!options.filterContext && !options.filterType) return graph;
+  if (!options.filterSubdomain && !options.filterType) return graph;
 
   const filtered: DomainGraph = {
     nodes: new Map(),
-    contexts: new Map(),
+    subdomains: new Map(),
     events: new Set(),
   };
 
   for (const [key, node] of graph.nodes) {
-    if (options.filterContext && !options.filterContext.includes(node.context)) continue;
+    if (options.filterSubdomain && !options.filterSubdomain.includes(node.subdomain)) continue;
     if (options.filterType && !options.filterType.includes(node.type)) continue;
 
     filtered.nodes.set(key, node);
 
-    const contextMembers = filtered.contexts.get(node.context) ?? [];
-    contextMembers.push(key);
-    filtered.contexts.set(node.context, contextMembers);
+    const members = filtered.subdomains.get(node.subdomain) ?? [];
+    members.push(key);
+    filtered.subdomains.set(node.subdomain, members);
 
     if (node.event) filtered.events.add(node.event);
     for (const e of node.emits) filtered.events.add(e);
@@ -139,33 +181,106 @@ async function main(): Promise<void> {
   const options = parseArgs(args);
 
   const dir = resolve(options.dir);
-  console.error(`Scanning ${dir} for @domain annotations...`);
+  console.log(`Scanning ${dir} for @domain annotations...`);
 
   const graph = await parseDirectory(dir);
-  const filtered = applyFilters(graph, options);
 
-  const nodeCount = filtered.nodes.size;
-  const contextCount = filtered.contexts.size;
-  console.error(`Found ${nodeCount} annotated components in ${contextCount} bounded contexts.`);
+  const nodeCount = graph.nodes.size;
+  const subdomainCount = graph.subdomains.size;
+  console.log(`Found ${nodeCount} annotated components in ${subdomainCount} subdomains.`);
 
-  if (nodeCount === 0) {
-    console.error('No @domain annotations found. Use /domain-annotate to add them.');
+  // Load strategic model if provided
+  let enriched: EnrichedDomainGraph;
+  if (options.domainFile) {
+    const domainPath = resolve(options.domainFile);
+    console.log(`Loading strategic model from ${domainPath}...`);
+    const strategic = await parseStrategicFile(domainPath);
+    console.log(
+      `Strategic model: ${strategic.subdomains.size} subdomains, ${strategic.contextMap.length} relationships, ${strategic.teams.length} teams.`,
+    );
+
+    // Build enriched graph with annotations from all files
+    const allAnnotations = [...graph.nodes.values()];
+    enriched = buildEnrichedGraph(allAnnotations, strategic);
+  } else {
+    enriched = { ...graph };
+  }
+
+  // Cross-validation mode
+  if (options.validate) {
+    if (!enriched.strategic) {
+      console.error('--validate requires --domain-file. Provide a domain.yaml file.');
+      process.exit(1);
+    }
+
+    const warnings = validateConsistency(enriched, enriched.strategic);
+
+    if (warnings.length === 0) {
+      console.log('Validation passed. No inconsistencies found.');
+    } else {
+      const errors = warnings.filter((w) => w.severity === 'error');
+      const warns = warnings.filter((w) => w.severity === 'warning');
+
+      if (errors.length > 0) {
+        console.log(`\n--- ERRORS (${errors.length}) ---`);
+        for (const e of errors) {
+          console.log(`  [${e.code}] ${e.message}`);
+        }
+      }
+      if (warns.length > 0) {
+        console.log(`\n--- WARNINGS (${warns.length}) ---`);
+        for (const w of warns) {
+          console.log(`  [${w.code}] ${w.message}`);
+        }
+      }
+
+      console.log(`\nTotal: ${errors.length} errors, ${warns.length} warnings.`);
+      if (errors.length > 0) process.exit(1);
+    }
+    return;
+  }
+
+  // Apply filters for non-context-map formats
+  const filtered = options.format === 'context-map' ? enriched : applyFilters(enriched, options);
+
+  if (options.format !== 'context-map' && filtered.nodes.size === 0) {
+    console.log('No @domain annotations found. Use /domain-annotate to add them.');
     process.exit(0);
   }
 
   let output: string;
-  if (options.format === 'json') {
-    output = generateJSON(filtered);
-  } else {
-    output = generateMermaid(filtered, {
-      direction: options.direction,
-      eventsOnly: options.eventsOnly,
-    });
+  switch (options.format) {
+    case 'json':
+      output = generateJSON(filtered);
+      break;
+    case 'sequence':
+      output = generateSequence(filtered, {
+        scenario: options.scenario,
+        showBus: options.showBus,
+      });
+      break;
+    case 'catalog':
+      output = generateCatalog(filtered, { includeHealthCheck: true });
+      break;
+    case 'context-map':
+      output = generateContextMap(enriched, {
+        direction: options.direction,
+      });
+      break;
+    case 'inventory':
+      output = generateInventory(filtered);
+      break;
+    default:
+      output = generateMermaid(filtered, {
+        direction: options.direction,
+        eventsOnly: options.eventsOnly,
+      });
+      break;
   }
 
   if (options.output) {
     await Bun.write(options.output, output);
-    console.error(`Output written to ${options.output}`);
+    console.log(`Output written to ${options.output}`);
   } else {
     console.log(output);
   }

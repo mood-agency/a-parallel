@@ -1,6 +1,11 @@
 /**
+ * @domain subdomain: Thread Management
+ * @domain subdomain-type: core
+ * @domain type: domain-service
+ * @domain layer: domain
+ * @domain depends: Database
+ *
  * Thread content search (FTS5 + LIKE fallback).
- * Extracted from thread-manager.ts for single-responsibility.
  */
 
 import { eq, and, like } from 'drizzle-orm';

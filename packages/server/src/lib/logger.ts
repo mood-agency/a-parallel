@@ -1,3 +1,9 @@
+/**
+ * @domain subdomain: Shared Kernel
+ * @domain type: adapter
+ * @domain layer: infrastructure
+ */
+
 import { mkdirSync } from 'fs';
 import { resolve } from 'path';
 

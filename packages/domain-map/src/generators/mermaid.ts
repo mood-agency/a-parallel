@@ -1,4 +1,5 @@
-import type { DomainAnnotation, DomainGraph } from '../types.js';
+import type { DomainGraph } from '../types.js';
+import { sanitizeId, TYPE_ICONS } from './event-utils.js';
 
 // ── Options ──────────────────────────────────────────────────────
 
@@ -7,8 +8,8 @@ export interface MermaidOptions {
   direction?: 'LR' | 'TB';
   /** Only show event flow, suppress dependency arrows */
   eventsOnly?: boolean;
-  /** Collapse to context-level view (one node per bounded context) */
-  contextLevel?: boolean;
+  /** Collapse to subdomain-level view (one node per subdomain) */
+  subdomainLevel?: boolean;
 }
 
 // ── Main generator ───────────────────────────────────────────────
@@ -17,7 +18,7 @@ export function generateMermaid(graph: DomainGraph, options?: MermaidOptions): s
   const opts: Required<MermaidOptions> = {
     direction: options?.direction ?? 'LR',
     eventsOnly: options?.eventsOnly ?? false,
-    contextLevel: options?.contextLevel ?? false,
+    subdomainLevel: options?.subdomainLevel ?? false,
   };
 
   const lines: string[] = [];
@@ -29,8 +30,8 @@ export function generateMermaid(graph: DomainGraph, options?: MermaidOptions): s
   addClassDefs(lines);
   lines.push('');
 
-  if (opts.contextLevel) {
-    addContextLevelView(lines, graph);
+  if (opts.subdomainLevel) {
+    addSubdomainLevelView(lines, graph);
   } else {
     addDetailedView(lines, graph, opts);
   }
@@ -48,37 +49,36 @@ function addClassDefs(lines: string[]): void {
   lines.push('  classDef event fill:#FCE4EC,stroke:#C62828,color:#B71C1C');
 }
 
-// ── Context-level view ───────────────────────────────────────────
+// ── Subdomain-level view ────────────────────────────────────────
 
-function addContextLevelView(lines: string[]): void;
-function addContextLevelView(lines: string[], graph: DomainGraph): void {
-  const contextEvents = new Map<string, { emits: Set<string>; consumes: Set<string> }>();
+function addSubdomainLevelView(lines: string[], graph: DomainGraph): void {
+  const subdomainEvents = new Map<string, { emits: Set<string>; consumes: Set<string> }>();
 
-  // Aggregate emits/consumes per context
-  for (const [contextName, nodeKeys] of graph.contexts) {
+  // Aggregate emits/consumes per subdomain
+  for (const [sdName, nodeKeys] of graph.subdomains) {
     const agg = { emits: new Set<string>(), consumes: new Set<string>() };
     for (const key of nodeKeys) {
       const node = graph.nodes.get(key)!;
       for (const e of node.emits) agg.emits.add(e);
       for (const e of node.consumes) agg.consumes.add(e);
     }
-    contextEvents.set(contextName, agg);
+    subdomainEvents.set(sdName, agg);
   }
 
-  // Add context nodes
-  for (const contextName of graph.contexts.keys()) {
-    const id = sanitizeId(contextName);
-    const count = graph.contexts.get(contextName)!.length;
-    lines.push(`  ${id}["${contextName}\\n(${count} components)"]`);
+  // Add subdomain nodes
+  for (const sdName of graph.subdomains.keys()) {
+    const id = sanitizeId(sdName);
+    const count = graph.subdomains.get(sdName)!.length;
+    lines.push(`  ${id}["${sdName}\\n(${count} components)"]`);
   }
 
   lines.push('');
 
-  // Add inter-context event flows
+  // Add inter-subdomain event flows
   const drawnEdges = new Set<string>();
-  for (const [emitterCtx, emitterAgg] of contextEvents) {
-    for (const [consumerCtx, consumerAgg] of contextEvents) {
-      if (emitterCtx === consumerCtx) continue;
+  for (const [emitterSd, emitterAgg] of subdomainEvents) {
+    for (const [consumerSd, consumerAgg] of subdomainEvents) {
+      if (emitterSd === consumerSd) continue;
 
       const sharedEvents: string[] = [];
       for (const e of emitterAgg.emits) {
@@ -86,12 +86,12 @@ function addContextLevelView(lines: string[], graph: DomainGraph): void {
       }
 
       if (sharedEvents.length > 0) {
-        const edgeKey = `${emitterCtx}->${consumerCtx}`;
+        const edgeKey = `${emitterSd}->${consumerSd}`;
         if (drawnEdges.has(edgeKey)) continue;
         drawnEdges.add(edgeKey);
 
-        const fromId = sanitizeId(emitterCtx);
-        const toId = sanitizeId(consumerCtx);
+        const fromId = sanitizeId(emitterSd);
+        const toId = sanitizeId(consumerSd);
         const label =
           sharedEvents.length <= 3 ? sharedEvents.join(', ') : `${sharedEvents.length} events`;
         lines.push(`  ${fromId} -- "${label}" --> ${toId}`);
@@ -107,10 +107,10 @@ function addDetailedView(
   graph: DomainGraph,
   opts: Required<MermaidOptions>,
 ): void {
-  // Add subgraphs per context
-  for (const [contextName, nodeKeys] of graph.contexts) {
-    const subgraphId = `ctx_${sanitizeId(contextName)}`;
-    lines.push(`  subgraph ${subgraphId}["${contextName}"]`);
+  // Add subgraphs per subdomain
+  for (const [sdName, nodeKeys] of graph.subdomains) {
+    const subgraphId = `sd_${sanitizeId(sdName)}`;
+    lines.push(`  subgraph ${subgraphId}["${sdName}"]`);
 
     for (const key of nodeKeys) {
       const node = graph.nodes.get(key)!;
@@ -192,36 +192,4 @@ function addDependencyArrows(lines: string[], graph: DomainGraph): void {
   }
 }
 
-// ── Helpers ──────────────────────────────────────────────────────
-
-const TYPE_ICONS: Record<string, string> = {
-  // Strategic
-  'bounded-context': '🏛️',
-  'anti-corruption-layer': '🛡️',
-  'published-language': '📜',
-  'context-map': '🗺️',
-  // Tactical
-  'aggregate-root': '🔷',
-  entity: '🔹',
-  'value-object': '📦',
-  'domain-event': '⚡',
-  'domain-service': '⚙️',
-  'app-service': '🔧',
-  repository: '🗄️',
-  factory: '🏭',
-  specification: '🔍',
-  policy: '📋',
-  module: '📂',
-  // Architectural
-  port: '🔌',
-  adapter: '🔗',
-  'event-bus': '📡',
-  handler: '📥',
-};
-
-function sanitizeId(str: string): string {
-  return str
-    .replace(/[^a-zA-Z0-9]/g, '_')
-    .replace(/_+/g, '_')
-    .replace(/^_|_$/g, '');
-}
+// sanitizeId and TYPE_ICONS imported from event-utils.ts

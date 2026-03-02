@@ -1,3 +1,10 @@
+/**
+ * @domain subdomain: Authentication
+ * @domain subdomain-type: generic
+ * @domain type: domain-service
+ * @domain layer: domain
+ */
+
 import { randomBytes, createCipheriv, createDecipheriv } from 'crypto';
 import { readFileSync, writeFileSync, existsSync } from 'fs';
 import { resolve } from 'path';

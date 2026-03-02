@@ -1,7 +1,9 @@
 /**
- * Server-specific dependency injection interfaces.
- * These stay in the server package because they reference DB operations and WebSocket events.
+ * @domain subdomain: Shared Kernel
+ * @domain type: port
+ * @domain layer: domain
  *
+ * Server-specific dependency injection interfaces.
  * Interfaces are split by responsibility (ISP):
  *   - IThreadQuery:       Thread CRUD / lookups
  *   - IMessageRepository: Message persistence

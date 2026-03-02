@@ -1,6 +1,11 @@
 /**
- * MCP Service — manages MCP servers via the Claude CLI.
- * Uses `claude mcp list/add/remove` commands.
+ * @domain subdomain: Extensions
+ * @domain subdomain-type: generic
+ * @domain type: app-service
+ * @domain layer: application
+ * @domain depends: ClaudeBinary
+ *
+ * Manages MCP servers via the Claude CLI.
  */
 
 import { execute, ProcessExecutionError } from '@funny/core/git';

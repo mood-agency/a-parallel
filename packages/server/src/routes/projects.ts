@@ -1,3 +1,11 @@
+/**
+ * @domain subdomain: Project Management
+ * @domain subdomain-type: supporting
+ * @domain type: adapter
+ * @domain layer: infrastructure
+ * @domain depends: ProjectManager
+ */
+
 import { listBranches, getDefaultBranch, getCurrentBranch } from '@funny/core/git';
 import { Hono } from 'hono';
 

@@ -1,3 +1,10 @@
+/**
+ * @domain subdomain: Agent Execution
+ * @domain subdomain-type: core
+ * @domain type: entity
+ * @domain layer: domain
+ */
+
 import type { WaitingReason } from '@funny/shared';
 
 /**

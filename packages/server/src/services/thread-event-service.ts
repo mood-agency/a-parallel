@@ -1,6 +1,11 @@
 /**
- * Thread Event Service — Persists thread events (git operations, status changes)
- * to the database for historical tracking and UI display.
+ * @domain subdomain: Thread Management
+ * @domain subdomain-type: core
+ * @domain type: repository
+ * @domain layer: infrastructure
+ * @domain depends: Database
+ *
+ * Persists thread events (git operations, status changes) for historical tracking.
  */
 
 import { eq, desc } from 'drizzle-orm';

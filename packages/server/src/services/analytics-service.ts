@@ -1,6 +1,11 @@
 /**
- * Analytics service — query logic for overview and timeline analytics.
- * Extracted from the analytics route to maintain proper layering (routes → services → db).
+ * @domain subdomain: Analytics
+ * @domain subdomain-type: generic
+ * @domain type: app-service
+ * @domain layer: application
+ * @domain depends: Database
+ *
+ * Query logic for overview and timeline analytics.
  */
 
 import { eq, and, gte, lt, sql } from 'drizzle-orm';

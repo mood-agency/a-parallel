@@ -2,7 +2,15 @@ import { resolve, basename, relative } from 'path';
 
 import { Glob } from 'bun';
 
-import type { DomainAnnotation, DomainGraph, DomainType, DomainLayer } from './types.js';
+import type {
+  DomainAnnotation,
+  DomainGraph,
+  DomainType,
+  DomainLayer,
+  EnrichedDomainGraph,
+  StrategicModel,
+  SubdomainType,
+} from './types.js';
 
 // ── Constants ────────────────────────────────────────────────────
 
@@ -11,7 +19,7 @@ const JSDOC_BLOCK_REGEX = /\/\*\*[\s\S]*?\*\//g;
 const EXPORT_NAME_REGEX = /export\s+(?:default\s+)?(?:class|interface|type|function|const)\s+(\w+)/;
 
 const CSV_FIELDS = new Set(['emits', 'consumes', 'depends']);
-const REQUIRED_FIELDS = new Set(['context', 'type', 'layer']);
+const REQUIRED_FIELDS = new Set(['subdomain', 'type', 'layer']);
 
 const VALID_TYPES = new Set<DomainType>([
   // Strategic
@@ -39,6 +47,7 @@ const VALID_TYPES = new Set<DomainType>([
 ]);
 
 const VALID_LAYERS = new Set<DomainLayer>(['domain', 'application', 'infrastructure']);
+const VALID_SUBDOMAIN_TYPES = new Set<SubdomainType>(['core', 'supporting', 'generic']);
 
 // ── parseFile ────────────────────────────────────────────────────
 
@@ -81,13 +90,25 @@ export function parseFile(filePath: string, content: string): DomainAnnotation[]
       continue;
     }
 
+    // Validate subdomain-type if present
+    const rawSubdomainType = tags['subdomain-type'];
+    if (rawSubdomainType && !VALID_SUBDOMAIN_TYPES.has(rawSubdomainType as SubdomainType)) {
+      console.error(
+        `[domain-map] Warning: ${filePath} — invalid @domain subdomain-type: "${rawSubdomainType}". Ignoring.`,
+      );
+    }
+
     // Determine the name of the annotated export
     const name = resolveExportName(content, blockMatch.index! + block.length, filePath);
 
     annotations.push({
       filePath,
       name,
-      context: tags.context!,
+      subdomain: tags.subdomain!,
+      subdomainType: VALID_SUBDOMAIN_TYPES.has(rawSubdomainType as SubdomainType)
+        ? (rawSubdomainType as SubdomainType)
+        : undefined,
+      context: tags.context,
       type: tags.type as DomainType,
       layer: tags.layer as DomainLayer,
       event: tags.event,
@@ -132,18 +153,18 @@ export async function parseDirectory(dir: string): Promise<DomainGraph> {
  */
 export function buildGraph(annotations: DomainAnnotation[]): DomainGraph {
   const nodes = new Map<string, DomainAnnotation>();
-  const contexts = new Map<string, string[]>();
+  const subdomains = new Map<string, string[]>();
   const events = new Set<string>();
 
   for (const annotation of annotations) {
-    const key = `${annotation.context}::${annotation.name}`;
+    const key = `${annotation.subdomain}::${annotation.name}`;
 
     nodes.set(key, annotation);
 
-    // Group by context
-    const contextMembers = contexts.get(annotation.context) ?? [];
-    contextMembers.push(key);
-    contexts.set(annotation.context, contextMembers);
+    // Group by subdomain
+    const members = subdomains.get(annotation.subdomain) ?? [];
+    members.push(key);
+    subdomains.set(annotation.subdomain, members);
 
     // Collect all event names
     if (annotation.event) events.add(annotation.event);
@@ -151,7 +172,40 @@ export function buildGraph(annotations: DomainAnnotation[]): DomainGraph {
     for (const e of annotation.consumes) events.add(e);
   }
 
-  return { nodes, contexts, events };
+  return { nodes, subdomains, events };
+}
+
+// ── buildEnrichedGraph ───────────────────────────────────────────
+
+/**
+ * Build an EnrichedDomainGraph by merging tactical annotations with a strategic model.
+ * When strategic is undefined, behaves identically to buildGraph().
+ */
+export function buildEnrichedGraph(
+  annotations: DomainAnnotation[],
+  strategic?: StrategicModel,
+): EnrichedDomainGraph {
+  const base = buildGraph(annotations);
+
+  if (!strategic) return { ...base };
+
+  // Enrich annotations with strategic data
+  for (const [, node] of base.nodes) {
+    const sdDef = strategic.subdomains.get(node.subdomain);
+    if (!sdDef) continue;
+
+    // Fill in context from strategic BC name if not set in annotation
+    if (!node.context) {
+      node.context = sdDef.boundedContext;
+    }
+
+    // Fill in subdomain type from strategic model if not set in annotation
+    if (!node.subdomainType) {
+      node.subdomainType = sdDef.type;
+    }
+  }
+
+  return { ...base, strategic };
 }
 
 // ── Helpers ──────────────────────────────────────────────────────

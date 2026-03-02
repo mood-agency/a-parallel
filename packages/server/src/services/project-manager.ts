@@ -1,3 +1,12 @@
+/**
+ * @domain subdomain: Project Management
+ * @domain subdomain-type: supporting
+ * @domain type: repository
+ * @domain layer: infrastructure
+ * @domain aggregate: Project
+ * @domain depends: Database, GitCore
+ */
+
 import { resolve, isAbsolute } from 'path';
 
 import { isGitRepoSync } from '@funny/core/git';

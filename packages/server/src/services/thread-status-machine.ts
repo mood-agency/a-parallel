@@ -1,8 +1,12 @@
 /**
- * Server-side thread state machine bridge.
+ * @domain subdomain: Thread Management
+ * @domain subdomain-type: core
+ * @domain type: domain-service
+ * @domain layer: domain
+ * @domain aggregate: Thread
  *
- * Manages XState actors per thread and provides a clean API
- * for transitioning thread status with resume-reason tracking.
+ * Server-side thread state machine bridge.
+ * Manages XState actors per thread for status transitions with resume-reason tracking.
  */
 
 import type { ThreadStatus } from '@funny/shared';

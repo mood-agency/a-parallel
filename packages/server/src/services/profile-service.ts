@@ -1,3 +1,11 @@
+/**
+ * @domain subdomain: User Profile
+ * @domain subdomain-type: generic
+ * @domain type: repository
+ * @domain layer: infrastructure
+ * @domain depends: Database, Crypto
+ */
+
 import type { UserProfile, UpdateProfileRequest } from '@funny/shared';
 import { eq } from 'drizzle-orm';
 import { nanoid } from 'nanoid';

@@ -1,7 +1,13 @@
 /**
+ * @domain subdomain: Process Management
+ * @domain subdomain-type: supporting
+ * @domain type: app-service
+ * @domain layer: application
+ * @domain emits: command:status, command:output
+ * @domain depends: ProjectManager, WSBroker, ShutdownManager
+ *
  * CommandRunner — spawns and manages startup command processes.
  * Streams stdout/stderr to clients via WebSocket.
- * Follows the same pattern as agent-runner.ts + claude-process.ts.
  */
 
 import { log } from '../lib/logger.js';

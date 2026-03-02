@@ -1,4 +1,12 @@
 /**
+ * @domain subdomain: External Integration
+ * @domain subdomain-type: supporting
+ * @domain type: adapter
+ * @domain layer: infrastructure
+ * @domain depends: IngestMapper
+ */
+
+/**
  * Ingest webhook route — receives events from external services
  * and translates them into threads/messages visible in the UI.
  *

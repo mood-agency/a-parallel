@@ -1,16 +1,11 @@
 /**
+ * @domain subdomain: Thread Management
+ * @domain subdomain-type: core
+ * @domain type: module
+ * @domain layer: domain
+ *
  * Thread manager — barrel re-export.
- *
- * The original monolithic thread-manager has been split into focused modules:
- *   - thread-repository.ts  — Thread CRUD (list, get, create, update, delete)
- *   - message-repository.ts — Message CRUD + thread-with-messages queries
- *   - tool-call-repository.ts — ToolCall CRUD
- *   - comment-repository.ts — Comment CRUD + counts
- *   - search-service.ts     — FTS5 / LIKE content search
- *   - stage-history.ts      — Stage transition recording
- *
- * This file re-exports everything so existing `import * as tm` consumers
- * continue to work unchanged.
+ * The original monolithic thread-manager has been split into focused modules.
  */
 
 // Thread CRUD

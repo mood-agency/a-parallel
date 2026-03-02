@@ -1,6 +1,10 @@
 /**
- * Thread CRUD operations.
- * Extracted from thread-manager.ts for single-responsibility.
+ * @domain subdomain: Thread Management
+ * @domain subdomain-type: core
+ * @domain type: repository
+ * @domain layer: infrastructure
+ * @domain aggregate: Thread
+ * @domain depends: Database, StageHistory, CommentRepository
  */
 
 import { eq, and, or, ne, like, desc, count as drizzleCount, sql } from 'drizzle-orm';

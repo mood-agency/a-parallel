@@ -1,3 +1,9 @@
+/**
+ * @domain subdomain: Shared Kernel
+ * @domain type: adapter
+ * @domain layer: infrastructure
+ */
+
 import type { ErrorHandler } from 'hono';
 
 import { log } from '../lib/logger.js';

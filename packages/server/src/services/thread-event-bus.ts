@@ -1,8 +1,10 @@
 /**
- * ThreadEventBus — server-side lifecycle event bus for thread/agent events.
+ * @domain subdomain: Shared Kernel
+ * @domain type: event-bus
+ * @domain layer: infrastructure
+ * @domain emits: thread:created, thread:stage-changed, thread:deleted, agent:started, agent:completed, git:changed, git:committed, git:pushed, git:merged, git:staged, git:unstaged, git:reverted, git:pulled, git:stashed, git:stash-popped, git:reset-soft
  *
- * Emitters: routes/threads.ts, agent-runner.ts, agent-message-handler.ts
- * Subscribers: handlers/comment-handler.ts, future reactive handlers
+ * Server-side lifecycle event bus for thread/agent/git events.
  */
 
 import { EventEmitter } from 'events';

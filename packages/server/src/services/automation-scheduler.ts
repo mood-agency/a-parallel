@@ -1,3 +1,11 @@
+/**
+ * @domain subdomain: Automation
+ * @domain subdomain-type: supporting
+ * @domain type: app-service
+ * @domain layer: application
+ * @domain depends: AutomationManager, AgentRunner, ProjectManager, ThreadManager, WSBroker
+ */
+
 import type { AgentModel, AgentProvider, PermissionMode } from '@funny/shared';
 import { Cron } from 'croner';
 import { nanoid } from 'nanoid';

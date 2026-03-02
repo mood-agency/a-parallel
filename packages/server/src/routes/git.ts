@@ -1,3 +1,11 @@
+/**
+ * @domain subdomain: Git Operations
+ * @domain subdomain-type: supporting
+ * @domain type: adapter
+ * @domain layer: infrastructure
+ * @domain depends: GitService
+ */
+
 import { existsSync } from 'fs';
 
 import { query } from '@anthropic-ai/claude-agent-sdk';

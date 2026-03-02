@@ -1,3 +1,12 @@
+/**
+ * @domain subdomain: Agent Execution
+ * @domain subdomain-type: core
+ * @domain type: app-service
+ * @domain layer: application
+ * @domain emits: agent:started, agent:completed, agent:error, agent:stopped
+ * @domain depends: AgentOrchestrator, AgentStateTracker, AgentMessageHandler, ThreadManager, WSBroker, ThreadEventBus
+ */
+
 import { AgentOrchestrator, defaultProcessFactory } from '@funny/core/agents';
 import type { IAgentProcessFactory } from '@funny/core/agents';
 import type {
@@ -183,26 +192,6 @@ export class AgentRunner {
     // Update thread status + provider in DB
     this.threadManager.updateThread(threadId, { status: newStatus, provider });
 
-    // Auto-transition stage to 'in_progress' from 'backlog', 'planning', or 'review'
-    if (
-      currentThread &&
-      (currentThread.stage === 'review' ||
-        currentThread.stage === 'backlog' ||
-        currentThread.stage === 'planning')
-    ) {
-      const fromStage = currentThread.stage;
-      this.threadManager.updateThread(threadId, { stage: 'in_progress' });
-      threadEventBus.emit('thread:stage-changed', {
-        threadId,
-        projectId: currentThread.projectId,
-        userId: currentThread.userId,
-        worktreePath: currentThread.worktreePath ?? null,
-        cwd,
-        fromStage,
-        toStage: 'in_progress',
-      });
-    }
-
     // Save user message in DB (skip when a draft message already exists, e.g. idle threads)
     if (!skipMessageInsert) {
       this.threadManager.insertMessage({
@@ -247,10 +236,8 @@ export class AgentRunner {
       this.threadManager.updateThread(threadId, { permissionMode: 'autoEdit' });
     }
 
-    const updatedThread = this.threadManager.getThread(threadId);
     this.emitWS(threadId, 'agent:status', {
       status: 'running',
-      stage: updatedThread?.stage,
       ...(isPlanResume ? { permissionMode: 'autoEdit' as PermissionMode } : {}),
     });
 

@@ -1,3 +1,11 @@
+/**
+ * @domain subdomain: Analytics
+ * @domain subdomain-type: generic
+ * @domain type: adapter
+ * @domain layer: infrastructure
+ * @domain depends: AnalyticsService
+ */
+
 import { Hono } from 'hono';
 
 import { getOverview, getTimeline } from '../services/analytics-service.js';

@@ -1,9 +1,11 @@
 /**
- * Thread context builder — constructs conversation history for session recovery.
+ * @domain subdomain: Thread Management
+ * @domain subdomain-type: core
+ * @domain type: domain-service
+ * @domain layer: domain
+ * @domain depends: ThreadManager
  *
- * When a session cannot be resumed (e.g., worktree merged and deleted),
- * this module builds a formatted conversation history to pass as context
- * to a fresh Claude session.
+ * Constructs conversation history for session recovery.
  */
 
 import * as tm from './thread-manager.js';

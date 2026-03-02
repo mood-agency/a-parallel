@@ -1,3 +1,10 @@
+/**
+ * @domain subdomain: Project Management
+ * @domain subdomain-type: supporting
+ * @domain type: adapter
+ * @domain layer: infrastructure
+ */
+
 import { readdirSync, existsSync, statSync } from 'fs';
 import { homedir, platform } from 'os';
 import { join, parse as parsePath, resolve, normalize } from 'path';

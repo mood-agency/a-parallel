@@ -1,12 +1,13 @@
 /**
- * Git Status handler — emits git status via WebSocket when file-modifying
- * tools are executed, ensuring the UI stays in sync with git state.
+ * @domain subdomain: Git Operations
+ * @domain subdomain-type: supporting
+ * @domain type: handler
+ * @domain layer: application
+ * @domain consumes: git:changed
+ * @domain emits: git:status
  *
- * Fully decoupled: uses HandlerServiceContext for all git operations
- * instead of importing @funny/core/git directly.
- *
- * Uses per-thread debouncing to avoid flooding getStatusSummary() when
- * an agent writes many files in quick succession.
+ * Emits git status via WebSocket when file-modifying tools are executed.
+ * Uses per-thread debouncing to avoid flooding getStatusSummary().
  */
 
 import { invalidateStatusCache } from '@funny/core/git';

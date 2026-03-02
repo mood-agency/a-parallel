@@ -1,9 +1,11 @@
 /**
- * Git Event Persistence handlers — persist git operation events
- * (commit, push, merge) to the database via the reactive event bus.
- * Also broadcasts thread:event WS events so the client can show them inline.
+ * @domain subdomain: Git Operations
+ * @domain subdomain-type: supporting
+ * @domain type: handler
+ * @domain layer: application
+ * @domain consumes: git:committed, git:pushed, git:merged, git:staged, git:unstaged, git:reverted, git:pulled, git:stashed, git:stash-popped, git:reset-soft
  *
- * Decouples route handlers from direct thread-event-service calls.
+ * Persists git operation events to the database and broadcasts thread:event WS events.
  */
 
 import type {

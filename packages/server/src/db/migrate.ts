@@ -1,3 +1,10 @@
+/**
+ * @domain subdomain: Shared Kernel
+ * @domain type: adapter
+ * @domain layer: infrastructure
+ * @domain depends: Database
+ */
+
 import { sql } from 'drizzle-orm';
 
 import { log } from '../lib/logger.js';

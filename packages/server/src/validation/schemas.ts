@@ -1,3 +1,9 @@
+/**
+ * @domain subdomain: Shared Kernel
+ * @domain type: value-object
+ * @domain layer: domain
+ */
+
 import { validationErr, type DomainError } from '@funny/shared/errors';
 import { ok, err, type Result } from 'neverthrow';
 import { z } from 'zod';

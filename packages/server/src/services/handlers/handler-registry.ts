@@ -1,10 +1,10 @@
 /**
- * Handler Registry — collects all reactive handlers and wires them
- * to the ThreadEventBus at server startup.
+ * @domain subdomain: Shared Kernel
+ * @domain type: context-map
+ * @domain layer: application
+ * @domain depends: ThreadEventBus
  *
- * To add a new handler:
- *   1. Create a file in this directory exporting an EventHandler
- *   2. Import it here and add it to the allHandlers array
+ * Collects all reactive handlers and wires them to the ThreadEventBus at server startup.
  */
 
 import { log } from '../../lib/logger.js';
@@ -26,6 +26,7 @@ import {
   gitResetSoftPersistenceHandler,
 } from './git-event-persistence-handler.js';
 import { gitStatusHandler } from './git-status-handler.js';
+import { stageTransitionOnAgentStartHandler } from './stage-transition-on-agent-start-handler.js';
 import type { EventHandler, HandlerServiceContext } from './types.js';
 
 // ── Handler list ────────────────────────────────────────────────
@@ -45,6 +46,7 @@ const allHandlers: EventHandler<any>[] = [
   gitResetSoftPersistenceHandler,
   agentCompletedGitStatusHandler,
   agentCompletedQueueHandler,
+  stageTransitionOnAgentStartHandler,
 ];
 
 // ── Registration ────────────────────────────────────────────────

@@ -1,0 +1,155 @@
+flowchart LR
+
+  %% Layer styles
+  classDef domain fill:#E8F5E9,stroke:#2E7D32,color:#1B5E20
+  classDef application fill:#E3F2FD,stroke:#1565C0,color:#0D47A1
+  classDef infrastructure fill:#FFF3E0,stroke:#E65100,color:#BF360C
+  classDef event fill:#FCE4EC,stroke:#C62828,color:#B71C1C
+
+  subgraph ctx_Shared_Kernel["Shared Kernel"]
+    Shared_Kernel_index["🔗 index\n‹adapter›"]:::infrastructure
+    Shared_Kernel_schemas["📦 schemas\n‹value-object›"]:::domain
+    Shared_Kernel_result_response["🔗 result-response\n‹adapter›"]:::infrastructure
+    Shared_Kernel_route_helpers["🔗 route-helpers\n‹adapter›"]:::infrastructure
+    Shared_Kernel_HonoEnv["📜 HonoEnv\n‹published-language›"]:::infrastructure
+    Shared_Kernel_interfaces["📂 interfaces\n‹module›"]:::domain
+    Shared_Kernel_server_interfaces["🔌 server-interfaces\n‹port›"]:::domain
+    Shared_Kernel_shutdown_manager["🔧 shutdown-manager\n‹app-service›"]:::infrastructure
+    Shared_Kernel_thread_event_bus["📡 thread-event-bus\n‹event-bus›"]:::infrastructure
+    Shared_Kernel_handler_registry["🗺️ handler-registry\n‹context-map›"]:::application
+    Shared_Kernel_types["🔌 types\n‹port›"]:::domain
+    Shared_Kernel_logs["🔗 logs\n‹adapter›"]:::infrastructure
+    Shared_Kernel_error_handler["🔗 error-handler\n‹adapter›"]:::infrastructure
+    Shared_Kernel_rate_limit["🔗 rate-limit\n‹adapter›"]:::infrastructure
+    Shared_Kernel_data_dir["📦 data-dir\n‹value-object›"]:::infrastructure
+    Shared_Kernel_logger["🔗 logger\n‹adapter›"]:::infrastructure
+    Shared_Kernel_index["🔗 index\n‹adapter›"]:::infrastructure
+    Shared_Kernel_migrate["🔗 migrate\n‹adapter›"]:::infrastructure
+    Shared_Kernel_schema["📜 schema\n‹published-language›"]:::infrastructure
+  end
+
+  subgraph ctx_Agent_Execution["Agent Execution"]
+    Agent_Execution_claude_binary["🔗 claude-binary\n‹adapter›"]:::infrastructure
+    Agent_Execution_provider_detection["⚙️ provider-detection\n‹domain-service›"]:::domain
+    Agent_Execution_agent_message_handler["📥 agent-message-handler\n‹handler›"]:::application
+    Agent_Execution_agent_runner["🔧 agent-runner\n‹app-service›"]:::application
+    Agent_Execution_agent_state["🔹 agent-state\n‹entity›"]:::domain
+    Agent_Execution_agent_completed_queue_handler["📥 agent-completed-queue-handler\n‹handler›"]:::application
+  end
+
+  subgraph ctx_Thread_Management["Thread Management"]
+    Thread_Management_file_mentions["⚙️ file-mentions\n‹domain-service›"]:::domain
+    Thread_Management_comment_repository["🗄️ comment-repository\n‹repository›"]:::infrastructure
+    Thread_Management_message_queue["🗄️ message-queue\n‹repository›"]:::infrastructure
+    Thread_Management_message_repository["🗄️ message-repository\n‹repository›"]:::infrastructure
+    Thread_Management_search_service["⚙️ search-service\n‹domain-service›"]:::domain
+    Thread_Management_stage_history["🗄️ stage-history\n‹repository›"]:::infrastructure
+    Thread_Management_thread_context_builder["⚙️ thread-context-builder\n‹domain-service›"]:::domain
+    Thread_Management_thread_event_service["🗄️ thread-event-service\n‹repository›"]:::infrastructure
+    Thread_Management_thread_manager["📂 thread-manager\n‹module›"]:::domain
+    Thread_Management_thread_repository["🗄️ thread-repository\n‹repository›"]:::infrastructure
+    Thread_Management_thread_service["🔧 thread-service\n‹app-service›"]:::application
+    Thread_Management_thread_status_machine["⚙️ thread-status-machine\n‹domain-service›"]:::domain
+    Thread_Management_tool_call_repository["🗄️ tool-call-repository\n‹repository›"]:::infrastructure
+    Thread_Management_comment_handler["📥 comment-handler\n‹handler›"]:::application
+    Thread_Management_threads["🔗 threads\n‹adapter›"]:::infrastructure
+  end
+
+  subgraph ctx_Analytics["Analytics"]
+    Analytics_analytics_service["🔧 analytics-service\n‹app-service›"]:::application
+    Analytics_analytics["🔗 analytics\n‹adapter›"]:::infrastructure
+  end
+
+  subgraph ctx_Authentication["Authentication"]
+    Authentication_auth_service["⚙️ auth-service\n‹domain-service›"]:::domain
+    Authentication_auth["🔗 auth\n‹adapter›"]:::infrastructure
+    Authentication_auth["🔗 auth\n‹adapter›"]:::infrastructure
+    Authentication_AuthMode["📦 AuthMode\n‹value-object›"]:::domain
+    Authentication_auth["🔗 auth\n‹adapter›"]:::infrastructure
+    Authentication_crypto["⚙️ crypto\n‹domain-service›"]:::domain
+  end
+
+  subgraph ctx_Automation["Automation"]
+    Automation_automation_manager["🗄️ automation-manager\n‹repository›"]:::infrastructure
+    Automation_automation_scheduler["🔧 automation-scheduler\n‹app-service›"]:::application
+    Automation_automations["🔗 automations\n‹adapter›"]:::infrastructure
+  end
+
+  subgraph ctx_Process_Management["Process Management"]
+    Process_Management_command_runner["🔧 command-runner\n‹app-service›"]:::application
+    Process_Management_pty_manager["🔗 pty-manager\n‹adapter›"]:::infrastructure
+    Process_Management_startup_commands_service["🗄️ startup-commands-service\n‹repository›"]:::infrastructure
+  end
+
+  subgraph ctx_Git_Operations["Git Operations"]
+    Git_Operations_git_service["🔧 git-service\n‹app-service›"]:::application
+    Git_Operations_agent_completed_git_status_handler["📥 agent-completed-git-status-handler\n‹handler›"]:::application
+    Git_Operations_git_event_persistence_handler["📥 git-event-persistence-handler\n‹handler›"]:::application
+    Git_Operations_git_status_handler["📥 git-status-handler\n‹handler›"]:::application
+    Git_Operations_git["🔗 git\n‹adapter›"]:::infrastructure
+    Git_Operations_github["🔗 github\n‹adapter›"]:::infrastructure
+    Git_Operations_worktrees["🔗 worktrees\n‹adapter›"]:::infrastructure
+  end
+
+  subgraph ctx_External_Integration["External Integration"]
+    External_Integration_ingest_mapper["🛡️ ingest-mapper\n‹anti-corruption-layer›"]:::infrastructure
+    External_Integration_ingest["🔗 ingest\n‹adapter›"]:::infrastructure
+  end
+
+  subgraph ctx_Extensions["Extensions"]
+    Extensions_mcp_oauth["🔗 mcp-oauth\n‹adapter›"]:::infrastructure
+    Extensions_mcp_service["🔧 mcp-service\n‹app-service›"]:::application
+    Extensions_plugin_service["🔧 plugin-service\n‹app-service›"]:::application
+    Extensions_skills_service["🔧 skills-service\n‹app-service›"]:::application
+    Extensions_mcp["🔗 mcp\n‹adapter›"]:::infrastructure
+    Extensions_plugins["🔗 plugins\n‹adapter›"]:::infrastructure
+    Extensions_skills["🔗 skills\n‹adapter›"]:::infrastructure
+  end
+
+  subgraph ctx_User_Profile["User Profile"]
+    User_Profile_profile_service["🗄️ profile-service\n‹repository›"]:::infrastructure
+    User_Profile_profile["🔗 profile\n‹adapter›"]:::infrastructure
+  end
+
+  subgraph ctx_Project_Management["Project Management"]
+    Project_Management_project_manager["🗄️ project-manager\n‹repository›"]:::infrastructure
+    Project_Management_browse["🔗 browse\n‹adapter›"]:::infrastructure
+    Project_Management_files["🔗 files\n‹adapter›"]:::infrastructure
+    Project_Management_projects["🔗 projects\n‹adapter›"]:::infrastructure
+  end
+
+  subgraph ctx_Real_time_Communication["Real-time Communication"]
+    Real_time_Communication_ws_broker["📡 ws-broker\n‹event-bus›"]:::infrastructure
+  end
+
+  %% Event flow
+  Agent_Execution_agent_message_handler -- "git:changed" --> Git_Operations_git_status_handler
+  Agent_Execution_agent_runner -- "agent:completed" --> Git_Operations_agent_completed_git_status_handler
+  Agent_Execution_agent_runner -- "agent:completed" --> Agent_Execution_agent_completed_queue_handler
+  Agent_Execution_agent_runner -- "agent:completed" --> Thread_Management_comment_handler
+  Git_Operations_git_service -- "git:staged" --> Git_Operations_git_event_persistence_handler
+  Git_Operations_git_service -- "git:unstaged" --> Git_Operations_git_event_persistence_handler
+  Git_Operations_git_service -- "git:reverted" --> Git_Operations_git_event_persistence_handler
+  Git_Operations_git_service -- "git:committed" --> Git_Operations_git_event_persistence_handler
+  Git_Operations_git_service -- "git:pushed" --> Git_Operations_git_event_persistence_handler
+  Git_Operations_git_service -- "git:pulled" --> Git_Operations_git_event_persistence_handler
+  Git_Operations_git_service -- "git:merged" --> Git_Operations_git_event_persistence_handler
+  Git_Operations_git_service -- "git:stashed" --> Git_Operations_git_event_persistence_handler
+  Git_Operations_git_service -- "git:stash-popped" --> Git_Operations_git_event_persistence_handler
+  Git_Operations_git_service -- "git:reset-soft" --> Git_Operations_git_event_persistence_handler
+  Shared_Kernel_thread_event_bus -- "agent:completed" --> Git_Operations_agent_completed_git_status_handler
+  Shared_Kernel_thread_event_bus -- "agent:completed" --> Agent_Execution_agent_completed_queue_handler
+  Shared_Kernel_thread_event_bus -- "agent:completed" --> Thread_Management_comment_handler
+  Shared_Kernel_thread_event_bus -- "git:changed" --> Git_Operations_git_status_handler
+  Shared_Kernel_thread_event_bus -- "git:committed" --> Git_Operations_git_event_persistence_handler
+  Shared_Kernel_thread_event_bus -- "git:pushed" --> Git_Operations_git_event_persistence_handler
+  Shared_Kernel_thread_event_bus -- "git:merged" --> Git_Operations_git_event_persistence_handler
+  Shared_Kernel_thread_event_bus -- "git:staged" --> Git_Operations_git_event_persistence_handler
+  Shared_Kernel_thread_event_bus -- "git:unstaged" --> Git_Operations_git_event_persistence_handler
+  Shared_Kernel_thread_event_bus -- "git:reverted" --> Git_Operations_git_event_persistence_handler
+  Shared_Kernel_thread_event_bus -- "git:pulled" --> Git_Operations_git_event_persistence_handler
+  Shared_Kernel_thread_event_bus -- "git:stashed" --> Git_Operations_git_event_persistence_handler
+  Shared_Kernel_thread_event_bus -- "git:stash-popped" --> Git_Operations_git_event_persistence_handler
+  Shared_Kernel_thread_event_bus -- "git:reset-soft" --> Git_Operations_git_event_persistence_handler
+
+  %% Dependencies

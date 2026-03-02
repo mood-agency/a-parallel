@@ -1,16 +1,16 @@
 ---
 name: domain-annotate
-description: Analyzes a TypeScript source file and adds @domain JSDoc annotations describing its DDD role — bounded context, type, layer, events, and dependencies.
+description: Analyzes a TypeScript source file and adds @domain JSDoc annotations describing its DDD role — subdomain, type, layer, events, and dependencies.
 license: MIT
 metadata:
-  tags: ddd, domain-driven-design, annotation, architecture, bounded-context, mermaid
+  tags: ddd, domain-driven-design, annotation, architecture, subdomain, mermaid
   author: funny
-  version: "2.0.0"
+  version: "3.0.0"
 ---
 
 # Domain Annotate
 
-Analyze a TypeScript source file and add `@domain` JSDoc annotations that describe its role in the Domain-Driven Design architecture. Works on **any** TypeScript/JavaScript codebase — bounded contexts and domain concepts are discovered dynamically from the code, not from a predefined list.
+Analyze a TypeScript source file and add `@domain` JSDoc annotations that describe its role in the Domain-Driven Design architecture. Works on **any** TypeScript/JavaScript codebase — subdomains and domain concepts are discovered dynamically from the code, not from a predefined list.
 
 ## When to Use
 
@@ -21,11 +21,12 @@ Analyze a TypeScript source file and add `@domain` JSDoc annotations that descri
 
 ## Annotation Format
 
-Add a JSDoc block with `@domain` tags. Required tags: `context`, `type`, `layer`. Optional: `event`, `emits`, `consumes`, `aggregate`, `depends`.
+Add a JSDoc block with `@domain` tags. Required tags: `subdomain`, `type`, `layer`. Optional: `subdomain-type`, `context`, `event`, `emits`, `consumes`, `aggregate`, `depends`.
 
 ```ts
 /**
- * @domain context: <Bounded Context Name>
+ * @domain subdomain: <Subdomain Name>
+ * @domain subdomain-type: <core|supporting|generic>
  * @domain type: <DDD concept type>
  * @domain layer: <architectural layer>
  * @domain event: <event name>
@@ -78,22 +79,35 @@ Add a JSDoc block with `@domain` tags. Required tags: `context`, `type`, `layer`
 - `application` — Use case orchestration, application services
 - `infrastructure` — External concerns (DB, WebSocket, HTTP, filesystem)
 
+### Valid `subdomain-type` values
+
+- `core` — The product's differentiator; what makes this system unique and valuable
+- `supporting` — Essential but not a differentiator; could theoretically be outsourced
+- `generic` — Standard functionality found in most systems (auth, analytics, user profiles)
+
+> **Note:** Some cross-cutting infrastructure (e.g., "Shared Kernel") may not have a subdomain-type classification — it's a DDD pattern name, not a strategic subdomain.
+
 ## Workflow
 
-### Step 0: Discover the project's bounded contexts
+### Step 0: Discover the project's subdomains
 
-Before annotating any file, understand the project's domain boundaries. **Do NOT use a predefined list of contexts.** Instead, discover them dynamically:
+Before annotating any file, understand the project's domain boundaries. **Do NOT use a predefined list of subdomains.** Instead, discover them dynamically:
 
 1. **Read the project structure** — Use Glob to scan the top-level directory layout (`src/*/`, `packages/*/`, `modules/*/`, `lib/*/`)
-2. **Look for existing `@domain` annotations** — Use Grep for `@domain context:` across the codebase to find already-established context names
-3. **Infer contexts from directory clusters** — Files grouped under a common directory that share imports and types likely form a bounded context. Name the context using the **business capability** the cluster represents (e.g., "Billing", "User Management", "Notifications"), not the technical structure (avoid "Services", "Controllers", "Utils")
-4. **Use PascalCase with spaces** for context names — e.g., "Order Management", "Payment Processing", "Identity"
+2. **Look for existing `@domain` annotations** — Use Grep for `@domain subdomain:` across the codebase to find already-established subdomain names
+3. **Infer subdomains from directory clusters** — Files grouped under a common directory that share imports and types likely form a subdomain. Name the subdomain using the **business capability** the cluster represents (e.g., "Billing", "User Management", "Notifications"), not the technical structure (avoid "Services", "Controllers", "Utils")
+4. **Use PascalCase with spaces** for subdomain names — e.g., "Order Management", "Payment Processing", "Identity"
 
-**Context naming guidelines:**
-- Name after the business subdomain, not technical layers: "Inventory" not "Database Layer"
+**Subdomain naming guidelines:**
+- Name after the business capability, not technical layers: "Inventory" not "Database Layer"
 - Keep names short (1-3 words): "Shipping" not "Shipping And Fulfillment Management System"
 - Be consistent with existing annotations if any exist in the codebase
 - When unsure, use the most prominent domain noun the module revolves around
+
+**Subdomain classification guidelines:**
+- `core` — Ask: "Is this what makes the product unique? Would a competitor need to replicate this?"
+- `supporting` — Ask: "Is this essential for the product to work, but not our competitive advantage?"
+- `generic` — Ask: "Could we buy this off-the-shelf or use a SaaS?" (auth, email, analytics)
 
 ### Step 1: Read the target file
 
@@ -134,14 +148,14 @@ Determine the file's role by examining three dimensions:
 - File that maps/routes between multiple bounded contexts or orchestrates cross-context communication → `context-map`
 - File that represents a top-level boundary (facade over an entire subdomain, re-exports public API) → `bounded-context`
 
-**Imports → context hint:**
+**Imports → subdomain hint:**
 
-Instead of matching against a fixed list, infer the context from import clusters:
+Instead of matching against a fixed list, infer the subdomain from import clusters:
 
 1. **Identify the dominant import cluster** — What business domain do the majority of imports relate to?
 2. **Look for domain nouns** — The imported types and classes reveal the business subdomain (e.g., imports of `Order`, `LineItem`, `CartService` → "Order Management")
-3. **Cross-reference with existing annotations** — If imported modules already have `@domain context:` tags, the importing file likely belongs to the same context or depends on that context
-4. **When a file imports from multiple contexts** — It's likely an `app-service`, `context-map`, or `anti-corruption-layer` sitting at a boundary
+3. **Cross-reference with existing annotations** — If imported modules already have `@domain subdomain:` tags, the importing file likely belongs to the same subdomain or depends on that subdomain
+4. **When a file imports from multiple subdomains** — It's likely an `app-service`, `context-map`, or `anti-corruption-layer` sitting at a boundary
 
 **Event patterns → emits/consumes:**
 
@@ -157,7 +171,7 @@ If the file exports multiple distinct DDD concepts:
 
 1. **Group related items** — All event interfaces in a file can share one `@domain` block above the first one in the group
 2. **Separate different concerns** — An EventBus class gets its own block (type: event-bus) while event interfaces get theirs (type: domain-event)
-3. **Don't over-annotate** — If many event interfaces are identical in context/type/layer, use ONE block above the first interface, not one per interface
+3. **Don't over-annotate** — If many event interfaces are identical in subdomain/type/layer, use ONE block above the first interface, not one per interface
 
 ### Step 4: Place the annotation
 
@@ -171,20 +185,22 @@ If the file exports multiple distinct DDD concepts:
 ### Step 5: Validate
 
 After adding annotations, verify:
-- Every `@domain` block has `context`, `type`, and `layer` (required)
+- Every `@domain` block has `subdomain`, `type`, and `layer` (required)
+- `subdomain-type` is set if the subdomain has a clear strategic classification
 - Event names follow a consistent format (e.g., `namespace:action` like `order:placed`, or `OrderPlaced` — match the project's existing convention)
 - `depends` only lists significant domain dependencies, not utility imports like `path`, `lodash`, or `crypto`
 - `aggregate` points to an actual aggregate root in the codebase
-- Context names are consistent with other annotations already in the project
+- Subdomain names are consistent with other annotations already in the project
 
 ## Examples
 
-These examples use a generic e-commerce domain to illustrate each type. When annotating real code, use the actual context names and class names from the target codebase.
+These examples use a generic e-commerce domain to illustrate each type. When annotating real code, use the actual subdomain names and class names from the target codebase.
 
 ### Entity
 ```ts
 /**
- * @domain context: Order Management
+ * @domain subdomain: Order Management
+ * @domain subdomain-type: core
  * @domain type: entity
  * @domain layer: domain
  * @domain aggregate: Order
@@ -197,7 +213,8 @@ export class LineItem {
 ### Value Object
 ```ts
 /**
- * @domain context: Shipping
+ * @domain subdomain: Shipping
+ * @domain subdomain-type: supporting
  * @domain type: value-object
  * @domain layer: domain
  */
@@ -210,7 +227,8 @@ export class Address {
 ### Aggregate Root
 ```ts
 /**
- * @domain context: Order Management
+ * @domain subdomain: Order Management
+ * @domain subdomain-type: core
  * @domain type: aggregate-root
  * @domain layer: domain
  * @domain emits: order:placed, order:cancelled
@@ -225,7 +243,8 @@ export class Order {
 ### Domain Service
 ```ts
 /**
- * @domain context: Pricing
+ * @domain subdomain: Pricing
+ * @domain subdomain-type: core
  * @domain type: domain-service
  * @domain layer: domain
  * @domain depends: TaxCalculator, DiscountPolicy
@@ -238,7 +257,8 @@ export class PriceCalculator {
 ### Application Service
 ```ts
 /**
- * @domain context: Order Management
+ * @domain subdomain: Order Management
+ * @domain subdomain-type: core
  * @domain type: app-service
  * @domain layer: application
  * @domain emits: order:placed
@@ -252,7 +272,8 @@ export class PlaceOrderUseCase {
 ### Repository
 ```ts
 /**
- * @domain context: Order Management
+ * @domain subdomain: Order Management
+ * @domain subdomain-type: core
  * @domain type: repository
  * @domain layer: infrastructure
  * @domain aggregate: Order
@@ -266,7 +287,8 @@ export class OrderRepository {
 ### Factory
 ```ts
 /**
- * @domain context: Order Management
+ * @domain subdomain: Order Management
+ * @domain subdomain-type: core
  * @domain type: factory
  * @domain layer: domain
  * @domain aggregate: Order
@@ -280,7 +302,8 @@ export class OrderFactory {
 ### Domain Event
 ```ts
 /**
- * @domain context: Order Management
+ * @domain subdomain: Order Management
+ * @domain subdomain-type: core
  * @domain type: domain-event
  * @domain event: order:placed
  * @domain layer: domain
@@ -297,7 +320,7 @@ export interface OrderPlacedEvent {
 ### Event Bus
 ```ts
 /**
- * @domain context: Shared Kernel
+ * @domain subdomain: Shared Kernel
  * @domain type: event-bus
  * @domain layer: infrastructure
  */
@@ -310,7 +333,8 @@ export class DomainEventBus extends EventEmitter {
 ### Handler
 ```ts
 /**
- * @domain context: Notifications
+ * @domain subdomain: Notifications
+ * @domain subdomain-type: supporting
  * @domain type: handler
  * @domain layer: application
  * @domain consumes: order:placed
@@ -324,7 +348,8 @@ export class SendOrderConfirmationHandler {
 ### Specification
 ```ts
 /**
- * @domain context: Order Management
+ * @domain subdomain: Order Management
+ * @domain subdomain-type: core
  * @domain type: specification
  * @domain layer: domain
  */
@@ -337,7 +362,8 @@ export class EligibleForFreeShipping {
 ### Policy / Rule
 ```ts
 /**
- * @domain context: Pricing
+ * @domain subdomain: Pricing
+ * @domain subdomain-type: core
  * @domain type: policy
  * @domain layer: domain
  */
@@ -349,7 +375,8 @@ export class DiscountPolicy {
 ### Adapter (HTTP)
 ```ts
 /**
- * @domain context: Order Management
+ * @domain subdomain: Order Management
+ * @domain subdomain-type: core
  * @domain type: adapter
  * @domain layer: infrastructure
  * @domain depends: PlaceOrderUseCase, OrderRepository
@@ -363,7 +390,8 @@ export class OrderController {
 ### Port (DI interface)
 ```ts
 /**
- * @domain context: Payment Processing
+ * @domain subdomain: Payment Processing
+ * @domain subdomain-type: supporting
  * @domain type: port
  * @domain layer: domain
  */
@@ -376,7 +404,8 @@ export interface PaymentGateway {
 ### Anti-Corruption Layer
 ```ts
 /**
- * @domain context: Payment Processing
+ * @domain subdomain: Payment Processing
+ * @domain subdomain-type: supporting
  * @domain type: anti-corruption-layer
  * @domain layer: infrastructure
  * @domain depends: PaymentGateway
@@ -390,7 +419,7 @@ export class StripePaymentAdapter implements PaymentGateway {
 ### Published Language
 ```ts
 /**
- * @domain context: Shared Kernel
+ * @domain subdomain: Shared Kernel
  * @domain type: published-language
  * @domain layer: domain
  */
@@ -404,7 +433,8 @@ export interface OrderDTO {
 ### Module
 ```ts
 /**
- * @domain context: Order Management
+ * @domain subdomain: Order Management
+ * @domain subdomain-type: core
  * @domain type: module
  * @domain layer: domain
  */
@@ -417,7 +447,8 @@ export { OrderPlacedEvent } from './events.js';
 ### Bounded Context (facade)
 ```ts
 /**
- * @domain context: Order Management
+ * @domain subdomain: Order Management
+ * @domain subdomain-type: core
  * @domain type: bounded-context
  * @domain layer: domain
  * @domain depends: Payment Processing, Shipping
@@ -431,13 +462,13 @@ export class OrderManagementFacade {
 ### Context Map
 ```ts
 /**
- * @domain context: Shared Kernel
+ * @domain subdomain: Shared Kernel
  * @domain type: context-map
  * @domain layer: application
  * @domain depends: Order Management, Payment Processing, Shipping
  */
 export class CheckoutOrchestrator {
-  /** Coordinates across bounded contexts to complete checkout */
+  /** Coordinates across subdomains to complete checkout */
   checkout(cart: Cart, payment: PaymentMethod, address: Address): Promise<Order> { ... }
 }
 ```
@@ -449,14 +480,20 @@ After annotating, if the project has a domain-map CLI tool, suggest running it t
 ```bash
 # Scan source directory and generate Mermaid diagram
 bun <path-to-domain-map-cli> <source-directory>
+
+# Generate event catalog to check event flows
+bun <path-to-domain-map-cli> --format catalog <source-directory>
+
+# Generate sequence diagrams for a specific event family
+bun <path-to-domain-map-cli> --format sequence --scenario agent <source-directory>
 ```
 
 Otherwise, use Grep to verify annotation consistency:
 
 ```bash
-# List all discovered bounded contexts
-grep -r "@domain context:" src/ | sed 's/.*context: //' | sort -u
+# List all discovered subdomains
+grep -r "@domain subdomain:" src/ | sed 's/.*subdomain: //' | sort -u
 
 # Find annotations missing required tags
-grep -r "@domain" src/ | grep -v "context:\|type:\|layer:"
+grep -r "@domain" src/ | grep -v "subdomain:\|type:\|layer:"
 ```

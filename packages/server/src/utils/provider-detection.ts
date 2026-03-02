@@ -1,4 +1,11 @@
 /**
+ * @domain subdomain: Agent Execution
+ * @domain subdomain-type: core
+ * @domain type: domain-service
+ * @domain layer: domain
+ */
+
+/**
  * Auto-detection of available agent providers at startup.
  * Checks for CLI binaries and SDKs for each provider.
  */

@@ -1,7 +1,11 @@
 /**
- * Skills Service — manages Claude Code skills.
- * Reads installed skills from ~/.agents/.skill-lock.json
- * and SKILL.md frontmatter. Installs via `npx skills add`.
+ * @domain subdomain: Extensions
+ * @domain subdomain-type: generic
+ * @domain type: app-service
+ * @domain layer: application
+ * @domain depends: ClaudeBinary
+ *
+ * Manages Claude Code skills from ~/.agents/.skill-lock.json.
  */
 
 import { readFileSync, readdirSync, existsSync, rmSync, unlinkSync } from 'fs';

@@ -1,3 +1,11 @@
+/**
+ * @domain subdomain: Extensions
+ * @domain subdomain-type: generic
+ * @domain type: adapter
+ * @domain layer: infrastructure
+ * @domain depends: McpService
+ */
+
 import { badRequest } from '@funny/shared/errors';
 import { Hono } from 'hono';
 import { err } from 'neverthrow';
