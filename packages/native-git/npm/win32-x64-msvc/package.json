@@ -1,0 +1,14 @@
+{
+  "name": "@funny/native-git-win32-x64-msvc",
+  "version": "0.1.0",
+  "files": [
+    "native-git.win32-x64-msvc.node"
+  ],
+  "os": [
+    "win32"
+  ],
+  "cpu": [
+    "x64"
+  ],
+  "main": "native-git.win32-x64-msvc.node"
+}

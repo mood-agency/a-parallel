@@ -1,0 +1,17 @@
+{
+  "name": "@funny/native-git-linux-x64-gnu",
+  "version": "0.1.0",
+  "files": [
+    "native-git.linux-x64-gnu.node"
+  ],
+  "os": [
+    "linux"
+  ],
+  "cpu": [
+    "x64"
+  ],
+  "libc": [
+    "glibc"
+  ],
+  "main": "native-git.linux-x64-gnu.node"
+}

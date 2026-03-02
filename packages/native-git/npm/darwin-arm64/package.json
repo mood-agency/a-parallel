@@ -1,0 +1,14 @@
+{
+  "name": "@funny/native-git-darwin-arm64",
+  "version": "0.1.0",
+  "files": [
+    "native-git.darwin-arm64.node"
+  ],
+  "os": [
+    "darwin"
+  ],
+  "cpu": [
+    "arm64"
+  ],
+  "main": "native-git.darwin-arm64.node"
+}
