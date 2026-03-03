@@ -1,4 +1,4 @@
-import { Check, Circle, Loader2, Minus, X, ExternalLink } from 'lucide-react';
+import { ArrowRight, Check, Circle, Loader2, Minus, X, ExternalLink } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
@@ -151,7 +151,7 @@ export function SubItemsList({
         >
           <div className="flex-shrink-0">
             {item.status === 'completed' && <Check className="h-3 w-3 text-emerald-500" />}
-            {item.status === 'running' && <Loader2 className="h-3 w-3 animate-spin text-primary" />}
+            {item.status === 'running' && <ArrowRight className="h-3 w-3 text-primary" />}
             {item.status === 'failed' && <X className="h-3 w-3 text-destructive" />}
             {item.status === 'pending' && <Minus className="h-3 w-3 text-muted-foreground/30" />}
           </div>
