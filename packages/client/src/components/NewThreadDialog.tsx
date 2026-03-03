@@ -71,7 +71,10 @@ export function NewThreadDialog() {
         if (result.isOk()) {
           const data = result.value;
           setBranches(data.branches);
-          if (data.defaultBranch) {
+          // Priority: project defaultBranch > git defaultBranch > first branch
+          if (project?.defaultBranch && data.branches.includes(project.defaultBranch)) {
+            setSelectedBranch(project.defaultBranch);
+          } else if (data.defaultBranch) {
             setSelectedBranch(data.defaultBranch);
           } else if (data.branches.length > 0) {
             setSelectedBranch(data.branches[0]);

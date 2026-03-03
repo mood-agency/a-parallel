@@ -66,6 +66,33 @@ function createSetupProgressEmitter(userId: string, threadId: string): SetupProg
   };
 }
 
+/**
+ * Fetch + checkout a branch with setup progress events.
+ * Used in local mode when the user selects a branch different from the current one.
+ */
+async function checkoutBranchWithProgress(
+  projectPath: string,
+  branchName: string,
+  emitProgress: SetupProgressFn,
+): Promise<void> {
+  // Step 1: Fetch latest from origin (best-effort — may fail for local-only branches)
+  emitProgress('checkout:fetch', `Fetching "${branchName}" from origin`, 'running');
+  await git(['fetch', 'origin', branchName], projectPath);
+  emitProgress('checkout:fetch', `Fetched "${branchName}"`, 'completed');
+
+  // Step 2: Switch to the branch (git checkout auto-creates tracking branch from origin)
+  emitProgress('checkout:switch', `Switching to "${branchName}"`, 'running');
+  const result = await git(['checkout', branchName], projectPath);
+  if (result.isErr()) {
+    emitProgress('checkout:switch', `Switching to "${branchName}"`, 'failed', result.error.message);
+    throw new ThreadServiceError(
+      `Failed to checkout branch "${branchName}": ${result.error.message}`,
+      400,
+    );
+  }
+  emitProgress('checkout:switch', `Switched to "${branchName}"`, 'completed');
+}
+
 function emitThreadUpdated(userId: string, threadId: string, data: Record<string, any>): void {
   wsBroker.emitToUser(userId, {
     type: 'thread:updated',
@@ -335,6 +362,7 @@ export async function createAndStartThread(params: CreateAndStartThreadParams) {
   // ── Non-worktree paths (local mode, or reusing an existing worktree) ──
   let worktreePath: string | undefined;
   let threadBranch: string | undefined;
+  let needsBranchCheckout = false;
 
   if (params.worktreePath) {
     worktreePath = params.worktreePath;
@@ -344,22 +372,104 @@ export async function createAndStartThread(params: CreateAndStartThreadParams) {
     const branchResult = await getCurrentBranch(project.path);
     if (branchResult.isOk()) {
       threadBranch = branchResult.value;
-
-      if (resolvedBaseBranch && resolvedBaseBranch !== threadBranch) {
-        // Switch to the requested branch — git checkout handles both local
-        // and remote-only branches (auto-creates tracking branch from origin).
-        const checkoutResult = await git(['checkout', resolvedBaseBranch], project.path);
-        if (checkoutResult.isErr()) {
-          throw new ThreadServiceError(
-            `Failed to checkout branch "${resolvedBaseBranch}": ${checkoutResult.error.message}`,
-            400,
-          );
-        }
-        threadBranch = resolvedBaseBranch;
-      }
+      needsBranchCheckout = !!(resolvedBaseBranch && resolvedBaseBranch !== threadBranch);
+      if (needsBranchCheckout) threadBranch = resolvedBaseBranch;
     }
   }
 
+  // ── Local mode with branch checkout (async with progress) ──
+  if (needsBranchCheckout && !worktreePath) {
+    const thread = {
+      id: threadId,
+      projectId: params.projectId,
+      userId: params.userId,
+      title: params.title || params.prompt,
+      mode: params.mode,
+      provider: resolvedProvider,
+      permissionMode: resolvedPermissionMode,
+      model: resolvedModel,
+      source: params.source || 'web',
+      status: 'setting_up' as const,
+      branch: threadBranch,
+      baseBranch: resolvedBaseBranch || threadBranch,
+      worktreePath: undefined as string | undefined,
+      parentThreadId: params.parentThreadId,
+      cost: 0,
+      createdAt: new Date().toISOString(),
+      createdBy: params.userId,
+    };
+
+    tm.createThread(thread);
+
+    if (params.prompt) {
+      const storedContent = await augmentPromptWithFiles(
+        params.prompt,
+        params.fileReferences,
+        project.path,
+      );
+      tm.insertMessage({
+        threadId,
+        role: 'user',
+        content: storedContent,
+        images: params.images?.length ? JSON.stringify(params.images) : null,
+      });
+    }
+
+    threadEventBus.emit('thread:created', {
+      threadId,
+      projectId: params.projectId,
+      userId: params.userId,
+      cwd: project.path,
+      worktreePath: null,
+      stage: 'in_progress' as const,
+      status: 'setting_up',
+    });
+
+    // Background: checkout branch, then start agent
+    (async () => {
+      try {
+        await checkoutBranchWithProgress(project.path, resolvedBaseBranch!, emitSetupProgress);
+
+        tm.updateThread(threadId, { status: 'pending' });
+        wsBroker.emitToUser(params.userId, {
+          type: 'worktree:setup_complete',
+          threadId,
+          data: { branch: resolvedBaseBranch! },
+        } as WSEvent);
+        emitThreadUpdated(params.userId, threadId, {
+          status: 'pending',
+          branch: resolvedBaseBranch,
+        });
+
+        const augmentedPrompt = await augmentPromptWithFiles(
+          params.prompt,
+          params.fileReferences,
+          project.path,
+        );
+        await startAgent(
+          threadId,
+          augmentedPrompt,
+          project.path,
+          resolvedModel,
+          resolvedPermissionMode,
+          params.images,
+          params.disallowedTools,
+          params.allowedTools,
+          resolvedProvider,
+          undefined,
+          true, // skipMessageInsert — already inserted above
+        );
+      } catch (err: any) {
+        log.error('Failed to checkout branch and start agent', { threadId, error: err });
+        tm.updateThread(threadId, { status: 'failed' });
+        emitThreadUpdated(params.userId, threadId, { status: 'failed' });
+      }
+    })();
+
+    return thread;
+  }
+
+  // ── Normal path (no branch checkout needed) ──
   const thread = {
     id: threadId,
     projectId: params.projectId,
@@ -824,6 +934,63 @@ async function autoStartIdleThread(
   } else {
     // Worktree already exists or local mode: start agent directly
     const cwd = thread.worktreePath || project.path;
+
+    // Check if local mode needs branch checkout
+    const needsCheckout =
+      !thread.worktreePath &&
+      thread.baseBranch &&
+      thread.branch &&
+      thread.baseBranch !== thread.branch;
+
+    if (needsCheckout) {
+      tm.updateThread(threadId, { status: 'setting_up' });
+      const emitProgress = createSetupProgressEmitter(thread.userId, threadId);
+      emitThreadUpdated(thread.userId, threadId, { status: 'setting_up', stage: 'in_progress' });
+
+      (async () => {
+        try {
+          await checkoutBranchWithProgress(project.path, thread.baseBranch!, emitProgress);
+
+          tm.updateThread(threadId, { status: 'pending', branch: thread.baseBranch });
+          wsBroker.emitToUser(thread.userId, {
+            type: 'worktree:setup_complete',
+            threadId,
+            data: { branch: thread.baseBranch! },
+          } as WSEvent);
+          emitThreadUpdated(thread.userId, threadId, {
+            status: 'pending',
+            branch: thread.baseBranch,
+          });
+
+          const { messages: draftMessages } = tm.getThreadMessages({ threadId, limit: 1 });
+          const draftMsg = draftMessages[0];
+          const draftImages = draftMsg?.images ? JSON.parse(draftMsg.images as string) : undefined;
+          await startAgent(
+            threadId,
+            thread.initialPrompt!,
+            project.path,
+            (thread.model || project.defaultModel || 'sonnet') as AgentModel,
+            (thread.permissionMode || 'autoEdit') as PermissionMode,
+            draftImages,
+            undefined,
+            undefined,
+            (thread.provider || project.defaultProvider || 'claude') as AgentProvider,
+            undefined,
+            !!draftMsg,
+          );
+        } catch (err) {
+          log.error('Failed to checkout branch and start agent', {
+            namespace: 'agent',
+            threadId,
+            error: err,
+          });
+          tm.updateThread(threadId, { status: 'failed', completedAt: new Date().toISOString() });
+          emitAgentFailed(thread.userId, threadId);
+        }
+      })();
+      return;
+    }
+
     const { messages: draftMessages } = tm.getThreadMessages({ threadId, limit: 1 });
     const draftMsg = draftMessages[0];
     const draftImages = draftMsg?.images ? JSON.parse(draftMsg.images as string) : undefined;

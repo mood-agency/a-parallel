@@ -629,9 +629,12 @@ export const PromptInput = memo(function PromptInput({
         if (result.isOk()) {
           const data = result.value;
           setFollowUpBranches(data.branches);
-          // Default to baseBranch (worktree source), then defaultBranch, then currentBranch
+          // Default to baseBranch (worktree source), then project defaultBranch, then git defaultBranch, then currentBranch
+          const proj = projects.find((p) => p.id === selectedProjectId);
           if (activeThreadBaseBranch) {
             setFollowUpSelectedBranch(activeThreadBaseBranch);
+          } else if (proj?.defaultBranch && data.branches.includes(proj.defaultBranch)) {
+            setFollowUpSelectedBranch(proj.defaultBranch);
           } else if (data.defaultBranch) {
             setFollowUpSelectedBranch(data.defaultBranch);
           } else if (data.currentBranch) {

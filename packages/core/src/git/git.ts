@@ -148,7 +148,8 @@ export function listBranches(cwd: string): ResultAsync<string[], DomainError> {
         }
       }
 
-      if (branches.length > 0) return branches;
+      if (branches.length > 0)
+        return branches.sort((a, b) => a.localeCompare(b, undefined, { sensitivity: 'base' }));
 
       // Fall back to symbolic-ref for empty repos (no commits yet)
       const symbolicBranch = await gitOptional(['symbolic-ref', '--short', 'HEAD'], cwd);

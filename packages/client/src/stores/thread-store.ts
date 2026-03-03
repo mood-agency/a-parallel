@@ -141,7 +141,7 @@ export interface ThreadState {
   ) => void;
   handleWSWorktreeSetupComplete: (
     threadId: string,
-    data: { branch: string; worktreePath: string },
+    data: { branch: string; worktreePath?: string },
   ) => void;
 }
 
@@ -782,7 +782,7 @@ export const useThreadStore = create<ThreadState>((set, get) => ({
         ...activeThread,
         status: activeThread.status === 'setting_up' ? 'pending' : activeThread.status,
         branch: data.branch,
-        worktreePath: data.worktreePath,
+        ...(data.worktreePath ? { worktreePath: data.worktreePath } : {}),
         setupProgress: undefined,
       };
     }

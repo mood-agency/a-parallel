@@ -74,6 +74,7 @@ export const updateProjectSchema = z.object({
   defaultModel: agentModelSchema.nullable().optional(),
   defaultMode: threadModeSchema.nullable().optional(),
   defaultPermissionMode: permissionModeSchema.nullable().optional(),
+  defaultBranch: z.string().nullable().optional(),
   urls: z.array(z.string().url()).nullable().optional(),
 });
 

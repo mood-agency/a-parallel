@@ -534,6 +534,13 @@ const migrations: Migration[] = [
       `);
     },
   },
+
+  {
+    name: '029_project_default_branch',
+    up() {
+      addColumn('projects', 'default_branch', 'TEXT');
+    },
+  },
 ];
 
 // ── Public API ──────────────────────────────────────────────────

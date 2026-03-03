@@ -116,6 +116,7 @@ export interface Project {
   defaultModel?: AgentModel;
   defaultMode?: ThreadMode;
   defaultPermissionMode?: PermissionMode;
+  defaultBranch?: string;
   urls?: string[];
   userId: string;
   sortOrder: number;
@@ -490,7 +491,7 @@ export type WSEvent =
 
 export interface WSWorktreeSetupCompleteData {
   branch: string;
-  worktreePath: string;
+  worktreePath?: string;
 }
 
 export interface WSCloneProgressData {
