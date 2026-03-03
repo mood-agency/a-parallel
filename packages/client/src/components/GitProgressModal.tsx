@@ -19,6 +19,8 @@ export interface GitProgressStep {
   error?: string;
   /** Optional URL to display on completion (e.g., PR link) */
   url?: string;
+  /** Optional sub-items to show details (e.g., individual hook scripts) */
+  subItems?: string[];
 }
 
 interface GitProgressModalProps {
@@ -203,6 +205,21 @@ export function GitProgressModal({
                       {step.url}
                     </a>
                   )}
+                  {step.subItems &&
+                    step.subItems.length > 0 &&
+                    (step.status === 'running' || step.status === 'failed') && (
+                      <div className="mt-1 space-y-0.5 pl-1">
+                        {step.subItems.map((item, i) => (
+                          <div
+                            key={i}
+                            className="flex items-center gap-1.5 text-[11px] text-muted-foreground"
+                          >
+                            <span className="text-muted-foreground/40">{'>'}</span>
+                            <span className="truncate font-mono">{item}</span>
+                          </div>
+                        ))}
+                      </div>
+                    )}
                 </div>
               </div>
             );

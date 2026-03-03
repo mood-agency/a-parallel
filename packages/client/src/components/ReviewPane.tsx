@@ -494,10 +494,23 @@ export function ReviewPane() {
       steps.push({ id: 'stage', label: t('review.progress.staging'), status: 'pending' });
     }
     const isAmend = selectedAction === 'amend';
+    // Fetch pre-commit hooks to show detail of what scripts will run
+    const hookProjectId = useThreadStore.getState().activeThread?.projectId ?? selectedProjectId;
+    let hookSubItems: string[] | undefined;
+    if (hookProjectId) {
+      const hooksResult = await api.listHooks(hookProjectId, 'pre-commit');
+      if (hooksResult.isOk()) {
+        const enabled = hooksResult.value.filter((h) => h.enabled);
+        if (enabled.length > 0) {
+          hookSubItems = enabled.map((h) => h.label);
+        }
+      }
+    }
     steps.push({
       id: 'hooks',
       label: t('review.progress.runningHooks'),
       status: 'pending',
+      subItems: hookSubItems,
     });
     steps.push({
       id: 'commit',

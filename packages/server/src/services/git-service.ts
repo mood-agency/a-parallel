@@ -284,9 +284,16 @@ export async function merge(params: MergeParams): Promise<string> {
   }
 
   if (params.cleanup && thread.worktreePath) {
-    await removeWorktree(project.path, thread.worktreePath).catch((e) =>
-      log.warn('Failed to remove worktree after merge', { namespace: 'git', error: String(e) }),
-    );
+    // removeWorktree now has a fallback (fs.rm + prune) and throws only
+    // when the directory truly cannot be deleted. If it throws, we skip
+    // the DB update so the worktree reference is preserved for retry.
+    try {
+      await removeWorktree(project.path, thread.worktreePath);
+    } catch (e) {
+      log.warn('Failed to remove worktree after merge', { namespace: 'git', error: String(e) });
+      throw new Error(`Merge succeeded but worktree cleanup failed: ${String(e)}`);
+    }
+
     await removeBranch(project.path, thread.branch).catch((e) =>
       log.warn('Failed to remove branch after merge', { namespace: 'git', error: String(e) }),
     );

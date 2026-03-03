@@ -1,5 +1,5 @@
 import { existsSync } from 'fs';
-import { mkdir } from 'fs/promises';
+import { mkdir, rm } from 'fs/promises';
 import { resolve, dirname, basename, normalize } from 'path';
 
 import { badRequest, internal, type DomainError } from '@funny/shared/errors';
@@ -112,10 +112,25 @@ export function listWorktrees(projectPath: string): ResultAsync<WorktreeInfo[], 
 }
 
 export async function removeWorktree(projectPath: string, worktreePath: string): Promise<void> {
-  await gitWrite(['worktree', 'remove', '-f', worktreePath], {
+  const result = await gitWrite(['worktree', 'remove', '-f', worktreePath], {
     cwd: projectPath,
     reject: false,
   });
+
+  // If git worktree remove succeeded or the directory is already gone, we're done.
+  if (result.exitCode === 0 || !existsSync(worktreePath)) return;
+
+  // Fallback: on Windows, file locks (antivirus, IDE, stale processes) commonly
+  // prevent `git worktree remove`. Force-delete the directory, then prune the
+  // worktree bookkeeping so git stays consistent.
+  await rm(worktreePath, { recursive: true, force: true });
+  await gitWrite(['worktree', 'prune'], { cwd: projectPath, reject: false });
+
+  if (existsSync(worktreePath)) {
+    throw new Error(
+      `Failed to remove worktree directory: ${worktreePath} — ${result.stderr.trim()}`,
+    );
+  }
 }
 
 export async function removeBranch(projectPath: string, branchName: string): Promise<void> {
