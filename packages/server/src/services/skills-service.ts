@@ -10,7 +10,7 @@
 
 import { readFileSync, readdirSync, existsSync, rmSync, unlinkSync } from 'fs';
 import { homedir } from 'os';
-import { join } from 'path';
+import { basename, join } from 'path';
 
 import { execute } from '@funny/core/git';
 import type { Skill } from '@funny/shared';
@@ -21,6 +21,8 @@ const AGENTS_DIR = join(homedir(), '.agents');
 const SKILLS_DIR = join(AGENTS_DIR, 'skills');
 const LOCK_FILE = join(AGENTS_DIR, '.skill-lock.json');
 const CLAUDE_SKILLS_DIR = join(homedir(), '.claude', 'skills');
+const PLUGINS_DIR = join(homedir(), '.claude', 'plugins');
+const INSTALLED_PLUGINS_FILE = join(PLUGINS_DIR, 'installed_plugins.json');
 
 interface LockFileSkill {
   source: string;
@@ -120,6 +122,160 @@ export function listProjectSkills(projectPath: string): Skill[] {
     return skills;
   } catch (err) {
     log.error('Failed to read project skills', { namespace: 'skills-service', error: err });
+    return [];
+  }
+}
+
+/**
+ * Parse YAML frontmatter from a command .md file (commands/*.md in plugins).
+ * These have `description:` but not necessarily `name:`.
+ */
+function parseCommandFrontmatter(mdPath: string): { description?: string } {
+  if (!existsSync(mdPath)) return {};
+
+  try {
+    const content = readFileSync(mdPath, 'utf-8');
+    const fmMatch = content.match(/^---\n([\s\S]*?)\n---/);
+    if (!fmMatch) return {};
+
+    const fm = fmMatch[1];
+    const descMatch = fm.match(/^description:\s*(.+)$/m);
+    return {
+      description: descMatch ? descMatch[1].trim() : undefined,
+    };
+  } catch {
+    return {};
+  }
+}
+
+/**
+ * List skills from ~/.claude/skills/ that are NOT already in the lock file
+ * (lock file entries are symlinked here from ~/.agents/skills/).
+ */
+export function listDirectClaudeSkills(lockFileNames: Set<string>): Skill[] {
+  if (!existsSync(CLAUDE_SKILLS_DIR)) return [];
+
+  try {
+    const entries = readdirSync(CLAUDE_SKILLS_DIR, { withFileTypes: true });
+    const skills: Skill[] = [];
+
+    for (const entry of entries) {
+      // Skip entries already covered by the lock file
+      if (lockFileNames.has(entry.name)) continue;
+
+      const fullPath = join(CLAUDE_SKILLS_DIR, entry.name);
+      const skillMdPath = join(fullPath, 'SKILL.md');
+      if (!existsSync(skillMdPath)) continue;
+
+      const fm = parseSkillFrontmatter(skillMdPath);
+      skills.push({
+        name: fm.name || entry.name,
+        description: fm.description || '',
+        source: 'direct',
+        scope: 'global',
+      });
+    }
+
+    return skills;
+  } catch (err) {
+    log.error('Failed to read direct Claude skills', { namespace: 'skills-service', error: err });
+    return [];
+  }
+}
+
+interface InstalledPluginsFile {
+  version: number;
+  plugins: Record<
+    string,
+    Array<{ installPath: string; installedAt?: string; lastUpdated?: string }>
+  >;
+}
+
+/**
+ * List commands and skills from installed Claude Code plugins.
+ * Reads ~/.claude/plugins/installed_plugins.json and scans each plugin's
+ * commands/*.md and skills/SKILL.md directories.
+ */
+export function listPluginCommands(): Skill[] {
+  if (!existsSync(INSTALLED_PLUGINS_FILE)) return [];
+
+  try {
+    const raw = readFileSync(INSTALLED_PLUGINS_FILE, 'utf-8');
+    const data: InstalledPluginsFile = JSON.parse(raw);
+    const skills: Skill[] = [];
+
+    for (const [pluginKey, installations] of Object.entries(data.plugins)) {
+      if (!installations?.length) continue;
+
+      // Use the most recent installation
+      const install = installations[0];
+      const installPath = install.installPath;
+      if (!existsSync(installPath)) continue;
+
+      // Read plugin name from .claude-plugin/plugin.json
+      const pluginJsonPath = join(installPath, '.claude-plugin', 'plugin.json');
+      let pluginName = pluginKey.split('@')[0]; // fallback: "commit-commands" from "commit-commands@claude-plugins-official"
+      if (existsSync(pluginJsonPath)) {
+        try {
+          const pj = JSON.parse(readFileSync(pluginJsonPath, 'utf-8'));
+          if (pj.name) pluginName = pj.name;
+        } catch {
+          /* use fallback name */
+        }
+      }
+
+      // Scan commands/*.md
+      const commandsDir = join(installPath, 'commands');
+      if (existsSync(commandsDir)) {
+        try {
+          const cmdEntries = readdirSync(commandsDir);
+          for (const cmdFile of cmdEntries) {
+            if (!cmdFile.endsWith('.md')) continue;
+            const cmdName = basename(cmdFile, '.md');
+            const fm = parseCommandFrontmatter(join(commandsDir, cmdFile));
+            skills.push({
+              name: `${pluginName}:${cmdName}`,
+              description: fm.description || '',
+              source: pluginName,
+              installedAt: install.installedAt,
+              updatedAt: install.lastUpdated,
+              scope: 'global',
+            });
+          }
+        } catch {
+          /* skip unreadable commands dir */
+        }
+      }
+
+      // Scan skills/*/SKILL.md
+      const skillsDir = join(installPath, 'skills');
+      if (existsSync(skillsDir)) {
+        try {
+          const skillEntries = readdirSync(skillsDir, { withFileTypes: true });
+          for (const entry of skillEntries) {
+            if (!entry.isDirectory()) continue;
+            const skillMdPath = join(skillsDir, entry.name, 'SKILL.md');
+            if (!existsSync(skillMdPath)) continue;
+
+            const fm = parseSkillFrontmatter(skillMdPath);
+            skills.push({
+              name: `${pluginName}:${fm.name || entry.name}`,
+              description: fm.description || '',
+              source: pluginName,
+              installedAt: install.installedAt,
+              updatedAt: install.lastUpdated,
+              scope: 'global',
+            });
+          }
+        } catch {
+          /* skip unreadable skills dir */
+        }
+      }
+    }
+
+    return skills;
+  } catch (err) {
+    log.error('Failed to read plugin commands', { namespace: 'skills-service', error: err });
     return [];
   }
 }

@@ -11,6 +11,8 @@ import { Hono } from 'hono';
 import {
   listSkills,
   listProjectSkills,
+  listDirectClaudeSkills,
+  listPluginCommands,
   addSkill,
   removeSkill,
   RECOMMENDED_SKILLS,
@@ -22,10 +24,23 @@ const app = new Hono();
 
 // List installed skills (optionally include project-level skills)
 app.get('/', (c) => {
-  const globalSkills = listSkills();
+  const lockFileSkills = listSkills();
+  const lockFileNames = new Set(lockFileSkills.map((s) => s.name));
+  const directSkills = listDirectClaudeSkills(lockFileNames);
+  const pluginCommands = listPluginCommands();
   const projectPath = c.req.query('projectPath');
   const projectSkills = projectPath ? listProjectSkills(projectPath) : [];
-  return c.json({ skills: [...projectSkills, ...globalSkills] });
+
+  // Deduplicate by name (project > plugin > direct > lock file)
+  const seen = new Set<string>();
+  const all = [...projectSkills, ...pluginCommands, ...directSkills, ...lockFileSkills];
+  const deduped = all.filter((s) => {
+    if (seen.has(s.name)) return false;
+    seen.add(s.name);
+    return true;
+  });
+
+  return c.json({ skills: deduped });
 });
 
 // Install a skill
