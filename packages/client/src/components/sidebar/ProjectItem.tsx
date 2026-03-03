@@ -4,8 +4,7 @@ import {
 } from '@atlaskit/pragmatic-drag-and-drop/element/adapter';
 import type { Project, Thread } from '@funny/shared';
 import {
-  Folder,
-  FolderOpen,
+  ChevronRight,
   FolderOpenDot,
   Trash2,
   MoreVertical,
@@ -195,11 +194,12 @@ export const ProjectItem = memo(function ProjectItem({
               onToggle(project.id);
             }}
           >
-            {isExpanded ? (
-              <FolderOpen className="h-3.5 w-3.5" />
-            ) : (
-              <Folder className="h-3.5 w-3.5" />
-            )}
+            <ChevronRight
+              className={cn(
+                'h-3.5 w-3.5 transition-transform duration-200',
+                isExpanded && 'rotate-90',
+              )}
+            />
           </CollapsibleTrigger>
           <span
             data-testid={`project-name-${project.id}`}
