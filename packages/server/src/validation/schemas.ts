@@ -60,7 +60,7 @@ export const renameProjectSchema = z.object({
   name: z.string().min(1, 'name is required'),
 });
 
-export const followUpModeSchema = z.enum(['interrupt', 'queue']);
+export const followUpModeSchema = z.enum(['interrupt', 'queue', 'ask']);
 
 export const updateProjectSchema = z.object({
   name: z.string().min(1, 'name is required').optional(),
@@ -121,6 +121,7 @@ export const sendMessageSchema = z.object({
   disallowedTools: z.array(z.string()).optional(),
   fileReferences: z.array(fileReferenceSchema).max(20).optional(),
   baseBranch: z.string().optional(),
+  forceQueue: z.boolean().optional(),
 });
 
 export const updateThreadSchema = z.object({

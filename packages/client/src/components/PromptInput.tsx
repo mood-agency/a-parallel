@@ -226,8 +226,8 @@ export const PromptInput = memo(function PromptInput({
     // Restore draft for the thread we're entering
     if (selectedThreadId && selectedThreadId !== prevId) {
       const draft = useDraftStore.getState().drafts[selectedThreadId];
-      setPrompt(draft?.prompt ?? '');
-      setImages(draft?.images ?? []);
+      setPrompt(draft?.prompt ?? initialPromptProp ?? '');
+      setImages(draft?.images ?? initialImagesProp ?? []);
       setSelectedFiles(draft?.selectedFiles ?? []);
     } else if (!selectedThreadId) {
       setPrompt('');

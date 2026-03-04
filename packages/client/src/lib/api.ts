@@ -255,6 +255,7 @@ export const api = {
       disallowedTools?: string[];
       fileReferences?: { path: string }[];
       baseBranch?: string;
+      forceQueue?: boolean;
     },
     images?: ImageAttachment[],
   ) =>
@@ -270,6 +271,7 @@ export const api = {
         disallowedTools: opts?.disallowedTools,
         fileReferences: opts?.fileReferences,
         baseBranch: opts?.baseBranch,
+        forceQueue: opts?.forceQueue,
       }),
     }),
   stopThread: (threadId: string) =>

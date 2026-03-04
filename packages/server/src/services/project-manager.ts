@@ -10,7 +10,7 @@
 import { resolve, isAbsolute } from 'path';
 
 import { isGitRepoSync } from '@funny/core/git';
-import type { Project } from '@funny/shared';
+import type { Project, FollowUpMode } from '@funny/shared';
 import { badRequest, notFound, conflict, internal, type DomainError } from '@funny/shared/errors';
 import { eq, and, asc } from 'drizzle-orm';
 import { nanoid } from 'nanoid';
@@ -37,7 +37,7 @@ function toProject(row: ProjectRow): Project {
     ...rest,
     ...(color != null ? { color } : {}),
     ...(followUpMode && followUpMode !== 'interrupt'
-      ? { followUpMode: followUpMode as 'interrupt' | 'queue' }
+      ? { followUpMode: followUpMode as FollowUpMode }
       : {}),
     ...(defaultProvider != null
       ? { defaultProvider: defaultProvider as Project['defaultProvider'] }

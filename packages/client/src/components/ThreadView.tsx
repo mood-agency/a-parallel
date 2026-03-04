@@ -60,6 +60,7 @@ import { useUIStore } from '@/stores/ui-store';
 const tvLog = createClientLogger('ThreadView');
 
 import { D4CAnimation } from './D4CAnimation';
+import { FollowUpModeDialog } from './FollowUpModeDialog';
 import { ImageLightbox } from './ImageLightbox';
 import { PromptInput } from './PromptInput';
 import { AgentResultCard, AgentInterruptedCard, AgentStoppedCard } from './thread/AgentStatusCards';
@@ -909,6 +910,23 @@ export function ThreadView() {
   const [lightboxImages, setLightboxImages] = useState<{ src: string; alt: string }[]>([]);
   const [lightboxIndex, setLightboxIndex] = useState(0);
   const prefersReducedMotion = useReducedMotion();
+
+  // "Ask" follow-up mode: dialog state for when user sends while agent is running
+  const [followUpDialogOpen, setFollowUpDialogOpen] = useState(false);
+  const pendingSendRef = useRef<{
+    prompt: string;
+    opts: {
+      provider?: string;
+      model?: string;
+      permissionMode?: string;
+      allowedTools?: string[];
+      disallowedTools?: string[];
+      fileReferences?: { path: string }[];
+      baseBranch?: string;
+    };
+    images?: any[];
+  } | null>(null);
+
   // Track which message/tool-call IDs existed when the thread was loaded.
   // Messages in this set skip entrance animations to prevent CLS.
   const knownIdsRef = useRef<Set<string>>(new Set());
@@ -1182,16 +1200,39 @@ export function ThreadView() {
         threadStatus: thread.status,
         promptPreview: prompt.slice(0, 120),
       });
-      setSending(true);
 
       const threadIsRunning = thread.status === 'running';
       const currentProject = useProjectStore
         .getState()
         .projects.find((p) => p.id === thread.projectId);
-      const threadIsQueueMode = currentProject?.followUpMode === 'queue';
+      const followUpMode = currentProject?.followUpMode || 'interrupt';
+
+      // "Ask" mode: show dialog when agent is running, return false to restore prompt
+      if (threadIsRunning && followUpMode === 'ask') {
+        const { allowedTools, disallowedTools } = deriveToolLists(
+          useSettingsStore.getState().toolPermissions,
+        );
+        pendingSendRef.current = {
+          prompt,
+          opts: {
+            provider: opts.provider || undefined,
+            model: opts.model || undefined,
+            permissionMode: opts.mode || undefined,
+            allowedTools,
+            disallowedTools,
+            fileReferences: opts.fileReferences,
+            baseBranch: opts.baseBranch,
+          },
+          images,
+        };
+        setFollowUpDialogOpen(true);
+        return false;
+      }
+
+      setSending(true);
 
       // Toast for interrupt mode when agent is running
-      if (threadIsRunning && !threadIsQueueMode) {
+      if (threadIsRunning && followUpMode === 'interrupt') {
         toast.info(t('thread.interruptingAgent'));
       }
 
@@ -1232,13 +1273,71 @@ export function ThreadView() {
       );
       if (result.isErr()) {
         console.error('Send failed:', result.error);
-      } else if (threadIsRunning && threadIsQueueMode) {
+      } else if (threadIsRunning && followUpMode === 'queue') {
         toast.success(t('thread.messageQueued'));
       }
       setSending(false);
     },
     [t],
   );
+
+  // Handlers for the "ask" follow-up dialog
+  const handleFollowUpAction = useCallback(
+    async (action: 'interrupt' | 'queue') => {
+      setFollowUpDialogOpen(false);
+      const pending = pendingSendRef.current;
+      if (!pending) return;
+      pendingSendRef.current = null;
+
+      const thread = activeThreadRef.current;
+      if (!thread) return;
+
+      setSending(true);
+
+      if (action === 'interrupt') {
+        toast.info(t('thread.interruptingAgent'));
+      }
+
+      userHasScrolledUp.current = false;
+      smoothScrollPending.current = true;
+      if (scrollDownRef.current) scrollDownRef.current.style.display = 'none';
+
+      startTransition(() => {
+        useThreadStore
+          .getState()
+          .appendOptimisticMessage(
+            thread.id,
+            pending.prompt,
+            pending.images,
+            pending.opts.model as any,
+            pending.opts.permissionMode as any,
+            pending.opts.fileReferences as any,
+          );
+      });
+
+      const result = await api.sendMessage(
+        thread.id,
+        pending.prompt,
+        {
+          ...pending.opts,
+          forceQueue: action === 'queue' ? true : undefined,
+        },
+        pending.images,
+      );
+      if (result.isErr()) {
+        console.error('Send failed:', result.error);
+      } else if (action === 'queue') {
+        toast.success(t('thread.messageQueued'));
+      }
+      setSending(false);
+    },
+    [t],
+  );
+
+  const handleFollowUpCancel = useCallback(() => {
+    setFollowUpDialogOpen(false);
+    pendingSendRef.current = null;
+  }, []);
 
   const handleStop = useCallback(async () => {
     const thread = activeThreadRef.current;
@@ -1326,7 +1425,8 @@ export function ThreadView() {
   const currentProject = useProjectStore
     .getState()
     .projects.find((p) => p.id === activeThread.projectId);
-  const isQueueMode = currentProject?.followUpMode === 'queue';
+  const followUpMode = currentProject?.followUpMode || 'interrupt';
+  const isQueueMode = followUpMode === 'queue' || followUpMode === 'ask';
 
   // Setting up: worktree is being created in the background
   if (activeThread.status === 'setting_up') {
@@ -1631,6 +1731,14 @@ export function ThreadView() {
         initialIndex={lightboxIndex}
         open={lightboxOpen}
         onClose={() => setLightboxOpen(false)}
+      />
+
+      {/* "Ask" follow-up mode dialog */}
+      <FollowUpModeDialog
+        open={followUpDialogOpen}
+        onInterrupt={() => handleFollowUpAction('interrupt')}
+        onQueue={() => handleFollowUpAction('queue')}
+        onCancel={handleFollowUpCancel}
       />
     </div>
   );

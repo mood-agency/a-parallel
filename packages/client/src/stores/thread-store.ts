@@ -318,6 +318,21 @@ export const useThreadStore = create<ThreadState>((set, get) => ({
 
     const threadEvents = eventsResult.isOk() ? eventsResult.value.events : [];
 
+    // Reconstruct compactionEvents from persisted thread events so they survive refreshes
+    const compactionEvents: CompactionEvent[] = threadEvents
+      .filter((e) => e.type === 'compact_boundary')
+      .map((e) => {
+        const data = typeof e.data === 'string' ? JSON.parse(e.data) : e.data;
+        return {
+          trigger: data.trigger ?? 'auto',
+          preTokens: data.preTokens ?? 0,
+          timestamp: data.timestamp ?? e.createdAt,
+        };
+      });
+
+    // Calculate tokenOffset from all compaction events (accumulated pre-compaction tokens)
+    const tokenOffset = compactionEvents.reduce((acc, e) => acc + e.preTokens, 0);
+
     // Merge stored setup progress for setting_up threads
     const storedSetupProgress =
       thread.status === 'setting_up' ? get().setupProgressByThread[threadId] : undefined;
@@ -332,6 +347,11 @@ export const useThreadStore = create<ThreadState>((set, get) => ({
         waitingReason,
         pendingPermission,
         setupProgress: storedSetupProgress,
+        compactionEvents: compactionEvents.length > 0 ? compactionEvents : undefined,
+        contextUsage:
+          tokenOffset > 0
+            ? { cumulativeInputTokens: 0, lastInputTokens: 0, lastOutputTokens: 0, tokenOffset }
+            : undefined,
       },
     });
     useProjectStore.setState({ selectedProjectId: projectId });
@@ -668,6 +688,20 @@ export const useThreadStore = create<ThreadState>((set, get) => ({
     const threadEvents = eventsResult.isOk()
       ? eventsResult.value.events
       : activeThread.threadEvents;
+
+    // Reconstruct compactionEvents from persisted thread events
+    const persistedCompaction: CompactionEvent[] = (threadEvents ?? [])
+      .filter((e) => e.type === 'compact_boundary')
+      .map((e) => {
+        const data = typeof e.data === 'string' ? JSON.parse(e.data) : e.data;
+        return {
+          trigger: data.trigger ?? 'auto',
+          preTokens: data.preTokens ?? 0,
+          timestamp: data.timestamp ?? e.createdAt,
+        };
+      });
+    const refreshedTokenOffset = persistedCompaction.reduce((acc, e) => acc + e.preTokens, 0);
+
     // Clear waitingReason/pendingPermission if server status is no longer waiting
     // (handles case where agent:result WS event was lost during disconnect)
     const isServerWaiting = thread.status === 'waiting';
@@ -688,6 +722,19 @@ export const useThreadStore = create<ThreadState>((set, get) => ({
         initInfo: activeThread.initInfo,
         resultInfo,
         threadEvents,
+        compactionEvents:
+          persistedCompaction.length > 0 ? persistedCompaction : activeThread.compactionEvents,
+        contextUsage:
+          refreshedTokenOffset > 0
+            ? {
+                ...(activeThread.contextUsage ?? {
+                  cumulativeInputTokens: 0,
+                  lastInputTokens: 0,
+                  lastOutputTokens: 0,
+                }),
+                tokenOffset: refreshedTokenOffset,
+              }
+            : activeThread.contextUsage,
         waitingReason: isServerWaiting ? activeThread.waitingReason : undefined,
         pendingPermission: isServerWaiting ? activeThread.pendingPermission : undefined,
       },

@@ -104,7 +104,7 @@ export interface CloneRepoRequest {
 
 // ─── Projects ────────────────────────────────────────────
 
-export type FollowUpMode = 'interrupt' | 'queue';
+export type FollowUpMode = 'interrupt' | 'queue' | 'ask';
 
 export interface Project {
   id: string;
@@ -633,6 +633,7 @@ export interface SendMessageRequest {
   images?: ImageAttachment[];
   allowedTools?: string[];
   disallowedTools?: string[];
+  forceQueue?: boolean;
 }
 
 // ─── Message Queue ──────────────────────────────────────
@@ -836,7 +837,8 @@ export type ThreadEventType =
   | 'git:pull'
   | 'git:stash'
   | 'git:stash_pop'
-  | 'git:reset_soft';
+  | 'git:reset_soft'
+  | 'compact_boundary';
 
 export interface ThreadEvent {
   id: string;

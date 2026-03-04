@@ -547,6 +547,7 @@ export interface SendMessageParams {
   disallowedTools?: string[];
   fileReferences?: string[];
   baseBranch?: string;
+  forceQueue?: boolean;
 }
 
 export interface SendMessageResult {
@@ -643,7 +644,7 @@ export async function sendMessage(params: SendMessageParams): Promise<SendMessag
   const project = pm.getProject(thread.projectId);
   const followUpMode = project?.followUpMode || 'interrupt';
 
-  if (agentRunning && followUpMode === 'queue') {
+  if (agentRunning && (followUpMode === 'queue' || params.forceQueue)) {
     const queued = mq.enqueue(params.threadId, {
       content: augmentedContent,
       provider: effectiveProvider,

@@ -15,6 +15,7 @@ import { log } from '../lib/logger.js';
 import type { AgentStateTracker } from './agent-state.js';
 import type { IThreadManager, IWSBroker } from './server-interfaces.js';
 import { threadEventBus } from './thread-event-bus.js';
+import { saveThreadEvent } from './thread-event-service.js';
 import { transitionStatus } from './thread-status-machine.js';
 
 /**
@@ -115,17 +116,31 @@ export class AgentMessageHandler {
 
     // Compact boundary — context window was compacted
     if (msg.type === 'compact_boundary') {
+      const timestamp = new Date().toISOString();
       log.info('Context compacted', {
-        namespace: 'agent',
-        threadId,
+        ...this.threadCtx(threadId),
         trigger: msg.trigger,
-        preTokens: msg.preTokens,
+        preTokens: String(msg.preTokens),
+        timestamp,
       });
       this.state.cumulativeInputTokens.set(threadId, 0);
       this.emitWS(threadId, 'agent:compact_boundary', {
         trigger: msg.trigger,
         preTokens: msg.preTokens,
-        timestamp: new Date().toISOString(),
+        timestamp,
+      });
+
+      // Persist to thread_events so it survives page refreshes
+      saveThreadEvent(threadId, 'compact_boundary', {
+        trigger: msg.trigger,
+        preTokens: msg.preTokens,
+        timestamp,
+      }).catch((err) => {
+        log.error('Failed to persist compact_boundary event', {
+          namespace: 'agent',
+          threadId,
+          error: err,
+        });
       });
       return;
     }

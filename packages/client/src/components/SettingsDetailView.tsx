@@ -419,6 +419,11 @@ function GeneralSettings() {
                     label: t('settings.followUpQueue'),
                     testId: 'settings-followup-queue',
                   },
+                  {
+                    value: 'ask',
+                    label: t('settings.followUpAsk'),
+                    testId: 'settings-followup-ask',
+                  },
                 ]}
               />
             </SettingRow>

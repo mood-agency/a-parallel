@@ -162,7 +162,7 @@ export function buildGroupedRenderItems(
   if (!hasEvents) return final;
 
   const eventItems: RenderItem[] = (threadEvents ?? [])
-    .filter((e) => e.type !== 'git:changed')
+    .filter((e) => e.type !== 'git:changed' && e.type !== 'compact_boundary')
     .map((e) => ({ type: 'thread-event' as const, event: e }));
 
   const compactionItems: RenderItem[] = (compactionEvents ?? []).map((e) => ({

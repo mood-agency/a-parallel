@@ -655,7 +655,7 @@ export function ReviewPane() {
 
   // Build a prompt that delegates a git action to the agent via /commit or /commit-push-pr
   const buildAgentCommitPrompt = (
-    action: 'commit' | 'amend' | 'commit-push' | 'commit-pr' | 'commit-merge',
+    action: 'commit' | 'amend' | 'commit-pr',
     filesToStage: string[],
     filesToUnstage: string[],
     commitMsg: string,
@@ -669,9 +669,7 @@ export function ReviewPane() {
       parts.push(`Stage these files: ${filesToStage.join(', ')}`);
     }
 
-    const isCommitOnly = action === 'commit' || action === 'amend';
-    const slashCommand = isCommitOnly ? '/commit' : '/commit-push-pr';
-
+    const slashCommand = action === 'commit-pr' ? '/commit-push-pr' : '/commit';
     parts.push(`Then use ${slashCommand} with this commit message:`);
     parts.push(commitMsg);
 
@@ -722,8 +720,54 @@ export function ReviewPane() {
       ? `${commitTitle.trim()}\n\n${commitBody.trim()}`
       : commitTitle.trim();
 
-    // When a thread is active, delegate to the agent via /commit or /commit-push-pr
+    // When a thread is active, delegate git actions
     if (effectiveThreadId) {
+      // commit-pr delegates to the agent via /commit-push-pr (handles hook retries)
+      if (selectedAction === 'commit-pr') {
+        const prompt = buildAgentCommitPrompt('commit-pr', toStage, toUnstage, commitMsg);
+        const ok = await sendAgentCommitMessage(prompt);
+        if (!ok) {
+          setActionInProgress(null);
+          commitLockRef.current = false;
+          return;
+        }
+        setActionInProgress(null);
+        commitLockRef.current = false;
+        setCommitTitleRaw('');
+        setCommitBodyRaw('');
+        if (draftId) clearCommitDraft(draftId);
+        return;
+      }
+
+      // Multi-step actions (push, merge) use the server-side workflow service
+      if (selectedAction === 'commit-push' || selectedAction === 'commit-merge') {
+        const params: import('@funny/shared').GitWorkflowRequest = {
+          action: selectedAction,
+          message: commitMsg,
+          filesToStage: toStage,
+          filesToUnstage: toUnstage,
+          amend: false,
+          prTitle: undefined,
+          prBody: undefined,
+          cleanup: selectedAction === 'commit-merge',
+        };
+
+        const result = await api.startWorkflow(effectiveThreadId, params);
+        if (result.isErr()) {
+          toast.error(result.error.message);
+          setActionInProgress(null);
+          commitLockRef.current = false;
+          return;
+        }
+
+        // Progress is now driven by WS events
+        setCommitTitleRaw('');
+        setCommitBodyRaw('');
+        if (draftId) clearCommitDraft(draftId);
+        return;
+      }
+
+      // Simple commit/amend use the agent via slash commands
       const prompt = buildAgentCommitPrompt(selectedAction, toStage, toUnstage, commitMsg);
       const ok = await sendAgentCommitMessage(prompt);
       if (!ok) {
