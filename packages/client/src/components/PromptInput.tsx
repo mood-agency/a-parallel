@@ -345,6 +345,7 @@ interface PromptInputProps {
   running?: boolean;
   queuedCount?: number;
   isQueueMode?: boolean;
+  isAskMode?: boolean;
   placeholder?: string;
   isNewThread?: boolean;
   showBacklog?: boolean;
@@ -360,6 +361,7 @@ export const PromptInput = memo(function PromptInput({
   running = false,
   queuedCount = 0,
   isQueueMode = false,
+  isAskMode = false,
   placeholder,
   isNewThread = false,
   showBacklog = false,
@@ -1168,9 +1170,11 @@ export const PromptInput = memo(function PromptInput({
             style={{ minHeight: '4.5rem' }}
             placeholder={
               running
-                ? isQueueMode
-                  ? t('thread.typeToQueue')
-                  : t('thread.typeToInterrupt')
+                ? isAskMode
+                  ? t('thread.typeToAsk')
+                  : isQueueMode
+                    ? t('thread.typeToQueue')
+                    : t('thread.typeToInterrupt')
                 : defaultPlaceholder
             }
             value={prompt}

@@ -26,7 +26,7 @@ function toProject(row: ProjectRow): Project {
     ...rest,
     ...(color != null ? { color } : {}),
     ...(followUpMode && followUpMode !== 'interrupt'
-      ? { followUpMode: followUpMode as 'interrupt' | 'queue' }
+      ? { followUpMode: followUpMode as Project['followUpMode'] }
       : {}),
     ...(defaultProvider != null
       ? { defaultProvider: defaultProvider as Project['defaultProvider'] }

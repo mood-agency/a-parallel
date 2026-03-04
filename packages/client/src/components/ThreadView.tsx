@@ -31,6 +31,8 @@ import { flushSync } from 'react-dom';
 import { useTranslation } from 'react-i18next';
 import { toast } from 'sonner';
 
+import { FollowUpModeDialog } from '@/components/FollowUpModeDialog';
+import { QueuedMessagesList } from '@/components/QueuedMessagesList';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { Badge } from '@/components/ui/badge';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
@@ -1062,6 +1064,12 @@ export function ThreadView() {
   const hasMore = activeThread?.hasMore ?? false;
   const loadingMore = activeThread?.loadingMore ?? false;
   const [sending, setSending] = useState(false);
+  const [askDialogOpen, setAskDialogOpen] = useState(false);
+  const [pendingAskMessage, setPendingAskMessage] = useState<{
+    prompt: string;
+    opts: any;
+    images?: any[];
+  } | null>(null);
   const scrollViewportRef = useRef<HTMLDivElement>(null);
   const userHasScrolledUp = useRef(false);
   const smoothScrollPending = useRef(false);
@@ -1318,7 +1326,7 @@ export function ThreadView() {
   const sendingRef = useRef(sending);
   sendingRef.current = sending;
 
-  const handleSend = useCallback(
+  const doSend = useCallback(
     async (
       prompt: string,
       opts: {
@@ -1327,23 +1335,26 @@ export function ThreadView() {
         mode: string;
         fileReferences?: { path: string }[];
         baseBranch?: string;
+        forceQueue?: boolean;
       },
       images?: any[],
     ) => {
-      if (sendingRef.current) return;
       const thread = activeThreadRef.current;
       if (!thread) return;
       setSending(true);
 
       const threadIsRunning = thread.status === 'running';
-      const currentProject = useProjectStore
-        .getState()
-        .projects.find((p) => p.id === thread.projectId);
-      const threadIsQueueMode = currentProject?.followUpMode === 'queue';
+      const isQueuing = opts.forceQueue;
 
-      // Toast for interrupt mode when agent is running
-      if (threadIsRunning && !threadIsQueueMode) {
-        toast.info(t('thread.interruptingAgent'));
+      // Toast for interrupt mode when agent is running (not when queuing)
+      if (threadIsRunning && !isQueuing) {
+        const currentProject = useProjectStore
+          .getState()
+          .projects.find((p) => p.id === thread.projectId);
+        const projectIsQueueMode = currentProject?.followUpMode === 'queue';
+        if (!projectIsQueueMode) {
+          toast.info(t('thread.interruptingAgent'));
+        }
       }
 
       // Always scroll to bottom when the user sends a message (smooth)
@@ -1371,18 +1382,74 @@ export function ThreadView() {
           disallowedTools,
           fileReferences: opts.fileReferences,
           baseBranch: opts.baseBranch,
+          forceQueue: opts.forceQueue,
         },
         images,
       );
       if (result.isErr()) {
         console.error('Send failed:', result.error);
-      } else if (threadIsRunning && threadIsQueueMode) {
+      } else if (threadIsRunning && (isQueuing || useProjectStore.getState().projects.find((p) => p.id === thread.projectId)?.followUpMode === 'queue')) {
         toast.success(t('thread.messageQueued'));
       }
       setSending(false);
     },
     [t],
   );
+
+  const handleSend = useCallback(
+    async (
+      prompt: string,
+      opts: {
+        provider?: string;
+        model: string;
+        mode: string;
+        fileReferences?: { path: string }[];
+        baseBranch?: string;
+      },
+      images?: any[],
+    ) => {
+      if (sendingRef.current) return;
+      const thread = activeThreadRef.current;
+      if (!thread) return;
+
+      const threadIsRunning = thread.status === 'running';
+      const currentProject = useProjectStore
+        .getState()
+        .projects.find((p) => p.id === thread.projectId);
+      const followUpMode = currentProject?.followUpMode || 'interrupt';
+
+      // "Ask" mode: show dialog instead of sending immediately
+      if (threadIsRunning && followUpMode === 'ask') {
+        setPendingAskMessage({ prompt, opts, images });
+        setAskDialogOpen(true);
+        return false;
+      }
+
+      return doSend(prompt, opts, images);
+    },
+    [doSend],
+  );
+
+  const handleAskInterrupt = useCallback(() => {
+    setAskDialogOpen(false);
+    if (!pendingAskMessage) return;
+    const { prompt, opts, images } = pendingAskMessage;
+    setPendingAskMessage(null);
+    doSend(prompt, opts, images);
+  }, [pendingAskMessage, doSend]);
+
+  const handleAskQueue = useCallback(() => {
+    setAskDialogOpen(false);
+    if (!pendingAskMessage) return;
+    const { prompt, opts, images } = pendingAskMessage;
+    setPendingAskMessage(null);
+    doSend(prompt, { ...opts, forceQueue: true }, images);
+  }, [pendingAskMessage, doSend]);
+
+  const handleAskCancel = useCallback(() => {
+    setAskDialogOpen(false);
+    setPendingAskMessage(null);
+  }, []);
 
   const handleStop = useCallback(async () => {
     const thread = activeThreadRef.current;
@@ -1470,7 +1537,9 @@ export function ThreadView() {
   const currentProject = useProjectStore
     .getState()
     .projects.find((p) => p.id === activeThread.projectId);
-  const isQueueMode = currentProject?.followUpMode === 'queue';
+  const followUpMode = currentProject?.followUpMode || 'interrupt';
+  const isQueueMode = followUpMode === 'queue';
+  const isAskMode = followUpMode === 'ask';
 
   // Idle thread (backlog or not): show prompt input to start (pre-loaded with initialPrompt if available)
   if (isIdle) {
@@ -1713,12 +1782,19 @@ export function ThreadView() {
                     {t('thread.scrollToBottom', 'Scroll to bottom')}
                   </button>
                 </div>
+                {(isQueueMode || isAskMode) && ((activeThread as any).queuedCount ?? 0) > 0 && (
+                  <QueuedMessagesList
+                    threadId={activeThread.id}
+                    queuedCount={(activeThread as any).queuedCount ?? 0}
+                  />
+                )}
                 <PromptInput
                   onSubmit={handleSend}
                   onStop={handleStop}
                   loading={sending}
                   running={isRunning && !isExternal}
                   isQueueMode={isQueueMode}
+                  isAskMode={isAskMode}
                   queuedCount={(activeThread as any).queuedCount ?? 0}
                   placeholder={t('thread.nextPrompt')}
                 />
@@ -1765,6 +1841,15 @@ export function ThreadView() {
         initialIndex={lightboxIndex}
         open={lightboxOpen}
         onClose={() => setLightboxOpen(false)}
+      />
+
+      {/* Follow-up mode "ask" dialog */}
+      <FollowUpModeDialog
+        open={askDialogOpen}
+        messagePreview={pendingAskMessage?.prompt?.slice(0, 200) ?? ''}
+        onInterrupt={handleAskInterrupt}
+        onQueue={handleAskQueue}
+        onCancel={handleAskCancel}
       />
     </div>
   );

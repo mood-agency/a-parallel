@@ -310,6 +310,7 @@ function GeneralSettings() {
                 options={[
                   { value: 'interrupt', label: t('settings.followUpInterrupt') },
                   { value: 'queue', label: t('settings.followUpQueue') },
+                  { value: 'ask', label: t('settings.followUpAsk') },
                 ]}
               />
             </SettingRow>

@@ -98,6 +98,7 @@
     "orTypeNewPrompt": "O escribe un nuevo prompt abajo...",
     "typeToQueue": "Escribe un seguimiento para encolar...",
     "typeToInterrupt": "Escribe para enviar un seguimiento...",
+    "typeToAsk": "Escribe un mensaje...",
     "interruptingAgent": "Interrumpiendo agente con nuevo prompt...",
     "messageQueued": "Mensaje en cola — se enviará cuando el agente termine",
     "queuedMessages": "{{count}} mensaje(s) en cola",
@@ -304,6 +305,7 @@
     "followUpModeDesc": "Cómo manejar mensajes enviados mientras un agente está ejecutándose",
     "followUpInterrupt": "Interrumpir",
     "followUpQueue": "Encolar",
+    "followUpAsk": "Preguntar",
     "saved": "Configuración guardada",
     "projectSaved": "Configuración del proyecto guardada"
   },
@@ -734,6 +736,17 @@
     "viewOnGithub": "Ver en GitHub",
     "notGithub": "Este proyecto no está alojado en GitHub",
     "error": "Error al cargar issues"
+  },
+  "followUpDialog": {
+    "title": "Agente en ejecución",
+    "description": "El agente está trabajando actualmente. ¿Qué deseas hacer con tu mensaje?",
+    "interrupt": "Interrumpir y enviar",
+    "queue": "Encolar",
+    "cancel": "Cancelar"
+  },
+  "queue": {
+    "title": "Mensajes en cola",
+    "cancelMessage": "Cancelar mensaje en cola"
   },
   "users": {
     "title": "Usuarios",

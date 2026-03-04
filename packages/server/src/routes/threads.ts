@@ -380,6 +380,7 @@ threadRoutes.post('/:id/message', async (c) => {
     disallowedTools,
     fileReferences,
     baseBranch,
+    forceQueue,
   } = parsed.value;
 
   const userId = c.get('userId') as string;
@@ -454,7 +455,7 @@ threadRoutes.post('/:id/message', async (c) => {
   const project = pm.getProject(thread.projectId);
   const followUpMode = project?.followUpMode || 'interrupt';
 
-  if (agentRunning && followUpMode === 'queue') {
+  if (agentRunning && (followUpMode === 'queue' || forceQueue)) {
     // Queue the message instead of interrupting
     const queued = mq.enqueue(id, {
       content: augmentedContent,
