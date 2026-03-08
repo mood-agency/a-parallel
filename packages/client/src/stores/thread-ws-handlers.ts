@@ -100,6 +100,23 @@ export function handleWSMessage(
   } else if (selectedThreadId === threadId) {
     bufferWSEvent(threadId, 'message', data);
   }
+
+  // Update sidebar snippet for assistant messages
+  if (data.role === 'assistant' && data.content) {
+    const { threadsByProject } = get();
+    const snippet = data.content.slice(0, 120);
+    for (const [pid, threads] of Object.entries(threadsByProject)) {
+      const idx = threads.findIndex((t) => t.id === threadId);
+      if (idx >= 0) {
+        const updated = [...threads];
+        updated[idx] = { ...updated[idx], lastAssistantMessage: snippet };
+        set({
+          threadsByProject: { ...threadsByProject, [pid]: updated },
+        });
+        break;
+      }
+    }
+  }
 }
 
 // ── Tool Call ───────────────────────────────────────────────────

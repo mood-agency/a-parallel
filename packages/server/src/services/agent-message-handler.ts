@@ -387,19 +387,34 @@ export class AgentMessageHandler {
             output: decodedOutput.slice(0, 500),
           });
 
-          this.threadManager.updateToolCallOutput(toolCallId, decodedOutput);
-          this.emitWS(threadId, 'agent:tool_output', {
-            toolCallId,
-            output: decodedOutput,
-          });
-
-          // Look up the tool call once for both checks below
+          // Look up the tool call once for all checks below
           const tc = this.threadManager.getToolCall(toolCallId);
 
+          // For interactive tools (ExitPlanMode / AskUserQuestion): when the thread
+          // is still "waiting" and pendingUserInput is set, the tool_result is an
+          // auto-denial from the preToolUseHook (e.g. "Exit plan mode?"). Skip storing
+          // it so the tool call remains "unanswered" and the UI keeps showing buttons.
+          const isInteractive = tc?.name === 'AskUserQuestion' || tc?.name === 'ExitPlanMode';
+          const isAutoDenial = isInteractive && this.state.pendingUserInput.has(threadId);
+
+          if (isAutoDenial) {
+            log.info(`Skipping auto-denial tool_result for ${tc!.name}`, {
+              ...this.threadCtx(threadId),
+              toolCallId,
+              autoDenialOutput: decodedOutput.slice(0, 100),
+            });
+          } else {
+            this.threadManager.updateToolCallOutput(toolCallId, decodedOutput);
+            this.emitWS(threadId, 'agent:tool_output', {
+              toolCallId,
+              output: decodedOutput,
+            });
+          }
+
           // Clear pending user input when AskUserQuestion/ExitPlanMode tool result is received
-          // (the SDK processed the user's answer, so the agent is no longer waiting)
-          if (tc?.name === 'AskUserQuestion' || tc?.name === 'ExitPlanMode') {
-            log.info(`${tc.name} tool_result received — clearing pendingUserInput`, {
+          // AND it's NOT an auto-denial (the SDK processed the user's actual answer)
+          if (isInteractive && !isAutoDenial) {
+            log.info(`${tc!.name} tool_result received — clearing pendingUserInput`, {
               ...this.threadCtx(threadId),
               toolCallId: toolCallId ?? '',
               wasPending: this.state.pendingUserInput.get(threadId) ?? 'none',

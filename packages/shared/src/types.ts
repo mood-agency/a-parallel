@@ -182,6 +182,8 @@ export interface Thread {
   completedAt?: string;
   /** Creator/agent that generated this thread (user ID, 'external', 'pipeline', 'automation', etc.) */
   createdBy?: string;
+  /** Snippet of the last assistant message (populated in list queries) */
+  lastAssistantMessage?: string;
 }
 
 // ─── Thread Comments ────────────────────────────────────

@@ -140,7 +140,8 @@ export const ThreadItem = memo(function ThreadItem({
     showGitIcon &&
     (gitStatus.linesAdded > 0 || gitStatus.linesDeleted > 0 || gitStatus.dirtyFileCount > 0);
   const hasGitIconOnly = showGitIcon && !hasDiffStats && GitIcon;
-  const hasSecondRow = !!subtitle || hasDiffStats || hasGitIconOnly;
+  const hasSnippet = !!thread.lastAssistantMessage;
+  const hasSecondRow = !!subtitle || hasDiffStats || hasGitIconOnly || hasSnippet;
 
   return (
     <div
@@ -232,34 +233,46 @@ export const ThreadItem = memo(function ThreadItem({
           )}
         </div>
 
-        {/* Row 2: Project name (left) + Diff stats (right) */}
+        {/* Row 2: Snippet / Project name / Diff stats */}
         {hasSecondRow && (
           <div className="flex min-w-0 items-center gap-1.5 pl-5">
-            {subtitle && (
-              <ProjectChip
-                name={subtitle}
-                color={projectColor}
-                size="sm"
-                className="flex-shrink-0"
-              />
+            {hasSnippet && !subtitle && !hasDiffStats && !hasGitIconOnly ? (
+              <span className="truncate text-xs text-muted-foreground">
+                {thread.lastAssistantMessage}
+              </span>
+            ) : (
+              <>
+                {subtitle && (
+                  <ProjectChip
+                    name={subtitle}
+                    color={projectColor}
+                    size="sm"
+                    className="flex-shrink-0"
+                  />
+                )}
+                {hasDiffStats ? (
+                  <DiffStats
+                    linesAdded={gitStatus.linesAdded}
+                    linesDeleted={gitStatus.linesDeleted}
+                    dirtyFileCount={gitStatus.dirtyFileCount}
+                    size="xs"
+                  />
+                ) : hasGitIconOnly ? (
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <GitIcon className={cn('h-3 w-3 flex-shrink-0', gitCfg!.className)} />
+                    </TooltipTrigger>
+                    <TooltipContent side="top" className="text-xs">
+                      {gitTooltip}
+                    </TooltipContent>
+                  </Tooltip>
+                ) : hasSnippet ? (
+                  <span className="truncate text-xs text-muted-foreground">
+                    {thread.lastAssistantMessage}
+                  </span>
+                ) : null}
+              </>
             )}
-            {hasDiffStats ? (
-              <DiffStats
-                linesAdded={gitStatus.linesAdded}
-                linesDeleted={gitStatus.linesDeleted}
-                dirtyFileCount={gitStatus.dirtyFileCount}
-                size="xs"
-              />
-            ) : hasGitIconOnly ? (
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <GitIcon className={cn('h-3 w-3 flex-shrink-0', gitCfg!.className)} />
-                </TooltipTrigger>
-                <TooltipContent side="top" className="text-xs">
-                  {gitTooltip}
-                </TooltipContent>
-              </Tooltip>
-            ) : null}
           </div>
         )}
       </button>
