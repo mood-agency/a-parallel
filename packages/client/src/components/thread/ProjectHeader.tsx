@@ -444,8 +444,6 @@ export const ProjectHeader = memo(function ProjectHeader() {
   const activeThreadParentId = useThreadStore((s) => s.activeThread?.parentThreadId);
   const selectedProjectId = useProjectStore((s) => s.selectedProjectId);
   const projects = useProjectStore((s) => s.projects);
-  const timelineVisible = useUIStore((s) => s.timelineVisible);
-  const setTimelineVisible = useUIStore((s) => s.setTimelineVisible);
   const setReviewPaneOpen = useUIStore((s) => s.setReviewPaneOpen);
   const reviewPaneOpen = useUIStore((s) => s.reviewPaneOpen);
   const kanbanContext = useUIStore((s) => s.kanbanContext);
