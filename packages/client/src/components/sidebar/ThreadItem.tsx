@@ -233,18 +233,16 @@ export const ThreadItem = memo(function ThreadItem({
           )}
         </div>
 
-        {/* Row 2: Last assistant message snippet */}
-        {hasSnippet && (
+        {/* Row 2: Snippet + metadata (git icon, diff stats, project chip) */}
+        {hasSecondRow && (
           <div className="flex min-w-0 items-center gap-1.5 pl-5">
-            <span className="truncate text-xs text-muted-foreground">
-              {thread.lastAssistantMessage}
-            </span>
-          </div>
-        )}
-
-        {/* Row 3: Project name / Diff stats / Git icon */}
-        {(!!subtitle || hasDiffStats || hasGitIconOnly) && (
-          <div className="flex min-w-0 items-center gap-1.5 pl-5">
+            {/* Snippet fills available space */}
+            {hasSnippet && (
+              <span className="min-w-0 flex-1 truncate text-xs text-muted-foreground">
+                {thread.lastAssistantMessage}
+              </span>
+            )}
+            {/* Git / project metadata pushed to the right */}
             {subtitle && (
               <ProjectChip
                 name={subtitle}

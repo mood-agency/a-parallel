@@ -181,7 +181,7 @@ export const ToolCallCard = memo(
           )}
         </button>
         {expanded && (
-          <div className="max-h-[50vh] overflow-y-auto border-t border-border/40 pb-2">
+          <div className="max-h-[50vh] overflow-y-auto border-t border-border/40">
             {isTodo && todos ? (
               <div className="px-3">
                 <TodoList todos={todos} />
