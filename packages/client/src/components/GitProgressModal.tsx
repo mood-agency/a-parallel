@@ -1,5 +1,5 @@
-import { ArrowRight, Check, Circle, Loader2, Minus, X, ExternalLink } from 'lucide-react';
-import { useEffect, useRef, useState } from 'react';
+import { ArrowRight, Check, Loader2, Minus, X, ExternalLink } from 'lucide-react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { Button } from '@/components/ui/button';
@@ -194,6 +194,9 @@ export function GitProgressModal({
     !isRunning &&
     (steps.every((s) => s.status === 'completed' || s.status === 'failed') || hasFailed);
 
+  // Filter out pending steps — only show steps that have actually started
+  const visibleSteps = useMemo(() => steps.filter((s) => s.status !== 'pending'), [steps]);
+
   const getStepElapsed = useStepTimers(steps, open);
   const totalElapsed = useTotalFromSteps(steps, getStepElapsed);
 
@@ -216,7 +219,7 @@ export function GitProgressModal({
           </DialogDescription>
         </DialogHeader>
         <div className="space-y-2">
-          {steps.map((step) => {
+          {visibleSteps.map((step) => {
             const stepElapsed = getStepElapsed(step.id);
             return (
               <div
@@ -232,9 +235,6 @@ export function GitProgressModal({
                     <Loader2 className="h-4 w-4 animate-spin text-primary" />
                   )}
                   {step.status === 'failed' && <X className="h-4 w-4 text-destructive" />}
-                  {step.status === 'pending' && (
-                    <Circle className="h-4 w-4 text-muted-foreground/40" />
-                  )}
                 </div>
                 <div className="min-w-0 flex-1">
                   <div className="flex items-center justify-between gap-2">
@@ -244,12 +244,11 @@ export function GitProgressModal({
                         step.status === 'completed' && 'text-muted-foreground',
                         step.status === 'running' && 'text-foreground font-medium',
                         step.status === 'failed' && 'text-destructive font-medium',
-                        step.status === 'pending' && 'text-muted-foreground/40',
                       )}
                     >
                       {step.label}
                     </span>
-                    {stepElapsed != null && step.status !== 'pending' && (
+                    {stepElapsed != null && (
                       <span className="flex-shrink-0 text-[10px] tabular-nums text-muted-foreground/60">
                         {formatElapsed(stepElapsed)}
                       </span>

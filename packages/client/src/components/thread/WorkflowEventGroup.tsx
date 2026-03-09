@@ -5,21 +5,13 @@
  */
 
 import type { ThreadEvent } from '@funny/shared';
-import {
-  ChevronRight,
-  GitCommit,
-  CheckCircle2,
-  XCircle,
-  Loader2,
-  Circle,
-  Check,
-  X,
-} from 'lucide-react';
+import { ChevronRight, GitCommit, CheckCircle2, XCircle, Loader2, Check, X } from 'lucide-react';
 import { memo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useShallow } from 'zustand/shallow';
 
 import type { GitProgressStep } from '@/components/GitProgressModal';
+import { SubItemsList } from '@/components/GitProgressModal';
 import { timeAgo } from '@/lib/thread-utils';
 import { cn } from '@/lib/utils';
 import { useCommitProgressStore } from '@/stores/commit-progress-store';
@@ -117,25 +109,33 @@ function StepStatusIcon({ status }: { status: string }) {
     case 'failed':
       return <X className="h-3 w-3 text-destructive" />;
     default:
-      return <Circle className="h-2.5 w-2.5 text-muted-foreground/30" />;
+      return null;
   }
 }
 
-/** Live progress step row */
+/** Live progress step row — only rendered for non-pending steps */
 function LiveStepRow({ step }: { step: GitProgressStep }) {
   return (
-    <div className="flex w-full items-center gap-2 px-3 py-1 text-xs">
-      <StepStatusIcon status={step.status} />
-      <span
-        className={cn(
-          'font-mono text-muted-foreground',
-          step.status === 'running' && 'font-medium text-foreground',
-          step.status === 'pending' && 'text-muted-foreground/50',
+    <div className="flex w-full items-start gap-2 px-3 py-1 text-xs">
+      <div className="mt-0.5 flex-shrink-0">
+        <StepStatusIcon status={step.status} />
+      </div>
+      <div className="min-w-0 flex-1">
+        <span
+          className={cn(
+            'font-mono text-muted-foreground',
+            step.status === 'running' && 'font-medium text-foreground',
+          )}
+        >
+          {step.label}
+        </span>
+        {step.subItems && step.subItems.length > 0 && (
+          <SubItemsList subItems={step.subItems} parentStatus={step.status} />
         )}
-      >
-        {step.label}
-      </span>
-      {step.error && <span className="min-w-0 truncate text-destructive">{step.error}</span>}
+        {step.error && !(step.subItems && step.subItems.length > 0) && (
+          <div className="min-w-0 truncate text-destructive">{step.error}</div>
+        )}
+      </div>
     </div>
   );
 }
@@ -189,10 +189,12 @@ export const WorkflowEventGroup = memo(function WorkflowEventGroup({
     (e) => e.type !== 'workflow:started' && e.type !== 'workflow:completed',
   );
 
-  // Count: persisted events + remaining uncovered progress steps
+  // Count: persisted events + remaining non-pending uncovered progress steps
   const coveredTypesForCount = new Set(innerEvents.map((e) => e.type));
   const uncoveredSteps = status.running
-    ? activeProgress.steps.filter((s) => !isStepCoveredByEvent(s.id, coveredTypesForCount))
+    ? activeProgress.steps.filter(
+        (s) => s.status !== 'pending' && !isStepCoveredByEvent(s.id, coveredTypesForCount),
+      )
     : [];
   const badgeCount = innerEvents.length + uncoveredSteps.length;
 
@@ -253,11 +255,15 @@ export const WorkflowEventGroup = memo(function WorkflowEventGroup({
               {innerEvents.map((evt) => (
                 <WorkflowEventCard key={evt.id} event={evt} />
               ))}
-              {/* Then show remaining progress steps not yet covered by a persisted event */}
+              {/* Then show remaining in-progress/completed/failed steps not yet covered by a persisted event.
+                  Pending steps are hidden — they represent future steps that may not execute. */}
               {(() => {
                 const coveredTypes = new Set(innerEvents.map((e) => e.type));
                 return activeProgress.steps
-                  .filter((step) => !isStepCoveredByEvent(step.id, coveredTypes))
+                  .filter(
+                    (step) =>
+                      step.status !== 'pending' && !isStepCoveredByEvent(step.id, coveredTypes),
+                  )
                   .map((step) => <LiveStepRow key={step.id} step={step} />);
               })()}
             </>

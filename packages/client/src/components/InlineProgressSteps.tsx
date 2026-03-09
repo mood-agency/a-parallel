@@ -1,4 +1,5 @@
-import { Check, Circle, ExternalLink, Loader2, X } from 'lucide-react';
+import { Check, ExternalLink, Loader2, X } from 'lucide-react';
+import { useMemo } from 'react';
 
 import {
   formatElapsed,
@@ -16,13 +17,16 @@ interface InlineProgressStepsProps {
 }
 
 export function InlineProgressSteps({ steps, showTotal = true }: InlineProgressStepsProps) {
+  // Filter out pending steps — only show steps that have actually started, completed, or failed
+  const visibleSteps = useMemo(() => steps.filter((s) => s.status !== 'pending'), [steps]);
+
   // Pass open=true since inline steps are always visible when rendered
   const getStepElapsed = useStepTimers(steps, true);
   const totalElapsed = useTotalFromSteps(steps, getStepElapsed);
 
   return (
     <div className="space-y-2">
-      {steps.map((step) => {
+      {visibleSteps.map((step) => {
         const stepElapsed = getStepElapsed(step.id);
         return (
           <div
@@ -38,7 +42,6 @@ export function InlineProgressSteps({ steps, showTotal = true }: InlineProgressS
                 <Loader2 className="h-4 w-4 animate-spin text-primary" />
               )}
               {step.status === 'failed' && <X className="h-4 w-4 text-destructive" />}
-              {step.status === 'pending' && <Circle className="h-4 w-4 text-muted-foreground/40" />}
             </div>
             <div className="min-w-0 flex-1">
               <div className="flex items-center justify-between gap-2">
@@ -48,12 +51,11 @@ export function InlineProgressSteps({ steps, showTotal = true }: InlineProgressS
                     step.status === 'completed' && 'text-muted-foreground',
                     step.status === 'running' && 'font-medium text-foreground',
                     step.status === 'failed' && 'font-medium text-destructive',
-                    step.status === 'pending' && 'text-muted-foreground/40',
                   )}
                 >
                   {step.label}
                 </span>
-                {stepElapsed != null && step.status !== 'pending' && (
+                {stepElapsed != null && (
                   <span className="flex-shrink-0 text-[10px] tabular-nums text-muted-foreground/60">
                     {formatElapsed(stepElapsed)}
                   </span>
@@ -82,7 +84,7 @@ export function InlineProgressSteps({ steps, showTotal = true }: InlineProgressS
           </div>
         );
       })}
-      {showTotal && steps.length > 0 && (
+      {showTotal && visibleSteps.length > 0 && (
         <div className="flex justify-end">
           <span className="text-[10px] tabular-nums text-muted-foreground/50">
             {formatElapsed(totalElapsed)}

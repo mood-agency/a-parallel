@@ -667,7 +667,19 @@ export async function sendMessage(params: SendMessageParams): Promise<SendMessag
   // threads, so queued messages would never be drained — causing a deadlock.
   const isWaitingResponse = thread.status === 'waiting';
 
-  if (agentRunning && !isWaitingResponse && (followUpMode === 'queue' || params.forceQueue)) {
+  // When the thread has been stopped/completed/failed, bypass the queue even if
+  // isAgentRunning() still returns true (race condition: the stop request hasn't
+  // fully cleaned up the process yet). The user intends to restart the thread,
+  // not queue a message that would be drained by the stop completion handler.
+  const threadIsTerminal =
+    thread.status === 'stopped' || thread.status === 'completed' || thread.status === 'failed';
+
+  if (
+    agentRunning &&
+    !isWaitingResponse &&
+    !threadIsTerminal &&
+    (followUpMode === 'queue' || params.forceQueue)
+  ) {
     const queued = mq.enqueue(params.threadId, {
       content: augmentedContent,
       provider: effectiveProvider,
