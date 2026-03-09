@@ -45,23 +45,55 @@ const DialogContent = React.forwardRef<
 ));
 DialogContent.displayName = DialogPrimitive.Content.displayName;
 
-const DialogHeader = ({ className, children, ...props }: React.HTMLAttributes<HTMLDivElement>) => (
-  <div className={cn('flex items-center justify-between sm:text-left', className)} {...props}>
-    {children}
-    <DialogPrimitive.Close
-      tabIndex={-1}
-      className="shrink-0 rounded-md bg-muted/80 p-1.5 opacity-70 ring-offset-background transition-all hover:bg-muted hover:opacity-100 focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 disabled:pointer-events-none data-[state=open]:bg-accent data-[state=open]:text-muted-foreground"
-    >
-      <X className="h-4 w-4" />
-      <span className="sr-only">Close</span>
-    </DialogPrimitive.Close>
-  </div>
-);
+const DialogHeader = ({ className, children, ...props }: React.HTMLAttributes<HTMLDivElement>) => {
+  // Separate DialogTitle from other children (description, etc.)
+  const childArray = React.Children.toArray(children);
+  const title = childArray.find(
+    (child) => React.isValidElement(child) && (child.type as any)?.displayName === 'DialogTitle',
+  );
+  const rest = childArray.filter(
+    (child) => !React.isValidElement(child) || (child.type as any)?.displayName !== 'DialogTitle',
+  );
+
+  // If no direct DialogTitle found, fall back to simple layout (for custom headers)
+  if (!title) {
+    return (
+      <div className={cn('relative flex flex-col gap-2 pr-8 sm:text-left', className)} {...props}>
+        {children}
+        <DialogPrimitive.Close
+          tabIndex={-1}
+          className="absolute right-0 top-0 shrink-0 rounded-md bg-muted/80 p-1.5 opacity-70 ring-offset-background transition-all hover:bg-muted hover:opacity-100 focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 disabled:pointer-events-none data-[state=open]:bg-accent data-[state=open]:text-muted-foreground"
+        >
+          <X className="h-4 w-4" />
+          <span className="sr-only">Close</span>
+        </DialogPrimitive.Close>
+      </div>
+    );
+  }
+
+  return (
+    <div className={cn('flex flex-col gap-4 sm:text-left', className)} {...props}>
+      {/* Section 1: Title + close button */}
+      <div className="flex items-start justify-between gap-4">
+        {title}
+        <DialogPrimitive.Close
+          tabIndex={-1}
+          className="shrink-0 rounded-md bg-muted/80 p-1.5 opacity-70 ring-offset-background transition-all hover:bg-muted hover:opacity-100 focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 disabled:pointer-events-none data-[state=open]:bg-accent data-[state=open]:text-muted-foreground"
+        >
+          <X className="h-4 w-4" />
+          <span className="sr-only">Close</span>
+        </DialogPrimitive.Close>
+      </div>
+      {/* Section 2: Description / other content */}
+      {rest.length > 0 && rest}
+    </div>
+  );
+};
 DialogHeader.displayName = 'DialogHeader';
 
 const DialogFooter = ({ className, ...props }: React.HTMLAttributes<HTMLDivElement>) => (
   <div
-    className={cn('flex flex-col-reverse sm:flex-row sm:justify-end sm:space-x-2', className)}
+    className={cn('flex flex-col-reverse pt-4 sm:flex-row sm:justify-end sm:space-x-2', className)}
     {...props}
   />
 );

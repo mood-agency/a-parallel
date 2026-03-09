@@ -34,6 +34,7 @@ function toProject(row: ProjectRow): Project {
     defaultBranch,
     urls: urlsRaw,
     systemPrompt,
+    launcherUrl,
     ...rest
   } = row;
   return {
@@ -53,6 +54,7 @@ function toProject(row: ProjectRow): Project {
     ...(defaultBranch != null ? { defaultBranch } : {}),
     ...(urlsRaw != null ? { urls: JSON.parse(urlsRaw) as string[] } : {}),
     ...(systemPrompt != null ? { systemPrompt } : {}),
+    ...(launcherUrl != null ? { launcherUrl } : {}),
   };
 }
 
@@ -176,6 +178,7 @@ export function updateProject(
     defaultBranch?: string | null;
     urls?: string[] | null;
     systemPrompt?: string | null;
+    launcherUrl?: string | null;
   },
 ): Result<Project, DomainError> {
   const project = db.select().from(schema.projects).where(eq(schema.projects.id, id)).get();
@@ -208,6 +211,7 @@ export function updateProject(
   if (fields.defaultBranch !== undefined) updateData.defaultBranch = fields.defaultBranch;
   if (fields.urls !== undefined) updateData.urls = fields.urls ? JSON.stringify(fields.urls) : null;
   if (fields.systemPrompt !== undefined) updateData.systemPrompt = fields.systemPrompt;
+  if (fields.launcherUrl !== undefined) updateData.launcherUrl = fields.launcherUrl;
 
   db.update(schema.projects).set(updateData).where(eq(schema.projects.id, id)).run();
   return ok(toProject({ ...project, ...updateData } as ProjectRow));

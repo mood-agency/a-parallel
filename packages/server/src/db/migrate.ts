@@ -614,6 +614,15 @@ const migrations: Migration[] = [
       addColumn('pipelines', 'commit_message_prompt', 'TEXT');
     },
   },
+  {
+    name: '034_podman_remote_runtime',
+    up() {
+      addColumn('projects', 'launcher_url', 'TEXT');
+      addColumn('threads', 'runtime', 'TEXT NOT NULL', "'local'");
+      addColumn('threads', 'container_url', 'TEXT');
+      addColumn('threads', 'container_name', 'TEXT');
+    },
+  },
 ];
 
 // ── Public API ──────────────────────────────────────────────────

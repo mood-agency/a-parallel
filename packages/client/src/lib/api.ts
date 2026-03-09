@@ -35,6 +35,18 @@ const isTauri = !!(window as any).__TAURI_INTERNALS__;
 const serverPort = import.meta.env.VITE_SERVER_PORT || '3001';
 const BASE = isTauri ? `http://localhost:${serverPort}/api` : '/api';
 
+/**
+ * Get the API base URL for a thread.
+ * Remote threads route to the container's Funny server.
+ * Local threads (and non-thread calls) use the default base.
+ */
+export function getBaseUrlForThread(thread?: { runtime?: string; containerUrl?: string }): string {
+  if (thread?.runtime === 'remote' && thread.containerUrl) {
+    return `${thread.containerUrl}/api`;
+  }
+  return BASE;
+}
+
 // ── Auth token ──────────────────────────────────────────
 let authToken: string | null = null;
 
@@ -81,6 +93,45 @@ export function getAuthMode() {
 }
 
 // ── Request helper ──────────────────────────────────────
+
+/**
+ * Make a request to a specific thread's server.
+ * For remote threads, routes to the container's Funny server.
+ * For local threads, uses the default local server.
+ */
+function requestForThread<T>(
+  path: string,
+  thread: { runtime?: string; containerUrl?: string } | undefined,
+  init?: RequestInit,
+): ResultAsync<T, DomainError> {
+  const base = getBaseUrlForThread(thread);
+  if (base !== BASE) {
+    // Direct request to remote container (skip circuit breaker, no auth)
+    return ResultAsync.fromPromise(
+      fetch(`${base}${path}`, {
+        ...init,
+        headers: {
+          'Content-Type': 'application/json',
+          ...(init?.headers as Record<string, string>),
+        },
+      }).then(async (res) => {
+        if (!res.ok) {
+          const body = await res.json().catch(() => ({}));
+          throw internal(body.error || `HTTP ${res.status}`);
+        }
+        return res.json() as Promise<T>;
+      }),
+      (error): DomainError => {
+        if (typeof error === 'object' && error !== null && 'type' in error) {
+          return error as DomainError;
+        }
+        return internal(String(error));
+      },
+    );
+  }
+  return request<T>(path, init);
+}
+
 function request<T>(path: string, init?: RequestInit): ResultAsync<T, DomainError> {
   return ResultAsync.fromPromise(
     (async () => {
@@ -207,6 +258,7 @@ export const api = {
       defaultBranch?: string | null;
       urls?: string[] | null;
       systemPrompt?: string | null;
+      launcherUrl?: string | null;
     },
   ) => request<Project>(`/projects/${id}`, { method: 'PATCH', body: JSON.stringify(data) }),
   deleteProject: (id: string) => request<{ ok: boolean }>(`/projects/${id}`, { method: 'DELETE' }),
@@ -256,6 +308,7 @@ export const api = {
     projectId: string;
     title: string;
     mode: string;
+    runtime?: string;
     provider?: string;
     model?: string;
     permissionMode?: string;

@@ -84,7 +84,7 @@ describe('PromptInput', () => {
     expect(onSubmit).toHaveBeenCalledTimes(1);
     expect(onSubmit).toHaveBeenCalledWith(
       'Hello agent',
-      expect.objectContaining({ model: 'sonnet', mode: 'autoEdit' }),
+      expect.objectContaining({ model: 'opus', mode: 'autoEdit' }),
       undefined,
     );
   });

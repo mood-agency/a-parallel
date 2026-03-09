@@ -1,4 +1,6 @@
 #!/usr/bin/env sh
 
+export PATH="$HOME/.bun/bin:$PATH"
+
 # Run tests before push (use workspace-scoped script, not bare bun test)
 bun run test

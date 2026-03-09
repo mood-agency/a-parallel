@@ -12,17 +12,10 @@ import { useTranslation } from 'react-i18next';
 import { useNavigate } from 'react-router-dom';
 import { toast } from 'sonner';
 
+import { ConfirmDialog } from '@/components/ConfirmDialog';
 import { DiffStats } from '@/components/DiffStats';
 import { SlideUpPrompt } from '@/components/SlideUpPrompt';
 import { Button } from '@/components/ui/button';
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogFooter,
-  DialogTitle,
-  DialogDescription,
-} from '@/components/ui/dialog';
 import { HighlightText, normalize } from '@/components/ui/highlight-text';
 import { Input } from '@/components/ui/input';
 import { Popover, PopoverTrigger, PopoverContent } from '@/components/ui/popover';
@@ -765,86 +758,49 @@ export function KanbanView({
         ))}
       </div>
 
-      <Dialog
+      <ConfirmDialog
         open={!!deleteConfirm}
         onOpenChange={(open) => {
           if (!open) setDeleteConfirm(null);
         }}
-      >
-        <DialogContent className="max-w-sm">
-          <DialogHeader>
-            <DialogTitle>{t('dialog.deleteThread')}</DialogTitle>
-            <DialogDescription className="break-all">
-              {t('dialog.deleteThreadDesc', {
-                title:
-                  deleteConfirm?.title && deleteConfirm.title.length > 80
-                    ? deleteConfirm.title.slice(0, 80) + '…'
-                    : deleteConfirm?.title,
-              })}
-            </DialogDescription>
-          </DialogHeader>
-          {deleteConfirm?.isWorktree && (
-            <p className="rounded-md bg-status-warning/10 px-3 py-2 text-xs text-status-warning/80">
-              {t('dialog.worktreeWarning')}
-            </p>
-          )}
-          <DialogFooter>
-            <Button
-              variant="outline"
-              size="sm"
-              data-testid="kanban-delete-cancel"
-              onClick={() => setDeleteConfirm(null)}
-            >
-              {t('common.cancel')}
-            </Button>
-            <Button
-              variant="destructive"
-              size="sm"
-              data-testid="kanban-delete-confirm"
-              onClick={handleDeleteConfirm}
-              loading={deleteLoading}
-            >
-              {t('common.delete')}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+        title={t('dialog.deleteThread')}
+        description={t('dialog.deleteThreadDesc', {
+          title:
+            deleteConfirm?.title && deleteConfirm.title.length > 80
+              ? deleteConfirm.title.slice(0, 80) + '…'
+              : deleteConfirm?.title,
+        })}
+        warning={deleteConfirm?.isWorktree ? t('dialog.worktreeWarning') : undefined}
+        cancelLabel={t('common.cancel')}
+        confirmLabel={t('common.delete')}
+        loading={deleteLoading}
+        onCancel={() => setDeleteConfirm(null)}
+        onConfirm={handleDeleteConfirm}
+      />
 
-      <Dialog
+      <ConfirmDialog
         open={!!mergeWarning}
         onOpenChange={(open) => {
           if (!open) setMergeWarning(null);
         }}
-      >
-        <DialogContent className="max-w-sm">
-          <DialogHeader>
-            <DialogTitle>
-              {t(
-                `dialog.${mergeWarning?.gitState === 'unpushed' ? 'unpushedChanges' : mergeWarning?.gitState === 'dirty' ? 'dirtyChanges' : 'unmergedChanges'}`,
-              )}
-            </DialogTitle>
-            <DialogDescription className="break-all">
-              {t(
-                `dialog.${mergeWarning?.gitState === 'unpushed' ? 'unpushedChangesDesc' : mergeWarning?.gitState === 'dirty' ? 'dirtyChangesDesc' : 'unmergedChangesDesc'}`,
-                {
-                  title:
-                    mergeWarning?.title && mergeWarning.title.length > 80
-                      ? mergeWarning.title.slice(0, 80) + '…'
-                      : mergeWarning?.title,
-                },
-              )}
-            </DialogDescription>
-          </DialogHeader>
-          <DialogFooter>
-            <Button variant="outline" size="sm" onClick={() => setMergeWarning(null)}>
-              {t('common.cancel')}
-            </Button>
-            <Button variant="default" size="sm" onClick={handleMergeWarningConfirm}>
-              {t('common.continue')}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+        title={t(
+          `dialog.${mergeWarning?.gitState === 'unpushed' ? 'unpushedChanges' : mergeWarning?.gitState === 'dirty' ? 'dirtyChanges' : 'unmergedChanges'}`,
+        )}
+        description={t(
+          `dialog.${mergeWarning?.gitState === 'unpushed' ? 'unpushedChangesDesc' : mergeWarning?.gitState === 'dirty' ? 'dirtyChangesDesc' : 'unmergedChangesDesc'}`,
+          {
+            title:
+              mergeWarning?.title && mergeWarning.title.length > 80
+                ? mergeWarning.title.slice(0, 80) + '…'
+                : mergeWarning?.title,
+          },
+        )}
+        variant="default"
+        cancelLabel={t('common.cancel')}
+        confirmLabel={t('common.continue')}
+        onCancel={() => setMergeWarning(null)}
+        onConfirm={handleMergeWarningConfirm}
+      />
 
       <SlideUpPrompt
         open={slideUpOpen}

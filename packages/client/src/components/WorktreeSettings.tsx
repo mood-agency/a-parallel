@@ -3,15 +3,8 @@ import { useEffect, useState, useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
 import { toast } from 'sonner';
 
+import { ConfirmDialog } from '@/components/ConfirmDialog';
 import { Button } from '@/components/ui/button';
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { api } from '@/lib/api';
 import { useAppStore } from '@/stores/app-store';
@@ -288,29 +281,18 @@ export function WorktreeSettings() {
       </div>
 
       {/* Confirm remove dialog */}
-      <Dialog
+      <ConfirmDialog
         open={!!confirmRemove}
         onOpenChange={(open) => {
           if (!open) setConfirmRemove(null);
         }}
-      >
-        <DialogContent className="max-w-sm">
-          <DialogHeader>
-            <DialogTitle>{t('dialog.deleteWorktree')}</DialogTitle>
-            <DialogDescription>
-              {t('dialog.deleteWorktreeDesc', { branch: confirmRemove?.branch })}
-            </DialogDescription>
-          </DialogHeader>
-          <DialogFooter>
-            <Button variant="outline" size="sm" onClick={() => setConfirmRemove(null)}>
-              {t('common.cancel')}
-            </Button>
-            <Button variant="destructive" size="sm" onClick={handleRemoveConfirmed}>
-              {t('common.delete')}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+        title={t('dialog.deleteWorktree')}
+        description={t('dialog.deleteWorktreeDesc', { branch: confirmRemove?.branch })}
+        cancelLabel={t('common.cancel')}
+        confirmLabel={t('common.delete')}
+        onCancel={() => setConfirmRemove(null)}
+        onConfirm={handleRemoveConfirmed}
+      />
     </div>
   );
 }

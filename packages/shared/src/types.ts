@@ -119,6 +119,7 @@ export interface Project {
   defaultBranch?: string;
   urls?: string[];
   systemPrompt?: string;
+  launcherUrl?: string;
   userId: string;
   sortOrder: number;
   createdAt: string;
@@ -127,6 +128,7 @@ export interface Project {
 // ─── Threads ─────────────────────────────────────────────
 
 export type ThreadMode = 'local' | 'worktree';
+export type ThreadRuntime = 'local' | 'remote';
 export type ThreadStatus =
   | 'setting_up'
   | 'idle'
@@ -178,6 +180,9 @@ export interface Thread {
   source: ThreadSource;
   externalRequestId?: string;
   parentThreadId?: string;
+  runtime: ThreadRuntime;
+  containerUrl?: string;
+  containerName?: string;
   commentCount?: number;
   createdAt: string;
   completedAt?: string;
@@ -625,6 +630,7 @@ export type ToolPermission = 'allow' | 'ask' | 'deny';
 export interface CreateThreadRequest {
   title: string;
   mode: ThreadMode;
+  runtime?: ThreadRuntime;
   provider?: AgentProvider;
   model?: AgentModel;
   permissionMode?: PermissionMode;

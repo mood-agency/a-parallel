@@ -12,6 +12,7 @@ import { z } from 'zod';
 // ── Enums ────────────────────────────────────────────────────────
 
 export const threadModeSchema = z.enum(['local', 'worktree']);
+export const threadRuntimeSchema = z.enum(['local', 'remote']);
 export const agentProviderSchema = z.enum(['claude', 'codex', 'gemini']);
 export const claudeModelSchema = z.enum(['sonnet', 'sonnet-4.6', 'opus', 'haiku']);
 export const codexModelSchema = z.enum(['o3', 'o4-mini', 'codex-mini']);
@@ -78,6 +79,7 @@ export const updateProjectSchema = z.object({
   defaultBranch: z.string().nullable().optional(),
   urls: z.array(z.string().url()).nullable().optional(),
   systemPrompt: z.string().max(50000).nullable().optional(),
+  launcherUrl: z.string().url().nullable().optional(),
 });
 
 export const reorderProjectsSchema = z.object({
@@ -88,6 +90,7 @@ export const createThreadSchema = z.object({
   projectId: z.string().min(1),
   title: z.string().optional().default(''),
   mode: threadModeSchema,
+  runtime: threadRuntimeSchema.optional().default('local'),
   provider: agentProviderSchema.optional().default(DEFAULT_PROVIDER),
   model: agentModelSchema.optional().default(DEFAULT_MODEL),
   permissionMode: permissionModeSchema.optional().default(DEFAULT_PERMISSION_MODE),

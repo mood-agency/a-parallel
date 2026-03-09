@@ -232,6 +232,12 @@ export const ThreadItem = memo(function ThreadItem({
               </TooltipContent>
             </Tooltip>
           )}
+          {/* Remote runtime badge */}
+          {thread.runtime === 'remote' && (
+            <span className="flex-shrink-0 rounded bg-violet-500/15 px-1 py-0.5 text-[10px] font-medium leading-none text-violet-500">
+              Remote
+            </span>
+          )}
         </div>
 
         {/* Row 2: Project chip → Git status → Snippet */}

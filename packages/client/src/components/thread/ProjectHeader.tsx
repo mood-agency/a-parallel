@@ -25,6 +25,7 @@ import { useTranslation } from 'react-i18next';
 import { toast } from 'sonner';
 import { useShallow } from 'zustand/react/shallow';
 
+import { ConfirmDialog } from '@/components/ConfirmDialog';
 import { DiffStats } from '@/components/DiffStats';
 import {
   Breadcrumb,
@@ -34,14 +35,6 @@ import {
   BreadcrumbSeparator,
 } from '@/components/ui/breadcrumb';
 import { Button } from '@/components/ui/button';
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from '@/components/ui/dialog';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -241,50 +234,23 @@ const MoreActionsMenu = memo(function MoreActionsMenu() {
           )}
         </DropdownMenuContent>
       </DropdownMenu>
-      <Dialog
+      <ConfirmDialog
         open={deleteOpen}
         onOpenChange={(open) => {
           if (!open) setDeleteOpen(false);
         }}
-      >
-        <DialogContent className="max-w-sm">
-          <DialogHeader>
-            <DialogTitle>{t('dialog.deleteThread')}</DialogTitle>
-            <DialogDescription className="break-all">
-              {t('dialog.deleteThreadDesc', {
-                title:
-                  threadTitle && threadTitle.length > 80
-                    ? threadTitle.slice(0, 80) + '…'
-                    : threadTitle,
-              })}
-            </DialogDescription>
-          </DialogHeader>
-          {isWorktree && (
-            <p className="rounded-md bg-status-warning/10 px-3 py-2 text-xs text-status-warning/80">
-              {t('dialog.worktreeWarning')}
-            </p>
-          )}
-          <DialogFooter>
-            <Button
-              data-testid="header-delete-cancel"
-              variant="outline"
-              size="sm"
-              onClick={() => setDeleteOpen(false)}
-            >
-              {t('common.cancel')}
-            </Button>
-            <Button
-              data-testid="header-delete-confirm"
-              variant="destructive"
-              size="sm"
-              onClick={handleDeleteConfirm}
-              loading={deleteLoading}
-            >
-              {t('common.delete')}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+        title={t('dialog.deleteThread')}
+        description={t('dialog.deleteThreadDesc', {
+          title:
+            threadTitle && threadTitle.length > 80 ? threadTitle.slice(0, 80) + '…' : threadTitle,
+        })}
+        warning={isWorktree ? t('dialog.worktreeWarning') : undefined}
+        cancelLabel={t('common.cancel')}
+        confirmLabel={t('common.delete')}
+        loading={deleteLoading}
+        onCancel={() => setDeleteOpen(false)}
+        onConfirm={handleDeleteConfirm}
+      />
     </>
   );
 });

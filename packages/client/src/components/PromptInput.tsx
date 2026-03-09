@@ -218,6 +218,7 @@ interface PromptInputProps {
       model: string;
       mode: string;
       threadMode?: string;
+      runtime?: string;
       baseBranch?: string;
       cwd?: string;
       sendToBacklog?: boolean;
@@ -288,6 +289,8 @@ export const PromptInput = memo(function PromptInput({
   const { provider, model } = useMemo(() => parseUnifiedModel(unifiedModel), [unifiedModel]);
   const [mode, setMode] = useState<string>(defaultPermissionMode);
   const [createWorktree, setCreateWorktree] = useState(defaultThreadMode === 'worktree');
+  const [runtime, setRuntime] = useState<'local' | 'remote'>('local');
+  const hasLauncher = !!effectiveProject?.launcherUrl;
 
   const unifiedModelGroups = useMemo(() => getUnifiedModelOptions(t), [t]);
 
@@ -913,6 +916,7 @@ export const PromptInput = memo(function PromptInput({
         ...(isNewThread
           ? {
               threadMode: createWorktree ? 'worktree' : 'local',
+              runtime: runtime,
               baseBranch: selectedBranch || undefined,
               sendToBacklog,
             }
@@ -1588,6 +1592,16 @@ export const PromptInput = memo(function PromptInput({
                   />
                   <span>{t('thread.mode.worktree')}</span>
                 </label>
+                {hasLauncher && (
+                  <ModeSelect
+                    value={runtime}
+                    onChange={(v) => setRuntime(v as 'local' | 'remote')}
+                    modes={[
+                      { value: 'local', label: 'Local' },
+                      { value: 'remote', label: 'Remote' },
+                    ]}
+                  />
+                )}
                 {showBacklog && (
                   <button
                     data-testid="prompt-backlog-toggle"

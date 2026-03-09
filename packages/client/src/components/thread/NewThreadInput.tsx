@@ -38,6 +38,7 @@ export function NewThreadInput() {
       model: string;
       mode: string;
       threadMode?: string;
+      runtime?: string;
       baseBranch?: string;
       sendToBacklog?: boolean;
       fileReferences?: { path: string }[];
@@ -80,6 +81,7 @@ export function NewThreadInput() {
       projectId: effectiveProjectId,
       title: prompt.slice(0, 200),
       mode: threadMode,
+      runtime: opts.runtime as 'local' | 'remote' | undefined,
       provider: opts.provider,
       model: opts.model,
       permissionMode: opts.mode,

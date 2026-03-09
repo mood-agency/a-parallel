@@ -1,6 +1,22 @@
+import path from 'path';
+
 import { defineConfig } from 'vitest/config';
 
+const shared = path.resolve(__dirname, '../shared/src');
+
 export default defineConfig({
+  resolve: {
+    alias: {
+      '@funny/shared/errors': path.join(shared, 'errors.ts'),
+      '@funny/shared/models': path.join(shared, 'models.ts'),
+      '@funny/shared/thread-machine': path.join(shared, 'thread-machine.ts'),
+      '@funny/shared/pipeline-engine': path.join(shared, 'pipeline-engine.ts'),
+      '@funny/shared/prompts': path.join(shared, 'prompts/index.ts'),
+      '@funny/shared': path.join(shared, 'types.ts'),
+      // Zod v4 ESM re-exports break Vite SSR transform; use CJS build instead
+      zod: path.resolve(__dirname, 'node_modules/zod/index.cjs'),
+    },
+  },
   test: {
     include: ['src/**/*.test.ts'],
     exclude: [

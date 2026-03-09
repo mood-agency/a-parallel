@@ -401,6 +401,51 @@ function ProjectSystemPrompt({
   );
 }
 
+/* ── Podman launcher URL ── */
+function LauncherUrlSetting({
+  projectId,
+  currentUrl,
+  onSave,
+}: {
+  projectId: string;
+  currentUrl?: string;
+  onSave: (projectId: string, data: { launcherUrl: string | null }) => void;
+}) {
+  const [value, setValue] = useState(currentUrl || '');
+  const { t } = useTranslation();
+
+  useEffect(() => {
+    setValue(currentUrl || '');
+  }, [currentUrl]);
+
+  const save = () => {
+    const trimmed = value.trim();
+    onSave(projectId, { launcherUrl: trimmed || null });
+  };
+
+  return (
+    <SettingRow
+      title={t('settings.launcherUrl', 'Podman Launcher URL')}
+      description={t(
+        'settings.launcherUrlDesc',
+        'URL of the Podman launcher API for remote container execution',
+      )}
+    >
+      <Input
+        value={value}
+        onChange={(e) => setValue(e.target.value)}
+        onBlur={save}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter') save();
+        }}
+        placeholder="http://localhost:4040"
+        className="h-8 w-[240px] font-mono text-xs"
+        data-testid="settings-launcher-url"
+      />
+    </SettingRow>
+  );
+}
+
 /* ── General settings content ── */
 function GeneralSettings() {
   const { toolPermissions, setToolPermission, resetToolPermissions } = useSettingsStore(
@@ -607,6 +652,11 @@ function GeneralSettings() {
             <ProjectSystemPrompt
               projectId={selectedProject.id}
               currentPrompt={selectedProject.systemPrompt}
+              onSave={saveProject}
+            />
+            <LauncherUrlSetting
+              projectId={selectedProject.id}
+              currentUrl={selectedProject.launcherUrl}
               onSave={saveProject}
             />
           </div>

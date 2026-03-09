@@ -13,6 +13,7 @@ import { useState, useCallback, useEffect, useRef, useMemo, startTransition } fr
 import { useTranslation } from 'react-i18next';
 import { toast } from 'sonner';
 
+import { ConfirmDialog } from '@/components/ConfirmDialog';
 import { Button } from '@/components/ui/button';
 import {
   Dialog,
@@ -602,95 +603,47 @@ export function AppSidebar() {
       )}
 
       {/* Archive confirmation dialog */}
-      <Dialog
+      <ConfirmDialog
         open={!!archiveConfirm}
         onOpenChange={(open) => {
           if (!open) setArchiveConfirm(null);
         }}
-      >
-        <DialogContent className="max-w-sm">
-          <DialogHeader>
-            <DialogTitle>{t('dialog.archiveThread')}</DialogTitle>
-            <DialogDescription className="break-all">
-              {t('dialog.archiveThreadDesc', {
-                title:
-                  archiveConfirm?.title && archiveConfirm.title.length > 80
-                    ? archiveConfirm.title.slice(0, 80) + '…'
-                    : archiveConfirm?.title,
-              })}
-            </DialogDescription>
-          </DialogHeader>
-          {archiveConfirm?.isWorktree && (
-            <p className="rounded-md bg-status-warning/10 px-3 py-2 text-xs text-status-warning/80">
-              {t('dialog.worktreeWarning')}
-            </p>
-          )}
-          <DialogFooter>
-            <Button
-              data-testid="archive-thread-cancel"
-              variant="outline"
-              size="sm"
-              onClick={() => setArchiveConfirm(null)}
-            >
-              {t('common.cancel')}
-            </Button>
-            <Button
-              data-testid="archive-thread-confirm"
-              size="sm"
-              onClick={handleArchiveConfirm}
-              loading={actionLoading}
-            >
-              {t('sidebar.archive')}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+        title={t('dialog.archiveThread')}
+        description={t('dialog.archiveThreadDesc', {
+          title:
+            archiveConfirm?.title && archiveConfirm.title.length > 80
+              ? archiveConfirm.title.slice(0, 80) + '…'
+              : archiveConfirm?.title,
+        })}
+        warning={archiveConfirm?.isWorktree ? t('dialog.worktreeWarning') : undefined}
+        cancelLabel={t('common.cancel')}
+        confirmLabel={t('sidebar.archive')}
+        variant="default"
+        loading={actionLoading}
+        onCancel={() => setArchiveConfirm(null)}
+        onConfirm={handleArchiveConfirm}
+      />
 
       {/* Delete thread confirmation dialog */}
-      <Dialog
+      <ConfirmDialog
         open={!!deleteThreadConfirm}
         onOpenChange={(open) => {
           if (!open) setDeleteThreadConfirm(null);
         }}
-      >
-        <DialogContent className="max-w-sm">
-          <DialogHeader>
-            <DialogTitle>{t('dialog.deleteThread')}</DialogTitle>
-            <DialogDescription className="break-all">
-              {t('dialog.deleteThreadDesc', {
-                title:
-                  deleteThreadConfirm?.title && deleteThreadConfirm.title.length > 80
-                    ? deleteThreadConfirm.title.slice(0, 80) + '…'
-                    : deleteThreadConfirm?.title,
-              })}
-            </DialogDescription>
-          </DialogHeader>
-          {deleteThreadConfirm?.isWorktree && (
-            <p className="rounded-md bg-status-warning/10 px-3 py-2 text-xs text-status-warning/80">
-              {t('dialog.worktreeWarning')}
-            </p>
-          )}
-          <DialogFooter>
-            <Button
-              data-testid="delete-thread-cancel"
-              variant="outline"
-              size="sm"
-              onClick={() => setDeleteThreadConfirm(null)}
-            >
-              {t('common.cancel')}
-            </Button>
-            <Button
-              data-testid="delete-thread-confirm"
-              variant="destructive"
-              size="sm"
-              onClick={handleDeleteThreadConfirm}
-              loading={actionLoading}
-            >
-              {t('common.delete')}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+        title={t('dialog.deleteThread')}
+        description={t('dialog.deleteThreadDesc', {
+          title:
+            deleteThreadConfirm?.title && deleteThreadConfirm.title.length > 80
+              ? deleteThreadConfirm.title.slice(0, 80) + '…'
+              : deleteThreadConfirm?.title,
+        })}
+        warning={deleteThreadConfirm?.isWorktree ? t('dialog.worktreeWarning') : undefined}
+        cancelLabel={t('common.cancel')}
+        confirmLabel={t('common.delete')}
+        loading={actionLoading}
+        onCancel={() => setDeleteThreadConfirm(null)}
+        onConfirm={handleDeleteThreadConfirm}
+      />
 
       {/* Rename project dialog */}
       <Dialog
@@ -746,40 +699,19 @@ export function AppSidebar() {
       </Dialog>
 
       {/* Delete project confirmation dialog */}
-      <Dialog
+      <ConfirmDialog
         open={!!deleteProjectConfirm}
         onOpenChange={(open) => {
           if (!open) setDeleteProjectConfirm(null);
         }}
-      >
-        <DialogContent className="max-w-sm">
-          <DialogHeader>
-            <DialogTitle>{t('dialog.deleteProject')}</DialogTitle>
-            <DialogDescription>
-              {t('dialog.deleteProjectDesc', { name: deleteProjectConfirm?.name })}
-            </DialogDescription>
-          </DialogHeader>
-          <DialogFooter>
-            <Button
-              data-testid="delete-project-cancel"
-              variant="outline"
-              size="sm"
-              onClick={() => setDeleteProjectConfirm(null)}
-            >
-              {t('common.cancel')}
-            </Button>
-            <Button
-              data-testid="delete-project-confirm"
-              variant="destructive"
-              size="sm"
-              onClick={handleDeleteProjectConfirm}
-              loading={actionLoading}
-            >
-              {t('common.delete')}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+        title={t('dialog.deleteProject')}
+        description={t('dialog.deleteProjectDesc', { name: deleteProjectConfirm?.name })}
+        cancelLabel={t('common.cancel')}
+        confirmLabel={t('common.delete')}
+        loading={actionLoading}
+        onCancel={() => setDeleteProjectConfirm(null)}
+        onConfirm={handleDeleteProjectConfirm}
+      />
 
       <SidebarRail />
     </Sidebar>

@@ -36,6 +36,8 @@ import { startAgent, stopAgent, isAgentRunning, cleanupThreadState } from './age
 import { stopCommandsByCwd } from './command-runner.js';
 import { cleanupExternalThread } from './ingest-mapper.js';
 import * as mq from './message-queue.js';
+import { launchContainer, stopContainer } from './podman-service.js';
+import { getGithubToken } from './profile-service.js';
 import * as pm from './project-manager.js';
 import { threadEventBus } from './thread-event-bus.js';
 import * as tm from './thread-manager.js';
@@ -166,6 +168,7 @@ export async function createIdleThread(params: CreateIdleThreadParams) {
     userId: params.userId,
     title: params.title,
     mode: params.mode,
+    runtime: 'local' as const,
     provider: 'claude' as const,
     permissionMode: 'autoEdit' as const,
     model: 'sonnet' as const,
@@ -213,6 +216,7 @@ export interface CreateAndStartThreadParams {
   userId: string;
   title?: string;
   mode: 'local' | 'worktree';
+  runtime?: 'local' | 'remote';
   provider?: string;
   model?: string;
   permissionMode?: string;
@@ -267,6 +271,7 @@ export async function createAndStartThread(params: CreateAndStartThreadParams) {
       userId: params.userId,
       title: params.title || params.prompt,
       mode: params.mode,
+      runtime: (params.runtime || 'local') as 'local' | 'remote',
       provider: resolvedProvider,
       permissionMode: resolvedPermissionMode,
       model: resolvedModel,
@@ -414,6 +419,7 @@ export async function createAndStartThread(params: CreateAndStartThreadParams) {
       model: resolvedModel,
       source: params.source || 'web',
       status: 'setting_up' as const,
+      runtime: (params.runtime || 'local') as 'local' | 'remote',
       branch: threadBranch,
       baseBranch: resolvedBaseBranch || threadBranch,
       worktreePath: undefined as string | undefined,
@@ -505,6 +511,7 @@ export async function createAndStartThread(params: CreateAndStartThreadParams) {
     model: resolvedModel,
     source: params.source || 'web',
     status: 'pending' as const,
+    runtime: (params.runtime || 'local') as 'local' | 'remote',
     branch: threadBranch,
     baseBranch: resolvedBaseBranch || (params.mode === 'local' ? threadBranch : undefined),
     worktreePath,
@@ -530,6 +537,77 @@ export async function createAndStartThread(params: CreateAndStartThreadParams) {
 
   // Augment prompt with file contents if file references were provided
   const augmentedPrompt = await augmentPromptWithFiles(params.prompt, params.fileReferences, cwd);
+
+  // ── Remote runtime: launch container instead of local agent ──
+  if (params.runtime === 'remote') {
+    if (!project.launcherUrl) {
+      throw new ThreadServiceError('Project has no launcher URL configured', 400);
+    }
+
+    const branch = threadBranch || 'main';
+    const githubToken = getGithubToken(params.userId);
+
+    // Launch container in background
+    (async () => {
+      tm.updateThread(threadId, { status: 'setting_up' });
+      emitThreadUpdated(params.userId, threadId, { status: 'setting_up' });
+
+      const result = await launchContainer({
+        threadId,
+        projectPath: project.path,
+        launcherUrl: project.launcherUrl!,
+        branch,
+        githubToken: githubToken ?? undefined,
+      });
+
+      if (result.isErr()) {
+        log.error('Failed to launch container', { threadId, error: result.error.message });
+        tm.updateThread(threadId, { status: 'failed' });
+        emitThreadUpdated(params.userId, threadId, { status: 'failed' });
+        return;
+      }
+
+      const { containerUrl, containerName } = result.value;
+      tm.updateThread(threadId, {
+        containerUrl,
+        containerName,
+        status: 'running',
+      });
+      emitThreadUpdated(params.userId, threadId, {
+        status: 'running',
+        containerUrl,
+        containerName,
+      });
+
+      // Forward the initial prompt to the container's Funny server
+      try {
+        const res = await fetch(`${containerUrl}/api/threads`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            projectId: params.projectId,
+            title: params.title || params.prompt,
+            mode: params.mode,
+            provider: resolvedProvider,
+            model: resolvedModel,
+            permissionMode: resolvedPermissionMode,
+            prompt: augmentedPrompt,
+            images: params.images,
+            allowedTools: params.allowedTools,
+            disallowedTools: params.disallowedTools,
+          }),
+        });
+        if (!res.ok) {
+          const text = await res.text().catch(() => 'Unknown error');
+          log.error('Container rejected thread creation', { threadId, status: res.status, text });
+        }
+      } catch (err) {
+        log.error('Failed to forward prompt to container', { threadId, error: String(err) });
+      }
+    })();
+
+    return thread;
+  }
 
   // Start agent (throws on failure — caller handles HTTP error response)
   await startAgent(
@@ -1130,6 +1208,18 @@ export async function deleteThread(threadId: string): Promise<void> {
           log.warn('Failed to remove branch', { namespace: 'cleanup', error: String(e) });
         });
       }
+    }
+  }
+
+  // Stop container for remote threads (best-effort)
+  if (thread.containerName && thread.runtime === 'remote') {
+    const project = pm.getProject(thread.projectId);
+    if (project?.launcherUrl) {
+      stopContainer({ containerName: thread.containerName, launcherUrl: project.launcherUrl })
+        .then(() => {})
+        .catch((e) =>
+          log.warn('Failed to stop container', { namespace: 'podman', error: String(e) }),
+        );
     }
   }
 

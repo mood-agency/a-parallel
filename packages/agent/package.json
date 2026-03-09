@@ -16,6 +16,7 @@
   "dependencies": {
     "@funny/core": "*",
     "@funny/funny-client": "*",
+    "@funny/shared": "*",
     "@hono/zod-validator": "^0.4.0",
     "eventemitter3": "^5.0.1",
     "hono": "^4.11.9",

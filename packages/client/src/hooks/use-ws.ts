@@ -18,6 +18,13 @@ let _wasConnected = false;
 let stopped = false;
 let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
 
+// ── Remote container WS connections ─────────────────────────────
+// For threads with runtime === 'remote', we open a secondary WS to the
+// container's server. Events from remote WS use the same handleMessage
+// dispatcher — they carry threadId so stores route them correctly.
+const remoteConnections = new Map<string, WebSocket>(); // containerUrl → ws
+const remoteReconnectTimers = new Map<string, ReturnType<typeof setTimeout>>();
+
 // ── WS message batching ─────────────────────────────────────────
 // Rapid WS updates (e.g. streaming tokens) can overwhelm React with
 // constant re-renders. We batch high-frequency events (agent:message,
@@ -261,8 +268,8 @@ function handleMessage(e: MessageEvent) {
       if (data.archived) {
         store.refreshAllLoadedThreads();
       }
-      if (data.branch || data.worktreePath) {
-        // Branch/worktree info arrived from agent — refresh to pick it up
+      if (data.branch || data.worktreePath || data.containerUrl) {
+        // Branch/worktree/container info arrived — refresh to pick it up
         if (store.activeThread?.id === threadId) {
           store.refreshActiveThread();
         }
@@ -369,6 +376,68 @@ function handleMessage(e: MessageEvent) {
   }
 }
 
+// ── Remote WS management ─────────────────────────────────────────
+
+/** Open a WS connection to a remote container server (if not already open). */
+export function connectRemoteWS(containerUrl: string) {
+  if (stopped || remoteConnections.has(containerUrl)) return;
+
+  const wsUrl = `${containerUrl.replace(/^http/, 'ws')}/ws`;
+  wsLog.info('connecting remote WS', { containerUrl });
+
+  const ws = new WebSocket(wsUrl);
+  remoteConnections.set(containerUrl, ws);
+
+  ws.onopen = () => {
+    wsLog.info('remote WS connected', { containerUrl });
+  };
+
+  ws.onmessage = handleMessage;
+
+  ws.onclose = () => {
+    remoteConnections.delete(containerUrl);
+    if (stopped) return;
+    // Reconnect after delay if the connection was expected
+    const timer = setTimeout(() => {
+      remoteReconnectTimers.delete(containerUrl);
+      // Only reconnect if a thread still needs this container
+      const active = useThreadStore.getState().activeThread;
+      if (active?.runtime === 'remote' && active?.containerUrl === containerUrl) {
+        connectRemoteWS(containerUrl);
+      }
+    }, 3000);
+    remoteReconnectTimers.set(containerUrl, timer);
+  };
+
+  ws.onerror = () => {
+    ws.close();
+  };
+}
+
+/** Close a remote container WS connection. */
+export function disconnectRemoteWS(containerUrl: string) {
+  const timer = remoteReconnectTimers.get(containerUrl);
+  if (timer) {
+    clearTimeout(timer);
+    remoteReconnectTimers.delete(containerUrl);
+  }
+  const ws = remoteConnections.get(containerUrl);
+  if (ws) {
+    ws.onmessage = null;
+    ws.onclose = null;
+    ws.onerror = null;
+    ws.close();
+    remoteConnections.delete(containerUrl);
+  }
+}
+
+/** Close all remote WS connections. */
+function disconnectAllRemote() {
+  for (const url of [...remoteConnections.keys()]) {
+    disconnectRemoteWS(url);
+  }
+}
+
 function connect() {
   if (stopped) return;
 
@@ -441,6 +510,7 @@ function setupWS(ws: WebSocket) {
 
 function teardown() {
   stopped = true;
+  disconnectAllRemote();
   if (reconnectTimer) {
     clearTimeout(reconnectTimer);
     reconnectTimer = null;
@@ -473,7 +543,29 @@ export function useWS() {
       connect();
     }
 
+    // Subscribe to active thread changes to auto-manage remote WS connections
+    let lastContainerUrl: string | undefined;
+    const unsub = useThreadStore.subscribe((state) => {
+      const thread = state.activeThread;
+      const containerUrl = thread?.runtime === 'remote' ? thread.containerUrl : undefined;
+
+      if (containerUrl === lastContainerUrl) return;
+
+      // Disconnect from previous remote container
+      if (lastContainerUrl) {
+        disconnectRemoteWS(lastContainerUrl);
+      }
+
+      // Connect to new remote container
+      if (containerUrl) {
+        connectRemoteWS(containerUrl);
+      }
+
+      lastContainerUrl = containerUrl;
+    });
+
     return () => {
+      unsub();
       refCount--;
       if (refCount === 0) {
         teardown();

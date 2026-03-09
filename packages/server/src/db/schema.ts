@@ -26,6 +26,7 @@ export const projects = sqliteTable('projects', {
   defaultBranch: text('default_branch'),
   urls: text('urls'), // JSON-encoded string[] of URL patterns for Chrome extension auto-detection
   systemPrompt: text('system_prompt'),
+  launcherUrl: text('launcher_url'),
   userId: text('user_id').notNull().default('__local__'),
   sortOrder: integer('sort_order').notNull().default(0),
   createdAt: text('created_at').notNull(),
@@ -56,6 +57,9 @@ export const threads = sqliteTable('threads', {
   source: text('source').notNull().default('web'), // 'web' | 'chrome_extension' | 'api' | 'automation' | 'ingest'
   externalRequestId: text('external_request_id'),
   parentThreadId: text('parent_thread_id'),
+  runtime: text('runtime').notNull().default('local'), // 'local' | 'remote'
+  containerUrl: text('container_url'),
+  containerName: text('container_name'),
   initTools: text('init_tools'), // JSON-encoded string[] of available tools
   initCwd: text('init_cwd'), // Working directory reported by agent
   createdAt: text('created_at').notNull(),

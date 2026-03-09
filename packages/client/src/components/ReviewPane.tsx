@@ -38,6 +38,7 @@ import { useState, useEffect, useRef, useMemo, useCallback, memo, Suspense } fro
 import { useTranslation } from 'react-i18next';
 import { toast } from 'sonner';
 
+import { ConfirmDialog } from '@/components/ConfirmDialog';
 import { Button } from '@/components/ui/button';
 import {
   Dialog,
@@ -1940,54 +1941,41 @@ export function ReviewPane() {
       </div>
 
       {/* Confirmation dialog for destructive actions */}
-      <Dialog
+      <ConfirmDialog
         open={!!confirmDialog}
         onOpenChange={(open) => {
           if (!open) setConfirmDialog(null);
         }}
-      >
-        <DialogContent className="max-w-sm">
-          <DialogHeader>
-            <DialogTitle>
-              {confirmDialog?.type === 'revert' || confirmDialog?.type === 'discard-all'
-                ? t('review.discardChanges', 'Discard changes')
-                : t('review.undoLastCommit', 'Undo last commit')}
-            </DialogTitle>
-            <DialogDescription>
-              {confirmDialog?.type === 'revert'
-                ? t('review.revertConfirm', { paths: confirmDialog?.path })
-                : confirmDialog?.type === 'discard-all'
-                  ? t('review.discardAllConfirm', {
-                      count: confirmDialog?.paths?.length,
-                      defaultValue: `Discard changes in ${confirmDialog?.paths?.length} file(s)? This cannot be undone.`,
-                    })
-                  : t('review.resetSoftConfirm', 'Undo the last commit? Changes will be kept.')}
-            </DialogDescription>
-          </DialogHeader>
-          <div className="mt-2 flex justify-end gap-2">
-            <Button variant="outline" size="sm" onClick={() => setConfirmDialog(null)}>
-              {t('common.cancel', 'Cancel')}
-            </Button>
-            <Button
-              variant="destructive"
-              size="sm"
-              onClick={async () => {
-                const dialog = confirmDialog;
-                setConfirmDialog(null);
-                if (dialog?.type === 'revert' && dialog.path) {
-                  await executeRevert(dialog.path);
-                } else if (dialog?.type === 'discard-all' && dialog.paths) {
-                  await executeDiscardAll(dialog.paths);
-                } else if (dialog?.type === 'reset') {
-                  await executeResetSoft();
-                }
-              }}
-            >
-              {t('common.confirm', 'Confirm')}
-            </Button>
-          </div>
-        </DialogContent>
-      </Dialog>
+        title={
+          confirmDialog?.type === 'revert' || confirmDialog?.type === 'discard-all'
+            ? t('review.discardChanges', 'Discard changes')
+            : t('review.undoLastCommit', 'Undo last commit')
+        }
+        description={
+          confirmDialog?.type === 'revert'
+            ? t('review.revertConfirm', { paths: confirmDialog?.path })
+            : confirmDialog?.type === 'discard-all'
+              ? t('review.discardAllConfirm', {
+                  count: confirmDialog?.paths?.length,
+                  defaultValue: `Discard changes in ${confirmDialog?.paths?.length} file(s)? This cannot be undone.`,
+                })
+              : t('review.resetSoftConfirm', 'Undo the last commit? Changes will be kept.')
+        }
+        cancelLabel={t('common.cancel', 'Cancel')}
+        confirmLabel={t('common.confirm', 'Confirm')}
+        onCancel={() => setConfirmDialog(null)}
+        onConfirm={async () => {
+          const dialog = confirmDialog;
+          setConfirmDialog(null);
+          if (dialog?.type === 'revert' && dialog.path) {
+            await executeRevert(dialog.path);
+          } else if (dialog?.type === 'discard-all' && dialog.paths) {
+            await executeDiscardAll(dialog.paths);
+          } else if (dialog?.type === 'reset') {
+            await executeResetSoft();
+          }
+        }}
+      />
 
       {/* Create PR dialog */}
       <Dialog

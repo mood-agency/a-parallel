@@ -5,6 +5,7 @@ import {
 import type { Project, Thread } from '@funny/shared';
 import {
   ChevronRight,
+  Folder,
   FolderOpenDot,
   Trash2,
   MoreVertical,
@@ -301,6 +302,7 @@ export const ProjectItem = memo(function ProjectItem({
             data-testid={`project-name-${project.id}`}
             className="ml-1.5 flex min-w-0 flex-1 items-center gap-1.5"
           >
+            <Folder className="h-3.5 w-3.5 flex-shrink-0 text-muted-foreground" />
             <span className="truncate text-sm font-medium">{project.name}</span>
           </span>
         </div>

@@ -43,11 +43,11 @@ export const DIFF_VIEWER_STYLES = {
   line: {
     fontSize: 'inherit',
     lineHeight: '1.4',
-    fontFamily: "'Geist Mono', ui-monospace, monospace",
+    fontFamily: 'var(--font-mono)',
   },
   contentText: {
     whiteSpace: 'pre',
-    fontFamily: "'Geist Mono', ui-monospace, monospace",
+    fontFamily: 'var(--font-mono)',
     // wordBreak: 'break-all',
     // overflow: 'hidden',
   },

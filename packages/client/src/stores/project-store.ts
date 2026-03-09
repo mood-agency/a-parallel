@@ -31,6 +31,7 @@ interface ProjectState {
       defaultBranch?: string | null;
       urls?: string[] | null;
       systemPrompt?: string | null;
+      launcherUrl?: string | null;
     },
   ) => Promise<void>;
   deleteProject: (projectId: string) => Promise<void>;

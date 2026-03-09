@@ -148,11 +148,11 @@ describe('createThreadSchema', () => {
     }
   });
 
-  test('applies default model to "sonnet"', () => {
+  test('applies default model to "opus"', () => {
     const result = createThreadSchema.safeParse(validThread);
     expect(result.success).toBe(true);
     if (result.success) {
-      expect(result.data.model).toBe('sonnet');
+      expect(result.data.model).toBe('opus');
     }
   });
 
@@ -496,7 +496,7 @@ describe('validate', () => {
     });
     expect(result.isOk()).toBe(true);
     if (result.isOk()) {
-      expect(result.value.model).toBe('sonnet');
+      expect(result.value.model).toBe('opus');
       expect(result.value.permissionMode).toBe('autoEdit');
     }
   });

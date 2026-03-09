@@ -30,6 +30,8 @@
 
 @layer base {
   :root {
+    --font-sans: 'Geist Sans', 'Geist Sans Fallback', sans-serif;
+    --font-mono: 'Geist Mono', ui-monospace, monospace;
     --background: 0 0% 100%;
     --foreground: 240 10% 3.9%;
     --card: 0 0% 100%;
@@ -340,6 +342,8 @@
 
   /* ── Monochrome Dark (Black & White) ─────────────────────── */
   .theme-monochrome-dark {
+    --font-sans: 'IBM Plex Sans', sans-serif;
+    --font-mono: 'IBM Plex Mono', ui-monospace, monospace;
     --background: 0 0% 7%;
     --foreground: 0 0% 93%;
     --card: 0 0% 5%;
@@ -433,7 +437,7 @@
   }
 
   body {
-    font-family: 'Geist Sans', 'Geist Sans Fallback', sans-serif;
+    font-family: var(--font-sans);
     @apply bg-background text-foreground;
   }
 
@@ -528,7 +532,7 @@
   }
 
   .prose code {
-    font-family: ui-monospace, monospace;
+    font-family: var(--font-mono);
   }
 
   .prose table {
@@ -634,7 +638,7 @@
 
 .code-viewer .shiki code {
   display: block;
-  font-family: 'Geist Mono', ui-monospace, monospace;
+  font-family: var(--font-mono);
 }
 
 .code-viewer .shiki code .line {
