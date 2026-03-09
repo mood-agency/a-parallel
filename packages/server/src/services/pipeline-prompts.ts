@@ -5,27 +5,21 @@
  * @domain layer: application
  *
  * All prompt templates used by server-side pipeline and git operations.
+ * Each builder accepts an optional custom prompt override that replaces
+ * the hardcoded default while preserving required structural elements.
  */
 
 // ── Pipeline review/fix prompts ─────────────────────────────
 
-export function buildReviewerPrompt(commitSha: string | undefined): string {
+export function buildReviewerPrompt(commitSha: string | undefined, customPrompt?: string): string {
   const shaRef = commitSha ? commitSha : 'HEAD';
-  return `You are a code reviewer. Analyze the changes in the latest commit.
 
-Run this command to get the diff:
+  const diffInstruction = `Run this command to get the diff:
 \`git diff ${shaRef}~1..${shaRef}\`
 
-If that fails (first commit), run: \`git show ${shaRef}\`
+If that fails (first commit), run: \`git show ${shaRef}\``;
 
-Review the diff for:
-- Bugs and logic errors
-- Security vulnerabilities
-- Performance issues
-- Missing error handling
-- Code that contradicts existing patterns
-
-You MUST respond with a JSON block at the end of your message in exactly this format:
+  const jsonFormat = `You MUST respond with a JSON block at the end of your message in exactly this format:
 \`\`\`json
 {
   "verdict": "pass" | "fail",
@@ -42,11 +36,40 @@ You MUST respond with a JSON block at the end of your message in exactly this fo
 }
 \`\`\`
 
-If there are no significant issues, return verdict "pass" with an empty findings array.
+If there are no significant issues, return verdict "pass" with an empty findings array.`;
+
+  if (customPrompt) {
+    return `${customPrompt}
+
+${diffInstruction}
+
+${jsonFormat}`;
+  }
+
+  return `You are a code reviewer. Analyze the changes in the latest commit.
+
+${diffInstruction}
+
+Review the diff for:
+- Bugs and logic errors
+- Security vulnerabilities
+- Performance issues
+- Missing error handling
+- Code that contradicts existing patterns
+
+${jsonFormat}
 Only flag real problems — do not flag style preferences or nitpicks unless they indicate bugs.`;
 }
 
-export function buildCorrectorPrompt(findings: string): string {
+export function buildCorrectorPrompt(findings: string, customPrompt?: string): string {
+  if (customPrompt) {
+    return `${customPrompt}
+
+${findings}
+
+Do NOT create a git commit — just fix the files.`;
+  }
+
   return `You are a code corrector. The reviewer found the following issues that need to be fixed:
 
 ${findings}
@@ -67,19 +90,32 @@ export function buildPrecommitFixerPrompt(
   hookName: string,
   errorOutput: string,
   stagedFiles: string[],
+  customPrompt?: string,
 ): string {
-  return `A pre-commit hook "${hookName}" failed with the following error:
+  const contextBlock = `A pre-commit hook "${hookName}" failed with the following error:
 
 \`\`\`
 ${errorOutput}
 \`\`\`
 
 The staged files are:
-${stagedFiles.map((f) => `- ${f}`).join('\n')}
+${stagedFiles.map((f) => `- ${f}`).join('\n')}`;
+
+  const suffix = `After fixing, stage your changes with \`git add\`.
+Do NOT create a commit.`;
+
+  if (customPrompt) {
+    return `${contextBlock}
+
+${customPrompt}
+
+${suffix}`;
+  }
+
+  return `${contextBlock}
 
 Fix the issues reported by the hook. Only modify the files that have errors.
-After fixing, stage your changes with \`git add\`.
-Do NOT create a commit.`;
+${suffix}`;
 }
 
 // ── Commit message generation prompts ───────────────────────
@@ -87,17 +123,27 @@ Do NOT create a commit.`;
 export const COMMIT_MESSAGE_SYSTEM_PROMPT =
   'You are a commit message generator. Output only the requested format, nothing else.';
 
-export function buildCommitMessagePrompt(diffSummary: string): string {
-  return `You are a commit message generator. Based on the following git diff, generate a commit title and a commit body.
-
-Rules:
+export function buildCommitMessagePrompt(diffSummary: string, customPrompt?: string): string {
+  const formatRules = `Rules:
 - The title must use conventional commits style (e.g. "feat: ...", "fix: ...", "refactor: ..."), be concise (max 72 chars), and summarize the change.
 - The body must be a short paragraph (2-4 sentences) explaining what changed and why.
 - Output EXACTLY in this format, with the separator line:
 TITLE: <the title>
 BODY: <the body>
 
-No quotes, no markdown, no extra explanation.
+No quotes, no markdown, no extra explanation.`;
+
+  if (customPrompt) {
+    return `${customPrompt}
+
+${formatRules}
+
+${diffSummary}`;
+  }
+
+  return `You are a commit message generator. Based on the following git diff, generate a commit title and a commit body.
+
+${formatRules}
 
 ${diffSummary}`;
 }

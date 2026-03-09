@@ -77,6 +77,7 @@ export const updateProjectSchema = z.object({
   defaultPermissionMode: permissionModeSchema.nullable().optional(),
   defaultBranch: z.string().nullable().optional(),
   urls: z.array(z.string().url()).nullable().optional(),
+  systemPrompt: z.string().max(50000).nullable().optional(),
 });
 
 export const reorderProjectsSchema = z.object({

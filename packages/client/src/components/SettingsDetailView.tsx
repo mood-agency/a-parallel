@@ -1,7 +1,16 @@
 import type { ToolPermission } from '@funny/shared';
 import type { AgentProvider } from '@funny/shared';
 import { getDefaultModel, DEFAULT_PROVIDER, DEFAULT_FOLLOW_UP_MODE } from '@funny/shared/models';
-import { Monitor, GitBranch, RotateCcw, Check, ChevronsUpDown, X, Plus } from 'lucide-react';
+import {
+  Monitor,
+  GitBranch,
+  RotateCcw,
+  Check,
+  ChevronsUpDown,
+  X,
+  Plus,
+  MessageSquareText,
+} from 'lucide-react';
 import { useState, useCallback, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
 import { toast } from 'sonner';
@@ -27,6 +36,7 @@ import {
 import { Input } from '@/components/ui/input';
 import { Popover, PopoverTrigger, PopoverContent } from '@/components/ui/popover';
 import { ScrollArea } from '@/components/ui/scroll-area';
+import { Textarea } from '@/components/ui/textarea';
 import { api } from '@/lib/api';
 import { PROVIDERS, getModelOptions } from '@/lib/providers';
 import { cn } from '@/lib/utils';
@@ -338,6 +348,59 @@ function ProjectUrlPatterns({
   );
 }
 
+/* ── Project system prompt ── */
+function ProjectSystemPrompt({
+  projectId,
+  currentPrompt,
+  onSave,
+}: {
+  projectId: string;
+  currentPrompt?: string;
+  onSave: (projectId: string, data: { systemPrompt: string | null }) => void;
+}) {
+  const [value, setValue] = useState(currentPrompt || '');
+  const { t } = useTranslation();
+
+  useEffect(() => {
+    setValue(currentPrompt || '');
+  }, [currentPrompt]);
+
+  const save = () => {
+    const trimmed = value.trim();
+    onSave(projectId, { systemPrompt: trimmed || null });
+  };
+
+  return (
+    <div className="flex flex-col gap-3 border-b border-border/50 px-4 py-3.5 last:border-b-0">
+      <div className="min-w-0">
+        <div className="flex items-center gap-2">
+          <MessageSquareText className="h-4 w-4 text-muted-foreground" />
+          <p className="text-sm font-medium text-foreground">
+            {t('settings.systemPrompt', 'System Prompt')}
+          </p>
+        </div>
+        <p className="mt-0.5 text-xs text-muted-foreground">
+          {t(
+            'settings.systemPromptDesc',
+            'Custom instructions prepended to every agent message in this project. Use this for project-specific conventions, coding standards, or context.',
+          )}
+        </p>
+      </div>
+      <Textarea
+        value={value}
+        onChange={(e) => setValue(e.target.value)}
+        onBlur={save}
+        placeholder={t(
+          'settings.systemPromptPlaceholder',
+          "e.g. Always use TypeScript strict mode. Follow the repository's existing patterns...",
+        )}
+        className="min-h-[120px] resize-y font-mono text-xs"
+        data-testid="settings-system-prompt"
+      />
+    </div>
+  );
+}
+
 /* ── General settings content ── */
 function GeneralSettings() {
   const { toolPermissions, setToolPermission, resetToolPermissions } = useSettingsStore(
@@ -539,6 +602,11 @@ function GeneralSettings() {
             <ProjectUrlPatterns
               projectId={selectedProject.id}
               currentUrls={selectedProject.urls || []}
+              onSave={saveProject}
+            />
+            <ProjectSystemPrompt
+              projectId={selectedProject.id}
+              currentPrompt={selectedProject.systemPrompt}
               onSave={saveProject}
             />
           </div>

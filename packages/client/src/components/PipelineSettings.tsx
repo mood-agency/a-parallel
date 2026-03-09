@@ -1,57 +1,87 @@
-import type { Pipeline, AgentModel } from '@funny/shared';
-import { Plus, Trash2, Pencil, Pause, Play, Shield, Wrench, Eye } from 'lucide-react';
-import { useState, useEffect, useCallback } from 'react';
+import type { Pipeline } from '@funny/shared';
+import { ChevronDown } from 'lucide-react';
+import { useState, useEffect, useCallback, useRef, memo } from 'react';
 import { toast } from 'sonner';
 
-import { Button } from '@/components/ui/button';
-import {
-  Dialog,
-  DialogContent,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from '@/components/ui/dialog';
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
 import { Input } from '@/components/ui/input';
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Switch } from '@/components/ui/switch';
-import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
+import { Textarea } from '@/components/ui/textarea';
 import { api } from '@/lib/api';
+import { PROVIDER_MODELS, PROVIDERS } from '@/lib/providers';
 import { cn } from '@/lib/utils';
 import { useAppStore } from '@/stores/app-store';
 
-const MODEL_OPTIONS: { value: AgentModel; label: string }[] = [
-  { value: 'haiku', label: 'Haiku' },
-  { value: 'sonnet', label: 'Sonnet' },
-  { value: 'opus', label: 'Opus' },
-];
-
-function SegmentedControl<T extends string>({
-  options,
+/** Model selector matching the PromptInput pattern — grouped by provider */
+const ModelSelect = memo(function ModelSelect({
   value,
   onChange,
+  testId,
 }: {
-  options: { value: T; label: string }[];
-  value: T;
-  onChange: (value: T) => void;
+  value: string;
+  onChange: (value: string) => void;
+  testId?: string;
 }) {
+  const [open, setOpen] = useState(false);
+
+  // Find current label
+  let currentLabel = value;
+  for (const models of Object.values(PROVIDER_MODELS)) {
+    const found = models.find((m) => m.value === value);
+    if (found) {
+      currentLabel = found.fallback;
+      break;
+    }
+  }
+
   return (
-    <div className="flex rounded-md border border-border bg-muted/30 p-0.5">
-      {options.map((opt) => (
+    <Popover open={open} onOpenChange={setOpen}>
+      <PopoverTrigger asChild>
         <button
-          key={opt.value}
-          onClick={() => onChange(opt.value)}
-          className={cn(
-            'flex items-center gap-1.5 px-2.5 py-1 text-xs rounded-sm transition-colors',
-            value === opt.value
-              ? 'bg-background text-foreground shadow-sm'
-              : 'text-muted-foreground hover:text-foreground',
-          )}
+          data-testid={testId}
+          className="flex h-7 cursor-pointer items-center gap-1 rounded-md border border-border bg-background px-2 py-1 text-xs text-foreground hover:bg-accent hover:text-accent-foreground"
         >
-          {opt.label}
+          <span>{currentLabel}</span>
+          <ChevronDown className="h-3 w-3 opacity-50" />
         </button>
-      ))}
-    </div>
+      </PopoverTrigger>
+      <PopoverContent
+        side="bottom"
+        align="end"
+        className="w-auto min-w-[10rem] p-1 data-[state=closed]:animate-none data-[state=open]:animate-none"
+        onOpenAutoFocus={(e) => e.preventDefault()}
+      >
+        {PROVIDERS.map((provider) => {
+          const models = PROVIDER_MODELS[provider.value] ?? [];
+          return (
+            <div key={provider.value}>
+              <div className="px-2 py-1.5 text-xs font-semibold text-muted-foreground">
+                {provider.label}
+              </div>
+              {models.map((m) => (
+                <button
+                  key={m.value}
+                  className={cn(
+                    'flex w-full items-center gap-2 rounded-sm px-2 py-1.5 text-xs outline-none transition-colors hover:bg-accent hover:text-accent-foreground',
+                    m.value === value && 'bg-accent text-accent-foreground',
+                  )}
+                  onClick={() => {
+                    onChange(m.value);
+                    setOpen(false);
+                  }}
+                  data-testid={testId ? `${testId}-${m.value}` : undefined}
+                >
+                  {m.fallback}
+                </button>
+              ))}
+            </div>
+          );
+        })}
+      </PopoverContent>
+    </Popover>
   );
-}
+});
 
 function SettingRow({
   title,
@@ -73,130 +103,74 @@ function SettingRow({
   );
 }
 
-interface FormState {
-  name: string;
-  reviewModel: AgentModel;
-  fixModel: AgentModel;
-  maxIterations: number;
-  precommitFixEnabled: boolean;
-  precommitFixModel: AgentModel;
-  precommitFixMaxIterations: number;
-}
-
-const defaultForm: FormState = {
-  name: 'Code Review',
-  reviewModel: 'sonnet',
-  fixModel: 'sonnet',
-  maxIterations: 10,
-  precommitFixEnabled: true,
-  precommitFixModel: 'sonnet',
-  precommitFixMaxIterations: 3,
-};
-
 export function PipelineSettings() {
   const selectedProjectId = useAppStore((s) => s.selectedProjectId);
-  const [pipelines, setPipelines] = useState<Pipeline[]>([]);
+  const [pipeline, setPipeline] = useState<Pipeline | null>(null);
   const [loading, setLoading] = useState(true);
-  const [dialogOpen, setDialogOpen] = useState(false);
-  const [editingId, setEditingId] = useState<string | null>(null);
-  const [form, setForm] = useState<FormState>(defaultForm);
+  const saveTimerRef = useRef<ReturnType<typeof setTimeout>>(undefined);
 
-  const loadPipelines = useCallback(async () => {
+  const loadPipeline = useCallback(async () => {
     if (!selectedProjectId) return;
     setLoading(true);
     const result = await api.listPipelines(selectedProjectId);
     if (result.isOk()) {
-      setPipelines(result.value);
+      if (result.value.length > 0) {
+        setPipeline(result.value[0]);
+      } else {
+        // Auto-create pipeline if none exists
+        const createResult = await api.createPipeline({
+          projectId: selectedProjectId,
+          name: 'Code Review',
+        });
+        if (createResult.isOk()) {
+          setPipeline(createResult.value);
+        }
+      }
     }
     setLoading(false);
   }, [selectedProjectId]);
 
   useEffect(() => {
-    loadPipelines();
-  }, [loadPipelines]);
+    loadPipeline();
+  }, [loadPipeline]);
 
-  const openCreateDialog = () => {
-    setEditingId(null);
-    setForm(defaultForm);
-    setDialogOpen(true);
-  };
+  // Auto-save helper: debounced update
+  const saveField = useCallback(
+    (updates: Record<string, unknown>) => {
+      if (!pipeline) return;
+      // Optimistic update
+      setPipeline((prev) => (prev ? { ...prev, ...updates } : prev));
+      clearTimeout(saveTimerRef.current);
+      saveTimerRef.current = setTimeout(async () => {
+        const result = await api.updatePipeline(pipeline.id, updates);
+        if (result.isErr()) {
+          toast.error('Failed to save pipeline setting');
+          loadPipeline(); // Revert on error
+        }
+      }, 400);
+    },
+    [pipeline, loadPipeline],
+  );
 
-  const openEditDialog = (p: Pipeline) => {
-    setEditingId(p.id);
-    setForm({
-      name: p.name,
-      reviewModel: (p.reviewModel as AgentModel) || 'sonnet',
-      fixModel: (p.fixModel as AgentModel) || 'sonnet',
-      maxIterations: p.maxIterations ?? 10,
-      precommitFixEnabled: p.precommitFixEnabled ?? false,
-      precommitFixModel: (p.precommitFixModel as AgentModel) || 'sonnet',
-      precommitFixMaxIterations: p.precommitFixMaxIterations ?? 3,
-    });
-    setDialogOpen(true);
-  };
-
-  const handleSave = async () => {
-    if (!selectedProjectId || !form.name.trim()) return;
-
-    if (editingId) {
-      const result = await api.updatePipeline(editingId, {
-        name: form.name.trim(),
-        reviewModel: form.reviewModel,
-        fixModel: form.fixModel,
-        maxIterations: form.maxIterations,
-        precommitFixEnabled: form.precommitFixEnabled,
-        precommitFixModel: form.precommitFixModel,
-        precommitFixMaxIterations: form.precommitFixMaxIterations,
-      });
-      if (result.isOk()) {
-        toast.success('Pipeline updated');
-      } else {
-        toast.error('Failed to update pipeline');
-      }
-    } else {
-      const result = await api.createPipeline({
-        projectId: selectedProjectId,
-        name: form.name.trim(),
-        reviewModel: form.reviewModel,
-        fixModel: form.fixModel,
-        maxIterations: form.maxIterations,
-        precommitFixEnabled: form.precommitFixEnabled,
-        precommitFixModel: form.precommitFixModel,
-        precommitFixMaxIterations: form.precommitFixMaxIterations,
-      });
-      if (result.isOk()) {
-        toast.success('Pipeline created');
-      } else {
-        toast.error('Failed to create pipeline');
-      }
-    }
-    setDialogOpen(false);
-    loadPipelines();
-  };
-
-  const handleToggleEnabled = async (p: Pipeline) => {
-    const result = await api.updatePipeline(p.id, { enabled: !p.enabled });
-    if (result.isOk()) {
-      loadPipelines();
-    }
-  };
-
-  const handleDelete = async (p: Pipeline) => {
-    const result = await api.deletePipeline(p.id);
-    if (result.isOk()) {
-      toast.success('Pipeline deleted');
-      loadPipelines();
-    } else {
-      toast.error('Failed to delete pipeline');
+  // Save prompt on blur
+  const handlePromptBlur = (field: string, value: string) => {
+    if (!pipeline) return;
+    const currentValue = (pipeline as unknown as Record<string, unknown>)[field] ?? '';
+    if (value !== currentValue) {
+      saveField({ [field]: value || null });
     }
   };
 
   if (!selectedProjectId) {
     return (
       <div className="py-6 text-center text-sm text-muted-foreground">
-        Select a project to manage pipelines.
+        Select a project to manage pipeline settings.
       </div>
     );
+  }
+
+  if (loading || !pipeline) {
+    return <div className="py-8 text-center text-sm text-muted-foreground">Loading...</div>;
   }
 
   return (
@@ -204,252 +178,183 @@ export function PipelineSettings() {
       {/* Description */}
       <div className="rounded-lg border border-border/50 bg-muted/20 px-4 py-3">
         <p className="text-sm text-muted-foreground">
-          Pipelines automatically review and fix your code after each commit. When enabled, every
-          successful commit triggers a Reviewer agent that analyzes the diff. If issues are found, a
-          Corrector agent creates fixes in an isolated worktree.
+          The pipeline automatically reviews and fixes your code after each commit. Every successful
+          commit triggers a Reviewer agent that analyzes the diff. If issues are found, a Corrector
+          agent creates fixes in an isolated worktree.
         </p>
       </div>
 
-      {/* Header */}
-      <div className="flex items-center justify-end">
-        <Button
-          variant="outline"
-          size="sm"
-          className="h-7 gap-1.5 text-xs"
-          onClick={openCreateDialog}
-          data-testid="pipeline-create"
-        >
-          <Plus className="h-3.5 w-3.5" />
-          Create Pipeline
-        </Button>
+      {/* Pre-commit fixer section */}
+      <div className="overflow-hidden rounded-lg border border-border/50">
+        <div className="flex items-center justify-between bg-muted/30 px-3 py-2">
+          <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+            Pre-commit Auto-fix
+          </p>
+          <Switch
+            checked={!!pipeline.precommitFixEnabled}
+            onCheckedChange={(v) => saveField({ precommitFixEnabled: v })}
+            data-testid="pipeline-precommit-toggle"
+          />
+        </div>
+        {!!pipeline.precommitFixEnabled && (
+          <>
+            <SettingRow title="Fixer Model" description="Model for auto-fixing lint errors">
+              <ModelSelect
+                value={(pipeline.precommitFixModel as string) || 'sonnet'}
+                onChange={(v) => saveField({ precommitFixModel: v })}
+                testId="pipeline-precommit-model"
+              />
+            </SettingRow>
+            <SettingRow
+              title="Max Fix Attempts"
+              description="Max retries before failing the commit"
+            >
+              <Input
+                type="number"
+                min={1}
+                max={5}
+                value={pipeline.precommitFixMaxIterations ?? 3}
+                onChange={(e) =>
+                  saveField({ precommitFixMaxIterations: parseInt(e.target.value, 10) || 3 })
+                }
+                className="h-8 w-16 text-center text-xs"
+                data-testid="pipeline-precommit-max"
+              />
+            </SettingRow>
+          </>
+        )}
       </div>
 
-      {/* Pipeline list */}
-      {loading ? (
-        <div className="py-8 text-center text-sm text-muted-foreground">Loading...</div>
-      ) : pipelines.length === 0 ? (
-        <div className="py-8 text-center">
-          <p className="mb-3 text-sm text-muted-foreground">No pipelines yet.</p>
-          <Button
-            variant="outline"
-            size="sm"
-            className="gap-1.5"
-            onClick={openCreateDialog}
-            data-testid="pipeline-create-first"
-          >
-            <Plus className="h-3.5 w-3.5" />
-            Create your first pipeline
-          </Button>
+      {/* Post-commit review section */}
+      <div className="overflow-hidden rounded-lg border border-border/50">
+        <div className="flex items-center justify-between bg-muted/30 px-3 py-2">
+          <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+            Post-commit Review
+          </p>
+          <Switch
+            checked={!!pipeline.enabled}
+            onCheckedChange={(v) => saveField({ enabled: v })}
+            data-testid="pipeline-review-toggle"
+          />
         </div>
-      ) : (
-        pipelines.map((p) => (
-          <div
-            key={p.id}
-            className="group rounded-lg border border-border/50 bg-card px-3 py-2.5 transition-colors hover:bg-accent/30"
-            data-testid={`pipeline-item-${p.id}`}
-          >
-            <div className="flex items-center justify-between gap-3">
-              <div className="min-w-0 flex-1">
-                <div className="flex items-center gap-2">
-                  <span
-                    className={cn(
-                      'h-2 w-2 rounded-full flex-shrink-0',
-                      p.enabled ? 'bg-status-success/80' : 'bg-muted-foreground/30',
-                    )}
-                  />
-                  <span className="truncate text-sm font-medium">{p.name}</span>
-                </div>
-                <div className="mt-1 flex items-center gap-2 pl-4">
-                  <div className="flex items-center gap-1 text-xs text-muted-foreground">
-                    <Eye className="h-3 w-3" />
-                    <span>Review: {p.reviewModel}</span>
-                  </div>
-                  <div className="flex items-center gap-1 text-xs text-muted-foreground">
-                    <Wrench className="h-3 w-3" />
-                    <span>Fix: {p.fixModel}</span>
-                  </div>
-                  {p.precommitFixEnabled && (
-                    <div className="flex items-center gap-1 text-xs text-muted-foreground">
-                      <Shield className="h-3 w-3" />
-                      <span>Pre-commit fix</span>
-                    </div>
-                  )}
-                  <span className="text-xs text-muted-foreground/70">
-                    max {p.maxIterations} iterations
-                  </span>
-                </div>
-              </div>
-
-              <div className="flex flex-shrink-0 items-center gap-1 opacity-0 transition-opacity group-hover:opacity-100">
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <Button
-                      variant="ghost"
-                      size="icon-sm"
-                      onClick={() => handleToggleEnabled(p)}
-                      className="text-muted-foreground"
-                      data-testid={`pipeline-toggle-${p.id}`}
-                    >
-                      {p.enabled ? (
-                        <Pause className="h-3.5 w-3.5" />
-                      ) : (
-                        <Play className="h-3.5 w-3.5" />
-                      )}
-                    </Button>
-                  </TooltipTrigger>
-                  <TooltipContent>{p.enabled ? 'Disable' : 'Enable'}</TooltipContent>
-                </Tooltip>
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <Button
-                      variant="ghost"
-                      size="icon-sm"
-                      onClick={() => openEditDialog(p)}
-                      className="text-muted-foreground"
-                      data-testid={`pipeline-edit-${p.id}`}
-                    >
-                      <Pencil className="h-3.5 w-3.5" />
-                    </Button>
-                  </TooltipTrigger>
-                  <TooltipContent>Edit</TooltipContent>
-                </Tooltip>
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <Button
-                      variant="ghost"
-                      size="icon-sm"
-                      onClick={() => handleDelete(p)}
-                      className="text-muted-foreground hover:text-status-error"
-                      data-testid={`pipeline-delete-${p.id}`}
-                    >
-                      <Trash2 className="h-3.5 w-3.5" />
-                    </Button>
-                  </TooltipTrigger>
-                  <TooltipContent>Delete</TooltipContent>
-                </Tooltip>
-              </div>
-            </div>
-          </div>
-        ))
-      )}
-
-      {/* Create/Edit dialog */}
-      <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
-        <DialogContent className="max-w-md">
-          <DialogHeader>
-            <DialogTitle>{editingId ? 'Edit Pipeline' : 'Create Pipeline'}</DialogTitle>
-          </DialogHeader>
-
-          <div className="space-y-4 py-2">
-            {/* Name */}
-            <div className="space-y-1.5">
-              <label className="text-sm font-medium">Name</label>
+        {!!pipeline.enabled && (
+          <>
+            <SettingRow title="Reviewer Model" description="Model for analyzing code (read-only)">
+              <ModelSelect
+                value={(pipeline.reviewModel as string) || 'sonnet'}
+                onChange={(v) => saveField({ reviewModel: v })}
+                testId="pipeline-review-model"
+              />
+            </SettingRow>
+            <SettingRow title="Corrector Model" description="Model for fixing issues (worktree)">
+              <ModelSelect
+                value={(pipeline.fixModel as string) || 'sonnet'}
+                onChange={(v) => saveField({ fixModel: v })}
+                testId="pipeline-fix-model"
+              />
+            </SettingRow>
+            <SettingRow title="Max Iterations" description="Max review-fix cycles before giving up">
               <Input
-                value={form.name}
-                onChange={(e) => setForm({ ...form, name: e.target.value })}
-                placeholder="Code Review"
-                data-testid="pipeline-form-name"
+                type="number"
+                min={1}
+                max={20}
+                value={pipeline.maxIterations ?? 10}
+                onChange={(e) => saveField({ maxIterations: parseInt(e.target.value, 10) || 10 })}
+                className="h-8 w-16 text-center text-xs"
+                data-testid="pipeline-max-iterations"
+              />
+            </SettingRow>
+          </>
+        )}
+      </div>
+
+      {/* Custom Prompts section */}
+      <Collapsible>
+        <div className="overflow-hidden rounded-lg border border-border/50">
+          <CollapsibleTrigger className="flex w-full items-center justify-between bg-muted/30 px-3 py-2 hover:bg-muted/50 transition-colors">
+            <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+              Custom Prompts
+            </p>
+            <ChevronDown className="h-3.5 w-3.5 text-muted-foreground transition-transform [[data-state=open]_&]:rotate-180" />
+          </CollapsibleTrigger>
+          <CollapsibleContent>
+            <div className="space-y-3 p-3">
+              <p className="text-xs text-muted-foreground">
+                Override default prompts for each pipeline stage. Leave empty to use built-in
+                defaults.
+              </p>
+
+              <PromptField
+                label="Reviewer Prompt"
+                value={pipeline.reviewerPrompt ?? ''}
+                onBlur={(v) => handlePromptBlur('reviewerPrompt', v)}
+                placeholder="e.g. You are a code reviewer. Focus on security issues and performance..."
+                testId="pipeline-reviewer-prompt"
+              />
+
+              <PromptField
+                label="Corrector Prompt"
+                value={pipeline.correctorPrompt ?? ''}
+                onBlur={(v) => handlePromptBlur('correctorPrompt', v)}
+                placeholder="e.g. You are a code corrector. Fix the issues found by the reviewer..."
+                testId="pipeline-corrector-prompt"
+              />
+
+              <PromptField
+                label="Pre-commit Fixer Prompt"
+                value={pipeline.precommitFixerPrompt ?? ''}
+                onBlur={(v) => handlePromptBlur('precommitFixerPrompt', v)}
+                placeholder="e.g. Fix the issues reported by the pre-commit hook..."
+                testId="pipeline-precommit-fixer-prompt"
+              />
+
+              <PromptField
+                label="Commit Message Prompt"
+                value={pipeline.commitMessagePrompt ?? ''}
+                onBlur={(v) => handlePromptBlur('commitMessagePrompt', v)}
+                placeholder="e.g. Generate a commit message following our team conventions..."
+                testId="pipeline-commit-message-prompt"
               />
             </div>
+          </CollapsibleContent>
+        </div>
+      </Collapsible>
+    </div>
+  );
+}
 
-            {/* Post-commit review section */}
-            <div className="overflow-hidden rounded-lg border border-border/50">
-              <div className="bg-muted/30 px-3 py-2">
-                <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-                  Post-commit Review
-                </p>
-              </div>
-              <SettingRow title="Reviewer Model" description="Model for analyzing code (read-only)">
-                <SegmentedControl
-                  options={MODEL_OPTIONS}
-                  value={form.reviewModel}
-                  onChange={(v) => setForm({ ...form, reviewModel: v })}
-                />
-              </SettingRow>
-              <SettingRow title="Corrector Model" description="Model for fixing issues (worktree)">
-                <SegmentedControl
-                  options={MODEL_OPTIONS}
-                  value={form.fixModel}
-                  onChange={(v) => setForm({ ...form, fixModel: v })}
-                />
-              </SettingRow>
-              <SettingRow
-                title="Max Iterations"
-                description="Max review-fix cycles before giving up"
-              >
-                <Input
-                  type="number"
-                  min={1}
-                  max={20}
-                  value={form.maxIterations}
-                  onChange={(e) =>
-                    setForm({ ...form, maxIterations: parseInt(e.target.value, 10) || 10 })
-                  }
-                  className="h-8 w-16 text-center text-xs"
-                  data-testid="pipeline-form-max-iterations"
-                />
-              </SettingRow>
-            </div>
+function PromptField({
+  label,
+  value,
+  onBlur,
+  placeholder,
+  testId,
+}: {
+  label: string;
+  value: string;
+  onBlur: (value: string) => void;
+  placeholder: string;
+  testId: string;
+}) {
+  const [localValue, setLocalValue] = useState(value);
 
-            {/* Pre-commit fixer section */}
-            <div className="overflow-hidden rounded-lg border border-border/50">
-              <div className="flex items-center justify-between bg-muted/30 px-3 py-2">
-                <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-                  Pre-commit Auto-fix
-                </p>
-                <Switch
-                  checked={form.precommitFixEnabled}
-                  onCheckedChange={(v) => setForm({ ...form, precommitFixEnabled: v })}
-                  data-testid="pipeline-form-precommit-toggle"
-                />
-              </div>
-              {form.precommitFixEnabled && (
-                <>
-                  <SettingRow title="Fixer Model" description="Model for auto-fixing lint errors">
-                    <SegmentedControl
-                      options={MODEL_OPTIONS}
-                      value={form.precommitFixModel}
-                      onChange={(v) => setForm({ ...form, precommitFixModel: v })}
-                    />
-                  </SettingRow>
-                  <SettingRow
-                    title="Max Fix Attempts"
-                    description="Max retries before failing the commit"
-                  >
-                    <Input
-                      type="number"
-                      min={1}
-                      max={5}
-                      value={form.precommitFixMaxIterations}
-                      onChange={(e) =>
-                        setForm({
-                          ...form,
-                          precommitFixMaxIterations: parseInt(e.target.value, 10) || 3,
-                        })
-                      }
-                      className="h-8 w-16 text-center text-xs"
-                      data-testid="pipeline-form-precommit-max"
-                    />
-                  </SettingRow>
-                </>
-              )}
-            </div>
-          </div>
+  // Sync local state when external value changes
+  useEffect(() => {
+    setLocalValue(value);
+  }, [value]);
 
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setDialogOpen(false)}>
-              Cancel
-            </Button>
-            <Button
-              onClick={handleSave}
-              disabled={!form.name.trim()}
-              data-testid="pipeline-form-save"
-            >
-              {editingId ? 'Save' : 'Create'}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+  return (
+    <div className="space-y-1.5">
+      <label className="text-xs font-medium text-foreground">{label}</label>
+      <Textarea
+        value={localValue}
+        onChange={(e) => setLocalValue(e.target.value)}
+        onBlur={() => onBlur(localValue)}
+        placeholder={placeholder}
+        rows={3}
+        className="resize-y text-xs"
+        data-testid={testId}
+      />
     </div>
   );
 }

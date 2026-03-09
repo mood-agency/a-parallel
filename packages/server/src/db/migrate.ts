@@ -599,6 +599,21 @@ const migrations: Migration[] = [
       addColumn('pipeline_runs', 'reviewer_thread_id', 'TEXT');
     },
   },
+  {
+    name: '032_project_system_prompt',
+    up() {
+      addColumn('projects', 'system_prompt', 'TEXT');
+    },
+  },
+  {
+    name: '033_pipeline_custom_prompts',
+    up() {
+      addColumn('pipelines', 'reviewer_prompt', 'TEXT');
+      addColumn('pipelines', 'corrector_prompt', 'TEXT');
+      addColumn('pipelines', 'precommit_fixer_prompt', 'TEXT');
+      addColumn('pipelines', 'commit_message_prompt', 'TEXT');
+    },
+  },
 ];
 
 // ── Public API ──────────────────────────────────────────────────

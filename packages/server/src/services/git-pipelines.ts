@@ -101,6 +101,12 @@ export interface GitPipelineContext {
   fixModel: AgentModel;
   maxReviewIterations: number;
 
+  // ── Custom prompt overrides ──────────────────────────
+  reviewerPrompt?: string;
+  correctorPrompt?: string;
+  precommitFixerPrompt?: string;
+  commitMessagePrompt?: string;
+
   // ── Review-fix tracking ────────────────────────────────
   commitSha: string | null;
   iteration: number;
@@ -396,7 +402,7 @@ async function reviewNode(
 
   const parentThread = tm.getThread(ctx.threadId);
   const baseBranch = parentThread?.branch || undefined;
-  const prompt = buildReviewerPrompt(ctx.commitSha ?? undefined);
+  const prompt = buildReviewerPrompt(ctx.commitSha ?? undefined, ctx.reviewerPrompt);
 
   ctx.setStep('review', { status: 'running' });
 
@@ -465,7 +471,7 @@ async function fixNode(ctx: GitPipelineContext, signal: AbortSignal): Promise<Gi
 
   const findingsStr =
     typeof ctx.findings === 'string' ? ctx.findings : JSON.stringify(ctx.findings, null, 2);
-  const prompt = buildCorrectorPrompt(findingsStr);
+  const prompt = buildCorrectorPrompt(findingsStr, ctx.correctorPrompt);
 
   ctx.setStep('fix', { status: 'running' });
 
@@ -925,7 +931,12 @@ async function attemptPrecommitAutoFix(params: AutoFixParams): Promise<boolean> 
       // Non-critical
     }
 
-    const prompt = buildPrecommitFixerPrompt(hookLabel, hookError, stagedFiles);
+    const prompt = buildPrecommitFixerPrompt(
+      hookLabel,
+      hookError,
+      stagedFiles,
+      ctx.precommitFixerPrompt,
+    );
 
     // Create a separate thread for the fixer agent
     let fixerThread: { id: string };

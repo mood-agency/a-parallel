@@ -54,6 +54,7 @@ import {
   validateFilePaths,
 } from '../services/git-service.js';
 import { executeWorkflow, isWorkflowActive } from '../services/git-workflow-service.js';
+import { getPipelineForProject } from '../services/pipeline-orchestrator.js';
 import {
   buildCommitMessagePrompt,
   COMMIT_MESSAGE_SYSTEM_PROMPT,
@@ -478,7 +479,8 @@ gitRoutes.post('/project/:projectId/reset-soft', async (c) => {
 // POST /api/git/project/:projectId/generate-commit-message
 gitRoutes.post('/project/:projectId/generate-commit-message', async (c) => {
   const userId = c.get('userId') as string;
-  const cwdResult = requireProjectCwd(c.req.param('projectId'), userId);
+  const projectId = c.req.param('projectId');
+  const cwdResult = requireProjectCwd(projectId, userId);
   if (cwdResult.isErr()) return resultToResponse(c, cwdResult);
   const cwd = cwdResult.value;
 
@@ -503,7 +505,8 @@ gitRoutes.post('/project/:projectId/generate-commit-message', async (c) => {
     diffSummary = diffSummary.slice(0, MAX_DIFF_LEN) + '\n\n... (diff truncated for length)';
   }
 
-  const prompt = buildCommitMessagePrompt(diffSummary);
+  const pipelineCfg = getPipelineForProject(projectId);
+  const prompt = buildCommitMessagePrompt(diffSummary, pipelineCfg?.commitMessagePrompt);
 
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), 60_000);
@@ -879,7 +882,12 @@ gitRoutes.post('/:threadId/pr', async (c) => {
 // POST /api/git/:threadId/generate-commit-message
 gitRoutes.post('/:threadId/generate-commit-message', async (c) => {
   const userId = c.get('userId') as string;
-  const cwdResult = requireThreadCwd(c.req.param('threadId'), userId);
+  const threadId = c.req.param('threadId');
+  const threadResult = requireThread(threadId, userId);
+  if (threadResult.isErr()) return resultToResponse(c, threadResult);
+  const thread = threadResult.value;
+
+  const cwdResult = requireThreadCwd(threadId, userId);
   if (cwdResult.isErr()) return resultToResponse(c, cwdResult);
   const cwd = cwdResult.value;
 
@@ -904,7 +912,8 @@ gitRoutes.post('/:threadId/generate-commit-message', async (c) => {
     diffSummary = diffSummary.slice(0, MAX_DIFF_LEN) + '\n\n... (diff truncated for length)';
   }
 
-  const prompt = buildCommitMessagePrompt(diffSummary);
+  const pipelineCfg = getPipelineForProject(thread.projectId);
+  const prompt = buildCommitMessagePrompt(diffSummary, pipelineCfg?.commitMessagePrompt);
 
   const span = requestSpan(c, 'ai.generate_commit_message', {
     diffLength: diffSummary.length,

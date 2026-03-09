@@ -58,6 +58,10 @@ pipelineRoutes.post('/', async (c) => {
     precommitFixEnabled: body.precommitFixEnabled,
     precommitFixModel: body.precommitFixModel,
     precommitFixMaxIterations: body.precommitFixMaxIterations,
+    reviewerPrompt: body.reviewerPrompt,
+    correctorPrompt: body.correctorPrompt,
+    precommitFixerPrompt: body.precommitFixerPrompt,
+    commitMessagePrompt: body.commitMessagePrompt,
   });
 
   const pipeline = getPipelineById(id);
@@ -84,6 +88,12 @@ pipelineRoutes.patch('/:id', async (c) => {
   if (body.precommitFixModel !== undefined) updates.precommitFixModel = body.precommitFixModel;
   if (body.precommitFixMaxIterations !== undefined)
     updates.precommitFixMaxIterations = body.precommitFixMaxIterations;
+  if (body.reviewerPrompt !== undefined) updates.reviewerPrompt = body.reviewerPrompt || null;
+  if (body.correctorPrompt !== undefined) updates.correctorPrompt = body.correctorPrompt || null;
+  if (body.precommitFixerPrompt !== undefined)
+    updates.precommitFixerPrompt = body.precommitFixerPrompt || null;
+  if (body.commitMessagePrompt !== undefined)
+    updates.commitMessagePrompt = body.commitMessagePrompt || null;
 
   updatePipeline(id, updates);
   return c.json(getPipelineById(id));

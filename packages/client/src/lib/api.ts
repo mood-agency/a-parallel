@@ -206,6 +206,7 @@ export const api = {
       defaultPermissionMode?: string | null;
       defaultBranch?: string | null;
       urls?: string[] | null;
+      systemPrompt?: string | null;
     },
   ) => request<Project>(`/projects/${id}`, { method: 'PATCH', body: JSON.stringify(data) }),
   deleteProject: (id: string) => request<{ ok: boolean }>(`/projects/${id}`, { method: 'DELETE' }),
@@ -706,7 +707,7 @@ export const api = {
     }),
 
   // Pipelines
-  listPipelines: (projectId: string) => request<Pipeline[]>(`/pipelines?projectId=${projectId}`),
+  listPipelines: (projectId: string) => request<Pipeline[]>(`/pipelines/project/${projectId}`),
   createPipeline: (data: {
     projectId: string;
     name: string;
@@ -716,6 +717,10 @@ export const api = {
     precommitFixEnabled?: boolean;
     precommitFixModel?: string;
     precommitFixMaxIterations?: number;
+    reviewerPrompt?: string;
+    correctorPrompt?: string;
+    precommitFixerPrompt?: string;
+    commitMessagePrompt?: string;
   }) => request<Pipeline>('/pipelines', { method: 'POST', body: JSON.stringify(data) }),
   updatePipeline: (
     id: string,
@@ -728,6 +733,10 @@ export const api = {
       precommitFixEnabled: boolean;
       precommitFixModel: string;
       precommitFixMaxIterations: number;
+      reviewerPrompt: string;
+      correctorPrompt: string;
+      precommitFixerPrompt: string;
+      commitMessagePrompt: string;
     }>,
   ) =>
     request<{ ok: boolean }>(`/pipelines/${id}`, {

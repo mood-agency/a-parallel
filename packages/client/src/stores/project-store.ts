@@ -30,6 +30,7 @@ interface ProjectState {
       defaultPermissionMode?: string | null;
       defaultBranch?: string | null;
       urls?: string[] | null;
+      systemPrompt?: string | null;
     },
   ) => Promise<void>;
   deleteProject: (projectId: string) => Promise<void>;

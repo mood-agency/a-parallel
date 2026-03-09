@@ -286,7 +286,27 @@ export class AgentRunner {
 
     // Derive the system prefix from the machine's resumeReason
     const isPostMerge = !!(thread?.sessionId && thread?.baseBranch && !thread?.worktreePath);
-    const systemPrefix = getResumeSystemPrefix(resumeReason, isPostMerge);
+    const resumePrefix = getResumeSystemPrefix(resumeReason, isPostMerge);
+
+    // Inject project-level system prompt
+    const project = thread?.projectId ? pm.getProject(thread.projectId) : undefined;
+    const projectSystemPrompt = project?.systemPrompt;
+
+    // For fresh starts: prepend project system prompt to the user's message.
+    // For resumes: combine with resume prefix (orchestrator prepends systemPrefix).
+    if (projectSystemPrompt && !effectiveSessionId) {
+      effectivePrompt = `[PROJECT INSTRUCTIONS]\n${projectSystemPrompt}\n[/PROJECT INSTRUCTIONS]\n\n${effectivePrompt}`;
+    }
+
+    const systemPrefix =
+      [
+        projectSystemPrompt
+          ? `[PROJECT INSTRUCTIONS]\n${projectSystemPrompt}\n[/PROJECT INSTRUCTIONS]`
+          : undefined,
+        resumePrefix,
+      ]
+        .filter(Boolean)
+        .join('\n\n') || undefined;
 
     log.debug('startAgent resume context', {
       namespace: 'agent',

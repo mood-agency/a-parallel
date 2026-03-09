@@ -25,6 +25,7 @@ export const projects = sqliteTable('projects', {
   defaultPermissionMode: text('default_permission_mode'),
   defaultBranch: text('default_branch'),
   urls: text('urls'), // JSON-encoded string[] of URL patterns for Chrome extension auto-detection
+  systemPrompt: text('system_prompt'),
   userId: text('user_id').notNull().default('__local__'),
   sortOrder: integer('sort_order').notNull().default(0),
   createdAt: text('created_at').notNull(),
@@ -225,6 +226,10 @@ export const pipelines = sqliteTable('pipelines', {
   precommitFixEnabled: integer('precommit_fix_enabled').notNull().default(0),
   precommitFixModel: text('precommit_fix_model').notNull().default(DEFAULT_MODEL),
   precommitFixMaxIterations: integer('precommit_fix_max_iterations').notNull().default(3),
+  reviewerPrompt: text('reviewer_prompt'),
+  correctorPrompt: text('corrector_prompt'),
+  precommitFixerPrompt: text('precommit_fixer_prompt'),
+  commitMessagePrompt: text('commit_message_prompt'),
   createdAt: text('created_at').notNull(),
   updatedAt: text('updated_at').notNull(),
 });

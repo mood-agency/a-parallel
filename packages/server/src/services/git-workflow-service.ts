@@ -159,6 +159,11 @@ export function executeWorkflow(params: WorkflowParams): { workflowId: string } 
     reviewModel: pipelineConfig?.reviewModel ?? 'sonnet',
     fixModel: pipelineConfig?.fixModel ?? 'sonnet',
     maxReviewIterations: pipelineConfig?.maxIterations ?? 10,
+    // Custom prompt overrides
+    reviewerPrompt: pipelineConfig?.reviewerPrompt,
+    correctorPrompt: pipelineConfig?.correctorPrompt,
+    precommitFixerPrompt: pipelineConfig?.precommitFixerPrompt,
+    commitMessagePrompt: pipelineConfig?.commitMessagePrompt,
     // Review-fix tracking (initialized empty)
     commitSha: null,
     iteration: 1,

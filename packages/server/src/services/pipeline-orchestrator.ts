@@ -50,6 +50,10 @@ export interface PipelineConfig {
   precommitFixEnabled: boolean;
   precommitFixModel: AgentModel;
   precommitFixMaxIterations: number;
+  reviewerPrompt?: string;
+  correctorPrompt?: string;
+  precommitFixerPrompt?: string;
+  commitMessagePrompt?: string;
 }
 
 // ── Active runs (for cancellation) ───────────────────────────
@@ -73,6 +77,10 @@ function toPipelineConfig(row: PipelineRow): PipelineConfig {
     precommitFixEnabled: !!row.precommitFixEnabled,
     precommitFixModel: row.precommitFixModel as AgentModel,
     precommitFixMaxIterations: row.precommitFixMaxIterations,
+    ...(row.reviewerPrompt ? { reviewerPrompt: row.reviewerPrompt } : {}),
+    ...(row.correctorPrompt ? { correctorPrompt: row.correctorPrompt } : {}),
+    ...(row.precommitFixerPrompt ? { precommitFixerPrompt: row.precommitFixerPrompt } : {}),
+    ...(row.commitMessagePrompt ? { commitMessagePrompt: row.commitMessagePrompt } : {}),
   };
 }
 
@@ -93,6 +101,10 @@ export function createPipeline(data: {
   precommitFixEnabled?: boolean;
   precommitFixModel?: string;
   precommitFixMaxIterations?: number;
+  reviewerPrompt?: string;
+  correctorPrompt?: string;
+  precommitFixerPrompt?: string;
+  commitMessagePrompt?: string;
 }): string {
   const id = nanoid();
   const now = new Date().toISOString();
@@ -109,6 +121,10 @@ export function createPipeline(data: {
       precommitFixEnabled: data.precommitFixEnabled ? 1 : 0,
       precommitFixModel: data.precommitFixModel || 'sonnet',
       precommitFixMaxIterations: data.precommitFixMaxIterations || 3,
+      reviewerPrompt: data.reviewerPrompt || null,
+      correctorPrompt: data.correctorPrompt || null,
+      precommitFixerPrompt: data.precommitFixerPrompt || null,
+      commitMessagePrompt: data.commitMessagePrompt || null,
       createdAt: now,
       updatedAt: now,
     })
@@ -280,6 +296,11 @@ export async function startPipelineRun(opts: {
     reviewModel: pipeline.reviewModel,
     fixModel: pipeline.fixModel,
     maxReviewIterations: pipeline.maxIterations,
+    // Custom prompt overrides
+    reviewerPrompt: pipeline.reviewerPrompt ?? undefined,
+    correctorPrompt: pipeline.correctorPrompt ?? undefined,
+    precommitFixerPrompt: pipeline.precommitFixerPrompt ?? undefined,
+    commitMessagePrompt: pipeline.commitMessagePrompt ?? undefined,
     // Review-fix tracking
     commitSha: commitSha ?? null,
     iteration: 1,

@@ -118,6 +118,7 @@ export interface Project {
   defaultPermissionMode?: PermissionMode;
   defaultBranch?: string;
   urls?: string[];
+  systemPrompt?: string;
   userId: string;
   sortOrder: number;
   createdAt: string;
@@ -943,6 +944,10 @@ export interface Pipeline {
   precommitFixEnabled: boolean;
   precommitFixModel: AgentModel;
   precommitFixMaxIterations: number;
+  reviewerPrompt?: string;
+  correctorPrompt?: string;
+  precommitFixerPrompt?: string;
+  commitMessagePrompt?: string;
   createdAt: string;
   updatedAt: string;
 }

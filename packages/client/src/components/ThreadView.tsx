@@ -820,7 +820,7 @@ const MemoizedMessageList = memo(
               style={{ contentVisibility: 'auto', containIntrinsicSize: 'auto 60px' }}
               className="group relative w-full text-sm text-foreground"
             >
-              <div className="max-h-[50vh] overflow-x-auto overflow-y-auto break-words text-sm leading-relaxed">
+              <div className="break-words text-sm leading-relaxed">
                 <div className="flex items-start gap-2">
                   {msg.author && (
                     <Tooltip>
