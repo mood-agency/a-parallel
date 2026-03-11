@@ -36,3 +36,4 @@ e2e-report.json
 storybook-static
 .env.debug
 .env.debug
+openspec/
