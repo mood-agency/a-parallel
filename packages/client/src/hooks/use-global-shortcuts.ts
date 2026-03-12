@@ -21,8 +21,8 @@ export function useGlobalShortcuts(onToggleCommandPalette: () => void) {
         return;
       }
 
-      // Ctrl+F for global thread search
-      if (e.ctrlKey && !e.shiftKey && e.key === 'f') {
+      // Ctrl+Shift+F for global thread search
+      if (e.ctrlKey && e.shiftKey && e.key === 'F') {
         e.preventDefault();
         e.stopPropagation();
         navigate('/list');

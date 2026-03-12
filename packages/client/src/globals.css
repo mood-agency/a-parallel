@@ -924,9 +924,9 @@
   font-size: 0.75rem;
   line-height: 1.25;
   vertical-align: middle;
-  background: hsl(var(--muted));
+  background: hsl(var(--foreground) / 0.12);
   color: hsl(var(--foreground));
-  border: 1px solid hsl(var(--border));
+  border: 1px solid hsl(var(--foreground) / 0.2);
   white-space: nowrap;
   cursor: default;
   user-select: all;
@@ -961,9 +961,9 @@
   font-size: 0.75rem;
   line-height: 1.25;
   vertical-align: middle;
-  background: hsl(var(--muted));
+  background: hsl(var(--foreground) / 0.12);
   color: hsl(var(--foreground));
-  border: 1px solid hsl(var(--border));
+  border: 1px solid hsl(var(--foreground) / 0.2);
   white-space: nowrap;
   cursor: default;
   user-select: all;

@@ -10,7 +10,8 @@
     "url": "https://github.com/ironmussa/funny.git"
   },
   "bin": {
-    "funny": "./bin/funny.js"
+    "funny": "./bin/funny.js",
+    "funny-runner": "./packages/runner/bin/funny-runner.js"
   },
   "workspaces": [
     "packages/*"
