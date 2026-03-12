@@ -423,6 +423,40 @@ export interface WSQueueUpdateData {
   dequeuedImages?: ImageAttachment[];
 }
 
+// ─── Test Runner ─────────────────────────────────────────
+
+export interface TestFile {
+  path: string; // relative to project root, e.g. "e2e/app.spec.ts"
+}
+
+export interface RunTestRequest {
+  file: string; // relative path of the test file to run
+}
+
+export interface RunTestResponse {
+  runId: string;
+}
+
+export type TestFileStatus = 'idle' | 'running' | 'passed' | 'failed' | 'stopped';
+
+export interface WSTestFrameData {
+  data: string; // base64 JPEG
+  timestamp: number;
+}
+
+export interface WSTestOutputData {
+  line: string;
+  stream: 'stdout' | 'stderr';
+}
+
+export interface WSTestStatusData {
+  status: TestFileStatus;
+  file: string;
+  runId: string;
+  exitCode?: number;
+  error?: string;
+}
+
 export interface WSWorkflowStepData {
   runId: string;
   workflowName: string;
@@ -567,7 +601,10 @@ export type WSEvent =
   | { type: 'pipeline:run_completed'; threadId: string; data: WSPipelineRunCompletedData }
   | { type: 'org:member_added'; threadId: ''; data: WSOrgMemberData }
   | { type: 'org:member_removed'; threadId: ''; data: WSOrgMemberData }
-  | { type: 'org:invitation_received'; threadId: ''; data: WSOrgInvitationData };
+  | { type: 'org:invitation_received'; threadId: ''; data: WSOrgInvitationData }
+  | { type: 'test:frame'; threadId: string; data: WSTestFrameData }
+  | { type: 'test:output'; threadId: string; data: WSTestOutputData }
+  | { type: 'test:status'; threadId: string; data: WSTestStatusData };
 
 export interface WSOrgMemberData {
   organizationId: string;

@@ -841,5 +841,22 @@
     "create": "Create user",
     "creating": "Creating...",
     "createFailed": "Failed to create user"
+  },
+  "testRunner": {
+    "title": "Test Runner",
+    "tabs": {
+      "review": "Review",
+      "tests": "Tests"
+    },
+    "searchTests": "Search tests...",
+    "runAll": "Run All",
+    "stop": "Stop",
+    "noTestFiles": "No test files found",
+    "noMatching": "No tests matching \"{{search}}\"",
+    "loadingTests": "Loading tests...",
+    "selectProject": "Select a project to run tests",
+    "noTestRunning": "No test running",
+    "connectingBrowser": "Connecting to browser...",
+    "outputPlaceholder": "Test output will appear here..."
   }
 }

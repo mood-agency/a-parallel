@@ -1001,4 +1001,15 @@ export const api = {
     }),
   removeTeamProject: (projectId: string) =>
     request<{ ok: boolean }>(`/team-projects/${projectId}`, { method: 'DELETE' }),
+
+  // Test Runner
+  listTestFiles: (projectId: string) =>
+    request<import('@funny/shared').TestFile[]>(`/tests/${projectId}/files`),
+  runTest: (projectId: string, file: string) =>
+    request<import('@funny/shared').RunTestResponse>(`/tests/${projectId}/run`, {
+      method: 'POST',
+      body: JSON.stringify({ file }),
+    }),
+  stopTest: (projectId: string) =>
+    request<{ ok: boolean }>(`/tests/${projectId}/stop`, { method: 'POST' }),
 };

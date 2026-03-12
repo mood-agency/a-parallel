@@ -59,6 +59,7 @@ import { settingsRoutes } from './routes/settings.js';
 import skillsRoutes from './routes/skills.js';
 import { teamProjectRoutes } from './routes/team-projects.js';
 import { teamSettingsRoutes } from './routes/team-settings.js';
+import { testRoutes } from './routes/tests.js';
 import { threadRoutes } from './routes/threads.js';
 import { worktreeRoutes } from './routes/worktrees.js';
 import { startAgent } from './services/agent-runner.js';
@@ -229,6 +230,7 @@ app.route('/api/analytics', analyticsRoutes);
 app.route('/api/settings', settingsRoutes);
 app.route('/api/team-projects', teamProjectRoutes);
 app.route('/api/team-settings', teamSettingsRoutes);
+app.route('/api/tests', testRoutes);
 
 // Serve static files from client build (only if dist exists)
 if (existsSync(clientDistDir)) {

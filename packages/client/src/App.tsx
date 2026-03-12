@@ -59,6 +59,9 @@ const AllThreadsView = lazy(() =>
 const reviewPaneImport = () =>
   import('@/components/ReviewPane').then((m) => ({ default: m.ReviewPane }));
 const ReviewPane = lazy(reviewPaneImport);
+const TestRunnerPane = lazy(() =>
+  import('@/components/TestRunnerPane').then((m) => ({ default: m.TestRunnerPane })),
+);
 const TerminalPanel = lazy(() =>
   import('@/components/TerminalPanel').then((m) => ({ default: m.TerminalPanel })),
 );
@@ -111,6 +114,8 @@ export function App() {
   const reviewPaneOpen = useUIStore((s) => s.reviewPaneOpen);
   const reviewPaneWidth = useUIStore((s) => s.reviewPaneWidth);
   const setReviewPaneWidth = useUIStore((s) => s.setReviewPaneWidth);
+  const rightPaneTab = useUIStore((s) => s.rightPaneTab);
+  const setRightPaneTab = useUIStore((s) => s.setRightPaneTab);
   const settingsOpen = useUIStore((s) => s.settingsOpen);
   const generalSettingsOpen = useUIStore((s) => s.generalSettingsOpen);
   const allThreadsProjectId = useUIStore((s) => s.allThreadsProjectId);
@@ -238,7 +243,7 @@ export function App() {
         </Suspense>
       </SidebarInset>
 
-      {/* Right sidebar for review pane — CSS transition slide in/out.
+      {/* Right sidebar — tabbed pane (Review / Tests) with CSS transition slide in/out.
           ReviewPane is eagerly mounted (hidden) after initial idle to eliminate
           ~500ms first-open delay from lazy loading + mount + diff fetch. */}
       <div
@@ -269,7 +274,7 @@ export function App() {
         )}
         {(reviewPaneReady || reviewPaneOpen) && (
           <div
-            className="h-full"
+            className="flex h-full flex-col"
             style={{
               width: `${reviewPaneWidth}vw`,
               ...(!(reviewPaneOpen && !settingsOpen && !allThreadsProjectId)
@@ -277,9 +282,38 @@ export function App() {
                 : {}),
             }}
           >
-            <Suspense>
-              <ReviewPane />
-            </Suspense>
+            {/* Tab bar */}
+            <div className="flex shrink-0 border-b border-border">
+              <button
+                data-testid="right-pane-tab-review"
+                onClick={() => setRightPaneTab('review')}
+                className={cn(
+                  'flex-1 px-3 py-1.5 text-xs font-medium transition-colors',
+                  rightPaneTab === 'review'
+                    ? 'border-b-2 border-primary text-foreground'
+                    : 'text-muted-foreground hover:text-foreground',
+                )}
+              >
+                Review
+              </button>
+              <button
+                data-testid="right-pane-tab-tests"
+                onClick={() => setRightPaneTab('tests')}
+                className={cn(
+                  'flex-1 px-3 py-1.5 text-xs font-medium transition-colors',
+                  rightPaneTab === 'tests'
+                    ? 'border-b-2 border-primary text-foreground'
+                    : 'text-muted-foreground hover:text-foreground',
+                )}
+              >
+                Tests
+              </button>
+            </div>
+
+            {/* Tab content */}
+            <div className="min-h-0 flex-1 overflow-hidden">
+              <Suspense>{rightPaneTab === 'review' ? <ReviewPane /> : <TestRunnerPane />}</Suspense>
+            </div>
           </div>
         )}
       </div>

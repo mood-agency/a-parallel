@@ -1,5 +1,5 @@
 import { Check, Copy } from 'lucide-react';
-import { useState, useEffect } from 'react';
+import { lazy, Suspense, useState, useEffect } from 'react';
 import remarkGfm from 'remark-gfm';
 
 import { useCopyToClipboard } from '@/hooks/use-copy-to-clipboard';
@@ -8,6 +8,38 @@ import { useShiki } from '@/hooks/use-shiki';
 import { cn } from './utils';
 
 export const remarkPlugins = [remarkGfm];
+
+const MARKDOWN_LANGS = new Set(['markdown', 'md']);
+
+/**
+ * Heuristic: does this text look like markdown content rather than code?
+ * Checks for headings, bold/italic, and bullet/numbered lists.
+ */
+function looksLikeMarkdown(text: string): boolean {
+  const lines = text.split('\n');
+  let markdownSignals = 0;
+  for (const line of lines) {
+    const trimmed = line.trimStart();
+    if (/^#{1,6}\s/.test(trimmed)) markdownSignals++; // headings
+    if (/\*\*[^*]+\*\*/.test(trimmed)) markdownSignals++; // bold
+    if (/^[-*]\s/.test(trimmed)) markdownSignals++; // unordered list
+    if (/^\d+\.\s/.test(trimmed)) markdownSignals++; // ordered list
+  }
+  return markdownSignals >= 3;
+}
+
+// Lazy-loaded nested markdown renderer for ```markdown code blocks
+const LazyNestedMarkdown = lazy(() =>
+  import('react-markdown').then(({ default: ReactMarkdown }) => ({
+    default: function NestedMarkdown({ content }: { content: string }) {
+      return (
+        <ReactMarkdown remarkPlugins={remarkPlugins} components={baseMarkdownComponents}>
+          {content}
+        </ReactMarkdown>
+      );
+    },
+  })),
+);
 
 function CopyButton({ text }: { text: string }) {
   const [copied, copy] = useCopyToClipboard();
@@ -68,6 +100,8 @@ export const baseMarkdownComponents = {
     const isBlock = className?.startsWith('language-');
     if (isBlock) {
       const language = className.replace('language-', '');
+      // Markdown blocks are rendered by the pre handler, just pass children through
+      if (MARKDOWN_LANGS.has(language)) return <>{children}</>;
       const code = extractText(children).replace(/\n$/, '');
       return <HighlightedCode code={code} language={language} />;
     }
@@ -81,6 +115,20 @@ export const baseMarkdownComponents = {
     const text = extractText(children).replace(/\n$/, '');
     const langClass = children?.props?.className;
     const language = langClass?.startsWith('language-') ? langClass.replace('language-', '') : null;
+
+    const isMarkdown =
+      (language && MARKDOWN_LANGS.has(language)) || (!language && looksLikeMarkdown(text));
+
+    if (isMarkdown) {
+      return (
+        <div className="my-2 rounded border border-border bg-muted/30 p-4 prose prose-sm max-w-none">
+          <Suspense fallback={<div className="whitespace-pre-wrap text-sm">{text}</div>}>
+            <LazyNestedMarkdown content={text} />
+          </Suspense>
+        </div>
+      );
+    }
+
     return (
       <pre className="group/codeblock relative my-2 overflow-x-auto rounded bg-muted p-2 font-mono">
         {language && (

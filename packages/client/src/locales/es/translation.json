@@ -834,5 +834,22 @@
     "create": "Crear usuario",
     "creating": "Creando...",
     "createFailed": "Error al crear usuario"
+  },
+  "testRunner": {
+    "title": "Ejecutor de Pruebas",
+    "tabs": {
+      "review": "Revisión",
+      "tests": "Pruebas"
+    },
+    "searchTests": "Buscar pruebas...",
+    "runAll": "Ejecutar Todo",
+    "stop": "Detener",
+    "noTestFiles": "No se encontraron archivos de prueba",
+    "noMatching": "No hay pruebas que coincidan con \"{{search}}\"",
+    "loadingTests": "Cargando pruebas...",
+    "selectProject": "Selecciona un proyecto para ejecutar pruebas",
+    "noTestRunning": "Ninguna prueba en ejecución",
+    "connectingBrowser": "Conectando al navegador...",
+    "outputPlaceholder": "La salida de la prueba aparecerá aquí..."
   }
 }

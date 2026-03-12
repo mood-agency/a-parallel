@@ -402,6 +402,25 @@ function handleMessage(e: MessageEvent) {
       useThreadStore.getState().handleWSQueueUpdate(threadId, data);
       break;
     }
+    case 'test:frame': {
+      // Dispatch frame to canvas renderer via custom event (high-frequency, avoid store)
+      import('@/components/test-runner/BrowserPreview').then(({ renderFrame }) => {
+        renderFrame(data.data);
+      });
+      break;
+    }
+    case 'test:output': {
+      import('@/stores/test-store').then(({ useTestStore }) => {
+        useTestStore.getState().handleTestOutput(data);
+      });
+      break;
+    }
+    case 'test:status': {
+      import('@/stores/test-store').then(({ useTestStore }) => {
+        useTestStore.getState().handleTestStatus(data);
+      });
+      break;
+    }
     case 'clone:progress': {
       window.dispatchEvent(new CustomEvent('clone:progress', { detail: data }));
       break;

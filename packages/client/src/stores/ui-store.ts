@@ -9,9 +9,12 @@ const MIN_REVIEW_PANE_WIDTH = 20;
 const MAX_REVIEW_PANE_WIDTH = 70;
 const TIMELINE_VISIBLE_KEY = 'timeline_visible';
 
+export type RightPaneTab = 'review' | 'tests';
+
 interface UIState {
   reviewPaneOpen: boolean;
   reviewPaneWidth: number; // percentage of viewport width
+  rightPaneTab: RightPaneTab;
   settingsOpen: boolean;
   activeSettingsPage: string | null;
   newThreadProjectId: string | null;
@@ -27,6 +30,7 @@ interface UIState {
   kanbanContext: { projectId?: string; search?: string; threadId?: string } | null;
   setReviewPaneOpen: (open: boolean) => void;
   setReviewPaneWidth: (width: number) => void;
+  setRightPaneTab: (tab: RightPaneTab) => void;
   setSettingsOpen: (open: boolean) => void;
   setActiveSettingsPage: (page: string | null) => void;
   setGeneralSettingsOpen: (open: boolean) => void;
@@ -47,6 +51,7 @@ interface UIState {
 
 export const useUIStore = create<UIState>((set) => ({
   reviewPaneOpen: false,
+  rightPaneTab: 'review' as RightPaneTab,
   reviewPaneWidth: (() => {
     try {
       const stored = localStorage.getItem(REVIEW_PANE_WIDTH_KEY);
@@ -76,6 +81,7 @@ export const useUIStore = create<UIState>((set) => ({
   })(),
   kanbanContext: null,
   setReviewPaneOpen: (open) => set({ reviewPaneOpen: open }),
+  setRightPaneTab: (tab) => set({ rightPaneTab: tab, reviewPaneOpen: true }),
   setReviewPaneWidth: (width) => {
     const clamped = Math.max(MIN_REVIEW_PANE_WIDTH, Math.min(MAX_REVIEW_PANE_WIDTH, width));
     try {
