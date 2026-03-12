@@ -12,7 +12,6 @@ import {
   Users,
   Workflow,
   Building2,
-  UserPlus,
 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { useNavigate } from 'react-router-dom';
@@ -48,8 +47,7 @@ export type SettingsItemId =
   | (typeof baseSettingsItems)[number]['id']
   | 'users'
   | 'team-settings'
-  | 'team-members'
-  | 'team-invitations';
+  | 'team-members';
 
 export const settingsLabelKeys: Record<string, string> = {
   general: 'settings.general',
@@ -65,7 +63,6 @@ export const settingsLabelKeys: Record<string, string> = {
   users: 'users.title',
   'team-settings': 'Team Settings',
   'team-members': 'Members',
-  'team-invitations': 'Invitations',
 };
 
 export function SettingsPanel() {
@@ -85,7 +82,6 @@ export function SettingsPanel() {
   if (authMode === 'multi') {
     items.push({ id: 'team-settings', label: 'Team Settings', icon: Building2 });
     items.push({ id: 'team-members', label: 'Members', icon: Users });
-    items.push({ id: 'team-invitations', label: 'Invitations', icon: UserPlus });
   }
   if (authMode === 'multi' && authUser?.role === 'admin') {
     items.push({ id: 'users', label: 'Users', icon: Users });

@@ -119,8 +119,9 @@ export const ThreadItem = memo(function ThreadItem({
   const hasGitIconOnly = showGitIcon && !hasDiffStats && GitIcon;
   const hasSnippet = !!thread.lastAssistantMessage;
   const showLaunching = isBusy && !hasSnippet;
+  const isBacklog = !hasSnippet && !isBusy && (!thread.stage || thread.stage === 'backlog');
   const hasMetadataRow = !!subtitle || hasDiffStats || hasGitIconOnly;
-  const hasSnippetRow = hasSnippet || showLaunching;
+  const hasSnippetRow = hasSnippet || showLaunching || isBacklog;
   const hasSecondRow = hasMetadataRow || hasSnippetRow;
 
   return (
@@ -236,6 +237,10 @@ export const ThreadItem = memo(function ThreadItem({
             ) : showLaunching ? (
               <span className="min-w-0 flex-1 truncate text-xs italic text-muted-foreground/50">
                 {t('thread.launching', 'Launching...')}
+              </span>
+            ) : isBacklog ? (
+              <span className="min-w-0 flex-1 truncate text-xs italic text-muted-foreground/50">
+                {t('thread.readyToLaunch', 'Ready to Launch')}
               </span>
             ) : null}
           </div>

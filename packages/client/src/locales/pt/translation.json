@@ -66,6 +66,7 @@
       "gemini20flash": "Gemini 2.0 Flash"
     },
     "createdBy": "Criado por {{creator}}",
+    "readyToLaunch": "Pronto para lançar",
     "send": "Enviar",
     "stop": "Parar",
     "placeholder": "Digite sua mensagem...",

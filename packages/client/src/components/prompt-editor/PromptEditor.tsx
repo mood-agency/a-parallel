@@ -48,6 +48,8 @@ interface PromptEditorProps {
   disabled?: boolean;
   /** Called on Enter (without Shift) */
   onSubmit?: () => void;
+  /** Called on Shift+Tab to cycle permission mode */
+  onCycleMode?: () => void;
   /** Called when content changes */
   onChange?: () => void;
   /** Called when image is pasted */
@@ -209,7 +211,7 @@ function SuggestionPopup({
 // ── PromptEditor ─────────────────────────────────────────────────
 
 export const PromptEditor = forwardRef<PromptEditorHandle, PromptEditorProps>(function PromptEditor(
-  { placeholder, disabled, onSubmit, onChange, onPaste, cwd, loadSkills, className },
+  { placeholder, disabled, onSubmit, onCycleMode, onChange, onPaste, cwd, loadSkills, className },
   ref,
 ) {
   // ── Suggestion state (shared for both @ and /) ──
@@ -457,6 +459,8 @@ export const PromptEditor = forwardRef<PromptEditorHandle, PromptEditorProps>(fu
   // ── TipTap editor ──
   const onSubmitRef = useRef(onSubmit);
   onSubmitRef.current = onSubmit;
+  const onCycleModeRef = useRef(onCycleMode);
+  onCycleModeRef.current = onCycleMode;
   const onChangeRef = useRef(onChange);
   onChangeRef.current = onChange;
 
@@ -522,6 +526,12 @@ export const PromptEditor = forwardRef<PromptEditorHandle, PromptEditorProps>(fu
         role: 'textbox',
       },
       handleKeyDown: (_view, event) => {
+        // Shift+Tab: cycle permission mode
+        if (event.key === 'Tab' && event.shiftKey) {
+          event.preventDefault();
+          onCycleModeRef.current?.();
+          return true;
+        }
         // Enter without shift → submit
         if (event.key === 'Enter' && !event.shiftKey) {
           // If a suggestion popup is open, let the suggestion handle it

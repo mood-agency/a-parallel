@@ -34,7 +34,7 @@ import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover
 import { Switch } from '@/components/ui/switch';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { api } from '@/lib/api';
-import { getContextWindow, getUnifiedModelOptions, parseUnifiedModel } from '@/lib/providers';
+import { getUnifiedModelOptions, parseUnifiedModel } from '@/lib/providers';
 import { cn } from '@/lib/utils';
 import { useDraftStore } from '@/stores/draft-store';
 import { useProjectStore } from '@/stores/project-store';
@@ -164,35 +164,6 @@ const ModelSelect = memo(function ModelSelect({
   );
 });
 
-const ContextUsage = memo(function ContextUsage({
-  provider,
-  model,
-  cumulativeTokens,
-}: {
-  provider: string;
-  model: string;
-  cumulativeTokens: number;
-}) {
-  const maxTokens = getContextWindow(provider, model);
-  const cumulative = cumulativeTokens;
-  const pct = maxTokens > 0 ? Math.min(100, (cumulative / maxTokens) * 100) : 0;
-  const tokenK = Math.round(cumulative / 1000);
-  const colorClass =
-    pct > 80 ? 'text-red-500' : pct > 60 ? 'text-amber-500' : 'text-muted-foreground';
-  return (
-    <Tooltip>
-      <TooltipTrigger asChild>
-        <span className={cn('cursor-default text-xs tabular-nums', colorClass)}>
-          {pct.toFixed(0)}% used
-        </span>
-      </TooltipTrigger>
-      <TooltipContent>
-        Context: {tokenK}K / {Math.round(maxTokens / 1000)}K tokens
-      </TooltipContent>
-    </Tooltip>
-  );
-});
-
 /** Parse a git remote URL into a friendly `owner/repo` display string. */
 function formatRemoteUrl(url: string): string {
   // Handle SSH: git@github.com:user/repo.git
@@ -314,11 +285,6 @@ export const PromptInput = memo(function PromptInput({
   const activeThreadMode = useThreadStore((s) => s.activeThread?.mode);
   const activeThreadBranch = useThreadStore((s) => s.activeThread?.branch);
   const activeThreadBaseBranch = useThreadStore((s) => s.activeThread?.baseBranch);
-  // Select primitive values instead of the contextUsage object to avoid
-  // re-renders when the object reference changes but values stay the same.
-  const contextCumulativeTokens = useThreadStore(
-    (s) => s.activeThread?.contextUsage?.cumulativeInputTokens ?? 0,
-  );
   const [newThreadBranches, setNewThreadBranches] = useState<string[]>([]);
   const [newThreadBranchesLoading, setNewThreadBranchesLoading] = useState(false);
   const [selectedBranch, setSelectedBranch] = useState<string>('');
@@ -819,6 +785,13 @@ export const PromptInput = memo(function PromptInput({
     setEditorEmpty(editorRef.current?.isEmpty() ?? true);
   }, []);
 
+  const handleCycleMode = useCallback(() => {
+    setMode((current) => {
+      const idx = modes.findIndex((m) => m.value === current);
+      return modes[(idx + 1) % modes.length].value;
+    });
+  }, [modes]);
+
   const handleDragOver = (e: React.DragEvent) => {
     e.preventDefault();
     e.stopPropagation();
@@ -1105,6 +1078,7 @@ export const PromptInput = memo(function PromptInput({
               placeholder={editorPlaceholder}
               disabled={loading}
               onSubmit={handleSubmit}
+              onCycleMode={handleCycleMode}
               onChange={handleEditorChange}
               onPaste={handleEditorPaste}
               cwd={effectiveCwd}
@@ -1139,13 +1113,6 @@ export const PromptInput = memo(function PromptInput({
               <ModeSelect value={mode} onChange={setMode} modes={modes} />
               {/* Model + send — always visible, pushed right */}
               <div className="ml-auto flex shrink-0 items-center gap-1">
-                {!isNewThread && (
-                  <ContextUsage
-                    provider={activeThreadProvider ?? provider ?? DEFAULT_PROVIDER}
-                    model={activeThreadModel ?? model ?? DEFAULT_MODEL}
-                    cumulativeTokens={contextCumulativeTokens}
-                  />
-                )}
                 <ModelSelect
                   value={unifiedModel}
                   onChange={setUnifiedModel}
