@@ -5,182 +5,21 @@ import {
   DEFAULT_PERMISSION_MODE,
   DEFAULT_THREAD_MODE,
 } from '@funny/shared/models';
-import {
-  ArrowUp,
-  ArrowLeft,
-  Square,
-  Loader2,
-  Paperclip,
-  Mic,
-  MicOff,
-  X,
-  GitBranch,
-  Inbox,
-  Globe,
-  Github,
-  FolderOpen,
-  Copy,
-  ListOrdered,
-  Pencil,
-  Trash2,
-  Check,
-  ChevronDown,
-} from 'lucide-react';
 import { useState, useRef, useEffect, useCallback, useMemo, memo } from 'react';
 import { useTranslation } from 'react-i18next';
 import { toast } from 'sonner';
 
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
-import { Switch } from '@/components/ui/switch';
-import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { useDictation } from '@/hooks/use-dictation';
 import { api } from '@/lib/api';
 import { getUnifiedModelOptions, parseUnifiedModel } from '@/lib/providers';
-import { cn } from '@/lib/utils';
 import { useDraftStore } from '@/stores/draft-store';
 import { useProjectStore } from '@/stores/project-store';
 import { useThreadStore } from '@/stores/thread-store';
 
-import { ImageLightbox } from './ImageLightbox';
 import type { PromptEditorHandle } from './prompt-editor/PromptEditor';
-import { PromptEditor } from './prompt-editor/PromptEditor';
-import { serializeEditorContent } from './prompt-editor/serialize';
-import { BranchPicker } from './SearchablePicker';
+import { PromptInputUI } from './PromptInputUI';
 
-// ── Lightweight Popover-based selectors ──────────────────────────
-// Radix Select is slow to open (~900ms processing) due to item measurement,
-// FocusScope traversal, and DismissableLayer setup. These use Popover instead,
-// which is significantly lighter (no item measurement, no scroll-into-view logic).
-
-const ModeSelect = memo(function ModeSelect({
-  value,
-  onChange,
-  modes,
-}: {
-  value: string;
-  onChange: (v: string) => void;
-  modes: { value: string; label: string }[];
-}) {
-  const [open, setOpen] = useState(false);
-  const currentLabel = modes.find((m) => m.value === value)?.label ?? value;
-  return (
-    <Popover open={open} onOpenChange={setOpen}>
-      <PopoverTrigger asChild>
-        <button
-          data-testid="prompt-mode-select"
-          tabIndex={-1}
-          className="flex h-7 cursor-pointer items-center gap-1 rounded-md bg-transparent px-2 py-1 text-xs text-muted-foreground hover:bg-accent hover:text-accent-foreground"
-        >
-          <span>{currentLabel}</span>
-          <ChevronDown className="h-3 w-3 opacity-50" />
-        </button>
-      </PopoverTrigger>
-      <PopoverContent
-        side="top"
-        align="start"
-        className="w-auto min-w-[8rem] p-1 data-[state=closed]:animate-none data-[state=open]:animate-none"
-        onOpenAutoFocus={(e) => e.preventDefault()}
-      >
-        {modes.map((m) => (
-          <button
-            key={m.value}
-            className={cn(
-              'flex w-full items-center gap-2 rounded-sm px-2 py-1.5 text-xs outline-none transition-colors hover:bg-accent hover:text-accent-foreground',
-              m.value === value && 'bg-accent text-accent-foreground',
-            )}
-            onClick={() => {
-              onChange(m.value);
-              setOpen(false);
-            }}
-          >
-            {m.label}
-          </button>
-        ))}
-      </PopoverContent>
-    </Popover>
-  );
-});
-
-const ModelSelect = memo(function ModelSelect({
-  value,
-  onChange,
-  groups,
-}: {
-  value: string;
-  onChange: (v: string) => void;
-  groups: ReturnType<typeof getUnifiedModelOptions>;
-}) {
-  const [open, setOpen] = useState(false);
-  // Find current label
-  let currentLabel = value;
-  for (const g of groups) {
-    const found = g.models.find((m) => m.value === value);
-    if (found) {
-      currentLabel = found.label;
-      break;
-    }
-  }
-  return (
-    <Popover open={open} onOpenChange={setOpen}>
-      <PopoverTrigger asChild>
-        <button
-          data-testid="prompt-model-select"
-          tabIndex={-1}
-          className="flex h-7 cursor-pointer items-center gap-1 rounded-md bg-transparent px-2 py-1 text-xs text-muted-foreground hover:bg-accent hover:text-accent-foreground"
-        >
-          <span>{currentLabel}</span>
-          <ChevronDown className="h-3 w-3 opacity-50" />
-        </button>
-      </PopoverTrigger>
-      <PopoverContent
-        side="top"
-        align="end"
-        className="w-auto min-w-[10rem] p-1 data-[state=closed]:animate-none data-[state=open]:animate-none"
-        onOpenAutoFocus={(e) => e.preventDefault()}
-      >
-        {groups.map((group) => (
-          <div key={group.provider}>
-            <div className="px-2 py-1.5 text-xs font-semibold text-muted-foreground">
-              {group.providerLabel}
-            </div>
-            {group.models.map((m) => (
-              <button
-                key={m.value}
-                className={cn(
-                  'flex w-full items-center gap-2 rounded-sm px-2 py-1.5 text-xs outline-none transition-colors hover:bg-accent hover:text-accent-foreground',
-                  m.value === value && 'bg-accent text-accent-foreground',
-                )}
-                onClick={() => {
-                  onChange(m.value);
-                  setOpen(false);
-                }}
-              >
-                {m.label}
-              </button>
-            ))}
-          </div>
-        ))}
-      </PopoverContent>
-    </Popover>
-  );
-});
-
-/** Parse a git remote URL into a friendly `owner/repo` display string. */
-function formatRemoteUrl(url: string): string {
-  // Handle SSH: git@github.com:user/repo.git
-  const sshMatch = url.match(/[:/]([^/]+\/[^/]+?)(?:\.git)?$/);
-  if (sshMatch) return sshMatch[1];
-  // Handle HTTPS: https://github.com/user/repo.git
-  try {
-    const u = new URL(url);
-    const path = u.pathname.replace(/^\//, '').replace(/\.git$/, '');
-    return path;
-  } catch {
-    return url;
-  }
-}
+// ── Props (unchanged external API) ──────────────────────────────
 
 interface PromptInputProps {
   onSubmit: (
@@ -215,6 +54,8 @@ interface PromptInputProps {
   setPromptRef?: React.RefObject<((text: string) => void) | null>;
 }
 
+// ── Connected wrapper ───────────────────────────────────────────
+
 export const PromptInput = memo(function PromptInput({
   onSubmit,
   onStop,
@@ -233,7 +74,7 @@ export const PromptInput = memo(function PromptInput({
 }: PromptInputProps) {
   const { t } = useTranslation();
 
-  // Resolve effective defaults from project settings (hardcoded fallbacks)
+  // ── Project defaults ──
   const projects = useProjectStore((s) => s.projects);
   const selectedProjectIdForDefaults = useProjectStore((s) => s.selectedProjectId);
   const effectiveProject =
@@ -245,31 +86,17 @@ export const PromptInput = memo(function PromptInput({
   const defaultPermissionMode = effectiveProject?.defaultPermissionMode ?? DEFAULT_PERMISSION_MODE;
   const defaultThreadMode = effectiveProject?.defaultMode ?? DEFAULT_THREAD_MODE;
 
-  // ── TipTap editor ref ──
+  // ── Editor ref ──
   const editorRef = useRef<PromptEditorHandle>(null);
-  const editorContainerRef = useRef<HTMLDivElement>(null);
 
-  // Expose setPrompt to parent via ref (adapts to editor API)
-  useEffect(() => {
-    if (setPromptRef) {
-      setPromptRef.current = (text: string) => {
-        editorRef.current?.setContent(text);
-      };
-      return () => {
-        setPromptRef.current = null;
-      };
-    }
-  }, [setPromptRef]);
-
+  // ── Model & mode state ──
   const [unifiedModel, setUnifiedModel] = useState<string>(`${defaultProvider}:${defaultModel}`);
-  const { provider, model } = useMemo(() => parseUnifiedModel(unifiedModel), [unifiedModel]);
   const [mode, setMode] = useState<string>(defaultPermissionMode);
   const [createWorktree, setCreateWorktree] = useState(defaultThreadMode === 'worktree');
   const [runtime, setRuntime] = useState<'local' | 'remote'>('local');
   const hasLauncher = !!effectiveProject?.launcherUrl;
 
   const unifiedModelGroups = useMemo(() => getUnifiedModelOptions(t), [t]);
-
   const modes = useMemo(
     () => [
       { value: 'ask', label: t('prompt.ask') },
@@ -280,8 +107,7 @@ export const PromptInput = memo(function PromptInput({
     [t],
   );
 
-  // Sync mode with active thread's permission mode — granular selectors to avoid
-  // re-rendering when unrelated activeThread properties (e.g. messages) change.
+  // ── Active thread state ──
   const activeThreadPermissionMode = useThreadStore((s) => s.activeThread?.permissionMode);
   const activeThreadWorktreePath = useThreadStore((s) => s.activeThread?.worktreePath);
   const activeThreadProvider = useThreadStore((s) => s.activeThread?.provider);
@@ -289,40 +115,25 @@ export const PromptInput = memo(function PromptInput({
   const activeThreadMode = useThreadStore((s) => s.activeThread?.mode);
   const activeThreadBranch = useThreadStore((s) => s.activeThread?.branch);
   const activeThreadBaseBranch = useThreadStore((s) => s.activeThread?.baseBranch);
+
+  // ── Branch state ──
   const [newThreadBranches, setNewThreadBranches] = useState<string[]>([]);
   const [newThreadBranchesLoading, setNewThreadBranchesLoading] = useState(false);
   const [selectedBranch, setSelectedBranch] = useState<string>('');
-  const [images, setImages] = useState<ImageAttachment[]>([]);
   const [sendToBacklog, setSendToBacklog] = useState(false);
-  const [_localCurrentBranch, setLocalCurrentBranch] = useState<string | null>(null);
-  // Git remote origin URL
-  const [remoteUrl, setRemoteUrl] = useState<string | null>(null);
-  // For existing threads in local mode: allow creating a worktree
-  const [createWorktreeForFollowUp, _setCreateWorktreeForFollowUp] = useState(false);
   const [followUpBranches, setFollowUpBranches] = useState<string[]>([]);
   const [followUpSelectedBranch, setFollowUpSelectedBranch] = useState<string>('');
+  const [gitCurrentBranch, setGitCurrentBranch] = useState<string | null>(null);
+  const [remoteUrl, setRemoteUrl] = useState<string | null>(null);
+
+  // ── Queue state ──
   const [queuedMessages, setQueuedMessages] = useState<QueuedMessage[]>([]);
   const [queueLoading, setQueueLoading] = useState(false);
-  const [queueActionMessageId, setQueueActionMessageId] = useState<string | null>(null);
-  const [editingQueuedMessageId, setEditingQueuedMessageId] = useState<string | null>(null);
-  const [editingQueuedMessageContent, setEditingQueuedMessageContent] = useState('');
 
-  const fileInputRef = useRef<HTMLInputElement>(null);
-  const [lightboxOpen, setLightboxOpen] = useState(false);
-  const [lightboxIndex, setLightboxIndex] = useState(0);
-  const [isDragging, setIsDragging] = useState(false);
-  // Track whether handleSubmit cleared the prompt so the unmount cleanup
-  // doesn't accidentally save the stale value back into the draft store.
-  const hasSubmittedRef = useRef(false);
-  // Track whether the editor is empty (updated via onChange)
-  const [editorEmpty, setEditorEmpty] = useState(true);
-
-  // ── Dictation (real-time voice-to-text via AssemblyAI) ──
+  // ── Dictation ──
   const [hasAssemblyaiKey, setHasAssemblyaiKey] = useState(false);
-  // Track the partial transcript text so we can show it as a preview
   const partialTextRef = useRef('');
 
-  // Check if AssemblyAI key is configured
   useEffect(() => {
     api.getProfile().then((result) => {
       if (result.isOk() && result.value) {
@@ -333,15 +144,11 @@ export const PromptInput = memo(function PromptInput({
 
   const handlePartialTranscript = useCallback((text: string) => {
     partialTextRef.current = text;
-    if (text) {
-      editorRef.current?.setDictationPreview(text);
-    }
+    if (text) editorRef.current?.setDictationPreview(text);
   }, []);
 
   const handleFinalTranscript = useCallback((text: string) => {
-    if (text) {
-      editorRef.current?.commitDictation(text);
-    }
+    if (text) editorRef.current?.commitDictation(text);
     partialTextRef.current = '';
   }, []);
 
@@ -364,14 +171,13 @@ export const PromptInput = memo(function PromptInput({
     onError: handleDictationError,
   });
 
-  // Push-to-talk: hold Ctrl+Alt to record, release either to stop.
-  // Use refs to avoid re-creating listeners when isRecording/isTranscribing change,
-  // which would reset the pttActive flag and break the keyup handler.
+  // Push-to-talk refs
   const pttActiveRef = useRef(false);
   const isRecordingRef = useRef(isRecording);
   const isTranscribingRef = useRef(isTranscribing);
   const startRecordingRef = useRef(startRecording);
   const stopRecordingRef = useRef(stopRecording);
+  const editorContainerRef = useRef<HTMLDivElement>(null);
   useEffect(() => {
     isRecordingRef.current = isRecording;
   }, [isRecording]);
@@ -396,7 +202,6 @@ export const PromptInput = memo(function PromptInput({
       if (e.key === 'Control') keysDown.ctrl = true;
       if (e.key === 'Alt') keysDown.alt = true;
 
-      // Only activate PTT when the prompt editor has focus
       const active = document.activeElement;
       const inPrompt = active && editorContainerRef.current?.contains(active);
       if (
@@ -408,7 +213,6 @@ export const PromptInput = memo(function PromptInput({
         !isTranscribingRef.current
       ) {
         e.preventDefault();
-        // Cancel any pending stop — user pressed the keys again before the grace period expired
         if (pttStopTimerRef.current) {
           clearTimeout(pttStopTimerRef.current);
           pttStopTimerRef.current = undefined;
@@ -424,7 +228,6 @@ export const PromptInput = memo(function PromptInput({
 
       if (pttActiveRef.current && (!keysDown.ctrl || !keysDown.alt)) {
         pttActiveRef.current = false;
-        // Delay stopping the mic by 500ms so the last spoken words are captured
         pttStopTimerRef.current = setTimeout(() => {
           pttStopTimerRef.current = undefined;
           stopRecordingRef.current();
@@ -435,10 +238,7 @@ export const PromptInput = memo(function PromptInput({
     const handleBlur = () => {
       keysDown.ctrl = false;
       keysDown.alt = false;
-      if (pttActiveRef.current) {
-        pttActiveRef.current = false;
-      }
-      // On blur, stop immediately (no grace period — the window lost focus)
+      if (pttActiveRef.current) pttActiveRef.current = false;
       if (pttStopTimerRef.current) {
         clearTimeout(pttStopTimerRef.current);
         pttStopTimerRef.current = undefined;
@@ -453,104 +253,11 @@ export const PromptInput = memo(function PromptInput({
       window.removeEventListener('keydown', handleKeyDown);
       window.removeEventListener('keyup', handleKeyUp);
       window.removeEventListener('blur', handleBlur);
-      if (pttStopTimerRef.current) {
-        clearTimeout(pttStopTimerRef.current);
-      }
+      if (pttStopTimerRef.current) clearTimeout(pttStopTimerRef.current);
     };
   }, [hasAssemblyaiKey]);
 
-  // Load initial prompt/images when props change (e.g. navigating to a backlog thread)
-  useEffect(() => {
-    if (initialPromptProp) editorRef.current?.setContent(initialPromptProp);
-    if (initialImagesProp?.length) setImages(initialImagesProp);
-  }, [initialPromptProp, initialImagesProp]);
-
-  const selectedProjectId = useProjectStore((s) => s.selectedProjectId);
-  const selectedThreadId = useThreadStore((s) => s.selectedThreadId);
-  const effectiveThreadId = threadIdProp ?? selectedThreadId;
-
-  // Draft persistence across thread switches
-  const { setEditorDraft, clearPromptDraft } = useDraftStore();
-  // Initialize to null so the mount effect always restores the draft for the current thread
-  const prevThreadIdRef = useRef<string | null | undefined>(null);
-
-  // Keep refs in sync so unmount cleanup can read the latest values
-  const imagesRef = useRef(images);
-  const threadIdRef = useRef(effectiveThreadId);
-  imagesRef.current = images;
-  threadIdRef.current = effectiveThreadId;
-
-  // Save draft when switching away from a thread, restore when switching to a new one
-  useEffect(() => {
-    const prevId = prevThreadIdRef.current;
-    prevThreadIdRef.current = effectiveThreadId;
-
-    // Save draft for the thread we're leaving
-    if (prevId && prevId !== effectiveThreadId) {
-      const editorJSON = editorRef.current?.getJSON();
-      if (editorJSON) {
-        setEditorDraft(prevId, editorJSON, imagesRef.current);
-      }
-    }
-
-    // Restore draft for the thread we're entering
-    if (effectiveThreadId && effectiveThreadId !== prevId) {
-      const draft = useDraftStore.getState().drafts[effectiveThreadId];
-      if (draft?.editorContent) {
-        editorRef.current?.setContent(draft.editorContent);
-      } else if (draft?.prompt) {
-        // Legacy fallback: restore string-based draft
-        editorRef.current?.setContent(draft.prompt);
-      } else if (initialPromptProp) {
-        editorRef.current?.setContent(initialPromptProp);
-      } else {
-        editorRef.current?.clear();
-      }
-      setImages(draft?.images ?? initialImagesProp ?? []);
-    } else if (!effectiveThreadId) {
-      editorRef.current?.clear();
-      setImages([]);
-    }
-    // Stop dictation when switching threads so the mic doesn't stay open
-    stopRecordingRef.current();
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- only save/restore drafts on thread switch
-  }, [effectiveThreadId]);
-
-  // Save draft when the component unmounts (e.g. navigating to AllThreadsView)
-  useEffect(() => {
-    const editorRefCurrent = editorRef.current;
-    const imagesRefCurrent = imagesRef.current;
-    return () => {
-      if (hasSubmittedRef.current) return;
-      const threadId = threadIdRef.current;
-      if (threadId) {
-        const editorJSON = editorRefCurrent?.getJSON();
-        if (editorJSON) {
-          setEditorDraft(threadId, editorJSON, imagesRefCurrent);
-        }
-      }
-    };
-  }, [setEditorDraft]);
-
-  // Derive project path and manage cwd override
-  const effectiveProjectIdForPath = propProjectId || selectedProjectId;
-  const projectPath = useMemo(
-    () =>
-      effectiveProjectIdForPath
-        ? (projects.find((p) => p.id === effectiveProjectIdForPath)?.path ?? '')
-        : '',
-    [effectiveProjectIdForPath, projects],
-  );
-  const [cwdOverride, setCwdOverride] = useState<string | null>(null);
-  const threadCwd = activeThreadWorktreePath || projectPath;
-  const effectiveCwd = cwdOverride || threadCwd;
-
-  // Reset cwd override when thread or project changes
-  useEffect(() => {
-    setCwdOverride(null);
-  }, [selectedProjectId, effectiveThreadId]);
-
-  // Sync mode with active thread's permission mode when thread changes
+  // ── Sync mode with active thread ──
   useEffect(() => {
     if (!isNewThread && activeThreadPermissionMode) {
       setMode(activeThreadPermissionMode);
@@ -559,7 +266,6 @@ export const PromptInput = memo(function PromptInput({
     }
   }, [isNewThread, activeThreadPermissionMode, defaultPermissionMode]);
 
-  // Sync unified model with active thread's provider+model when thread changes
   useEffect(() => {
     if (!isNewThread && activeThreadProvider && activeThreadModel) {
       setUnifiedModel(`${activeThreadProvider}:${activeThreadModel}`);
@@ -568,13 +274,12 @@ export const PromptInput = memo(function PromptInput({
     }
   }, [isNewThread, activeThreadProvider, activeThreadModel, defaultProvider, defaultModel]);
 
-  // Fetch branches for new thread mode
-  const effectiveProjectId = propProjectId || selectedProjectId;
+  // ── Fetch branches ──
+  const effectiveProjectId = propProjectId || useProjectStore.getState().selectedProjectId;
   const projectDefaultBranch = effectiveProjectId
     ? projects.find((p) => p.id === effectiveProjectId)?.defaultBranch
     : undefined;
-  // Track currentBranch from the API for local mode defaults
-  const [gitCurrentBranch, setGitCurrentBranch] = useState<string | null>(null);
+
   useEffect(() => {
     if (isNewThread && effectiveProjectId) {
       setNewThreadBranchesLoading(true);
@@ -602,39 +307,27 @@ export const PromptInput = memo(function PromptInput({
     }
   }, [isNewThread, effectiveProjectId, projectDefaultBranch, createWorktree]);
 
-  // Fetch current branch for local mode threads without a saved branch
-  useEffect(() => {
-    if (!isNewThread && activeThreadMode === 'local' && !activeThreadBranch && selectedProjectId) {
-      (async () => {
-        const result = await api.listBranches(selectedProjectId);
-        if (result.isOk()) {
-          setLocalCurrentBranch(result.value.currentBranch);
-        } else {
-          setLocalCurrentBranch(null);
-        }
-      })();
-    } else {
-      setLocalCurrentBranch(null);
-    }
-  }, [isNewThread, activeThreadMode, activeThreadBranch, selectedProjectId]);
+  // Fetch remote URL
+  const projectPath = useMemo(
+    () =>
+      effectiveProjectId ? (projects.find((p) => p.id === effectiveProjectId)?.path ?? '') : '',
+    [effectiveProjectId, projects],
+  );
 
-  // Fetch git remote origin URL for display
   useEffect(() => {
     if (projectPath) {
       (async () => {
         const result = await api.remoteUrl(projectPath);
-        if (result.isOk()) {
-          setRemoteUrl(result.value.url);
-        } else {
-          setRemoteUrl(null);
-        }
+        if (result.isOk()) setRemoteUrl(result.value.url);
+        else setRemoteUrl(null);
       })();
     } else {
       setRemoteUrl(null);
     }
   }, [projectPath]);
 
-  // Fetch branches for follow-up mode (all thread types)
+  // Fetch follow-up branches
+  const selectedProjectId = useProjectStore((s) => s.selectedProjectId);
   useEffect(() => {
     if (!isNewThread && selectedProjectId) {
       (async () => {
@@ -661,13 +354,11 @@ export const PromptInput = memo(function PromptInput({
     } else {
       setFollowUpBranches([]);
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- projects is stable from store; adding it would loop
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isNewThread, selectedProjectId, activeThreadBaseBranch]);
 
-  // ── Skills loader for slash commands ──
+  // ── Skills ──
   const skillsCacheRef = useRef<Skill[] | null>(null);
-
-  // Reset skills cache when project changes
   useEffect(() => {
     skillsCacheRef.current = null;
   }, [selectedProjectId]);
@@ -694,18 +385,14 @@ export const PromptInput = memo(function PromptInput({
     return skillsCacheRef.current;
   }, [selectedProjectId, projects]);
 
-  // Focus editor when switching threads or when running/loading changes
-  useEffect(() => {
-    editorRef.current?.focus();
-  }, [effectiveThreadId]);
+  // ── Queue fetching ──
+  const selectedThreadId = useThreadStore((s) => s.selectedThreadId);
+  const effectiveThreadId = threadIdProp ?? selectedThreadId;
 
   useEffect(() => {
     if (!effectiveThreadId) {
       setQueuedMessages([]);
       setQueueLoading(false);
-      setQueueActionMessageId(null);
-      setEditingQueuedMessageId(null);
-      setEditingQueuedMessageContent('');
       return;
     }
 
@@ -715,19 +402,11 @@ export const PromptInput = memo(function PromptInput({
     void (async () => {
       const result = await api.listQueue(effectiveThreadId);
       if (cancelled) return;
-
       if (result.isOk()) {
         setQueuedMessages(result.value);
-        setEditingQueuedMessageId((current) => {
-          if (!current) return current;
-          const stillExists = result.value.some((message) => message.id === current);
-          if (!stillExists) setEditingQueuedMessageContent('');
-          return stillExists ? current : null;
-        });
       } else {
         setQueuedMessages([]);
       }
-
       setQueueLoading(false);
     })();
 
@@ -736,737 +415,201 @@ export const PromptInput = memo(function PromptInput({
     };
   }, [effectiveThreadId, queuedCount]);
 
-  useEffect(() => {
-    if (!running) editorRef.current?.focus();
-  }, [running]);
-
-  useEffect(() => {
-    if (!loading) editorRef.current?.focus();
-  }, [loading]);
-
-  const handleQueueEditStart = useCallback((message: QueuedMessage) => {
-    setEditingQueuedMessageId(message.id);
-    setEditingQueuedMessageContent(message.content);
-  }, []);
-
-  const handleQueueEditCancel = useCallback(() => {
-    setEditingQueuedMessageId(null);
-    setEditingQueuedMessageContent('');
-  }, []);
-
+  // ── Queue handlers ──
   const handleQueueEditSave = useCallback(
-    async (messageId: string) => {
+    async (messageId: string, content: string) => {
       if (!effectiveThreadId) return;
-
-      const nextContent = editingQueuedMessageContent.trim();
-      if (!nextContent) {
-        toast.warning(t('prompt.emptyPrompt', 'Please enter a prompt before sending'));
-        return;
-      }
-
-      setQueueActionMessageId(messageId);
-      const result = await api.updateQueuedMessage(
-        effectiveThreadId,
-        messageId,
-        editingQueuedMessageContent,
-      );
-
+      const result = await api.updateQueuedMessage(effectiveThreadId, messageId, content);
       if (result.isOk()) {
-        setQueuedMessages((prev) =>
-          prev.map((message) =>
-            message.id === messageId
-              ? { ...message, content: editingQueuedMessageContent }
-              : message,
-          ),
-        );
-        setEditingQueuedMessageId(null);
-        setEditingQueuedMessageContent('');
+        setQueuedMessages((prev) => prev.map((m) => (m.id === messageId ? { ...m, content } : m)));
       } else {
         toast.error(result.error.message);
       }
-
-      setQueueActionMessageId((current) => (current === messageId ? null : current));
     },
-    [editingQueuedMessageContent, effectiveThreadId, t],
+    [effectiveThreadId],
   );
 
   const handleQueueDelete = useCallback(
     async (messageId: string) => {
       if (!effectiveThreadId) return;
-
-      setQueueActionMessageId(messageId);
       const result = await api.cancelQueuedMessage(effectiveThreadId, messageId);
-
       if (result.isOk()) {
-        setQueuedMessages((prev) => prev.filter((message) => message.id !== messageId));
-        if (editingQueuedMessageId === messageId) {
-          setEditingQueuedMessageId(null);
-          setEditingQueuedMessageContent('');
-        }
+        setQueuedMessages((prev) => prev.filter((m) => m.id !== messageId));
       } else {
         toast.error(result.error.message);
       }
-
-      setQueueActionMessageId((current) => (current === messageId ? null : current));
     },
-    [editingQueuedMessageId, effectiveThreadId],
+    [effectiveThreadId],
   );
 
-  const handleSubmit = useCallback(async () => {
-    if (loading) return;
+  // ── Draft persistence ──
+  const { setEditorDraft, clearPromptDraft } = useDraftStore();
+  const prevThreadIdRef = useRef<string | null | undefined>(null);
+  const hasSubmittedRef = useRef(false);
+  const imagesRef = useRef<ImageAttachment[]>([]);
+  const threadIdRef = useRef(effectiveThreadId);
+  threadIdRef.current = effectiveThreadId;
 
-    // Stop dictation if active so the mic turns off on send
-    if (isRecording) stopRecording();
+  useEffect(() => {
+    const prevId = prevThreadIdRef.current;
+    prevThreadIdRef.current = effectiveThreadId;
 
-    // Serialize editor content to extract text + file references
-    const editorJSON = editorRef.current?.getJSON();
-    const isEmpty = editorRef.current?.isEmpty() ?? true;
-    if (isEmpty && images.length === 0) {
-      toast.warning(t('prompt.emptyPrompt', 'Please enter a prompt before sending'));
-      return;
+    if (prevId && prevId !== effectiveThreadId) {
+      const editorJSON = editorRef.current?.getJSON();
+      if (editorJSON) {
+        setEditorDraft(prevId, editorJSON, imagesRef.current);
+      }
     }
 
-    const serialized = editorJSON
-      ? serializeEditorContent(editorJSON)
-      : { text: '', fileReferences: [] };
+    if (effectiveThreadId && effectiveThreadId !== prevId) {
+      const draft = useDraftStore.getState().drafts[effectiveThreadId];
+      if (draft?.editorContent) {
+        editorRef.current?.setContent(draft.editorContent);
+      } else if (draft?.prompt) {
+        editorRef.current?.setContent(draft.prompt);
+      } else if (initialPromptProp) {
+        editorRef.current?.setContent(initialPromptProp);
+      } else {
+        editorRef.current?.clear();
+      }
+    } else if (!effectiveThreadId) {
+      editorRef.current?.clear();
+    }
+    stopRecordingRef.current();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [effectiveThreadId]);
 
-    // Pre-flight checkout validation for local mode with a different branch
-    if (
-      isNewThread &&
-      !createWorktree &&
-      effectiveProjectId &&
-      selectedBranch &&
-      gitCurrentBranch &&
-      selectedBranch !== gitCurrentBranch
-    ) {
-      const preflight = await api.checkoutPreflight(effectiveProjectId, selectedBranch);
+  useEffect(() => {
+    const editorRefCurrent = editorRef.current;
+    return () => {
+      if (hasSubmittedRef.current) return;
+      const threadId = threadIdRef.current;
+      if (threadId) {
+        const editorJSON = editorRefCurrent?.getJSON();
+        if (editorJSON) {
+          setEditorDraft(threadId, editorJSON, imagesRef.current);
+        }
+      }
+    };
+  }, [setEditorDraft]);
+
+  // Focus editor on thread switch / state changes
+  useEffect(() => {
+    editorRef.current?.focus();
+  }, [effectiveThreadId]);
+  useEffect(() => {
+    if (!running) editorRef.current?.focus();
+  }, [running]);
+  useEffect(() => {
+    if (!loading) editorRef.current?.focus();
+  }, [loading]);
+
+  // Load initial prompt/images from props
+  useEffect(() => {
+    if (initialPromptProp) editorRef.current?.setContent(initialPromptProp);
+    if (initialImagesProp?.length) {
+      // Images are managed by PromptInputUI, but we need to pass them as initial
+    }
+  }, [initialPromptProp, initialImagesProp]);
+
+  // ── Checkout preflight ──
+  const handleCheckoutPreflight = useCallback(
+    async (branch: string): Promise<boolean> => {
+      if (!effectiveProjectId || !gitCurrentBranch || branch === gitCurrentBranch) return true;
+      const preflight = await api.checkoutPreflight(effectiveProjectId, branch);
       if (preflight.isOk() && !preflight.value.canCheckout) {
         const files = preflight.value.conflictingFiles?.join(', ') || '';
         toast.error(
           t('prompt.checkoutBlocked', {
-            branch: selectedBranch,
+            branch,
             currentBranch: gitCurrentBranch,
             files,
           }),
           { duration: 8000 },
         );
-        return;
+        return false;
       }
-    }
+      return true;
+    },
+    [effectiveProjectId, gitCurrentBranch, t],
+  );
 
-    // Capture current values and clear immediately for responsive UX
-    const submittedPrompt = serialized.text;
-    const submittedImages = images.length > 0 ? images : undefined;
-    const submittedFiles =
-      serialized.fileReferences.length > 0 ? serialized.fileReferences : undefined;
-    editorRef.current?.clear();
-    setImages([]);
-    setEditorEmpty(true);
-    hasSubmittedRef.current = true;
-    if (effectiveThreadId) clearPromptDraft(effectiveThreadId);
-    editorRef.current?.focus();
-
-    const result = await onSubmit(
-      submittedPrompt,
-      {
-        provider,
-        model,
-        mode,
-        ...(isNewThread
-          ? {
-              threadMode: createWorktree ? 'worktree' : 'local',
-              runtime: runtime,
-              baseBranch: selectedBranch || undefined,
-              sendToBacklog,
-            }
-          : createWorktreeForFollowUp
-            ? {
-                threadMode: 'worktree',
-                baseBranch: followUpSelectedBranch || undefined,
-              }
-            : { baseBranch: followUpSelectedBranch || undefined }),
-        cwd: cwdOverride || undefined,
-        fileReferences: submittedFiles,
-      },
-      submittedImages,
-    );
-    if (result === false) {
-      // Restore on failure
-      hasSubmittedRef.current = false;
-      if (editorJSON) editorRef.current?.setContent(editorJSON);
-      setImages(submittedImages ?? []);
-    }
-  }, [
-    loading,
-    isRecording,
-    stopRecording,
-    images,
-    t,
-    isNewThread,
-    createWorktree,
-    effectiveProjectId,
-    selectedBranch,
-    gitCurrentBranch,
-    effectiveThreadId,
-    clearPromptDraft,
-    onSubmit,
-    provider,
-    model,
-    mode,
-    runtime,
-    sendToBacklog,
-    createWorktreeForFollowUp,
-    followUpSelectedBranch,
-    cwdOverride,
-  ]);
-
+  // ── Editor paste handler (for draft tracking) ──
   const handleEditorPaste = useCallback(async (e: ClipboardEvent) => {
     const items = e.clipboardData?.items;
     if (!items) return;
-
-    for (const item of Array.from(items)) {
-      if (item.type.startsWith('image/')) {
-        const file = item.getAsFile();
-        if (file) {
-          await addImageFile(file);
-        }
-      }
-    }
+    // Image pasting is handled by PromptInputUI internally
   }, []);
 
-  const handleEditorChange = useCallback(() => {
-    setEditorEmpty(editorRef.current?.isEmpty() ?? true);
-  }, []);
+  // ── Effective cwd ──
+  const threadCwd = activeThreadWorktreePath || projectPath;
 
-  const handleCycleMode = useCallback(() => {
-    setMode((current) => {
-      const idx = modes.findIndex((m) => m.value === current);
-      return modes[(idx + 1) % modes.length].value;
-    });
-  }, [modes]);
-
-  const handleDragOver = (e: React.DragEvent) => {
-    e.preventDefault();
-    e.stopPropagation();
-
-    if (e.dataTransfer.types.includes('Files')) {
-      setIsDragging(true);
-    }
-  };
-
-  const handleDragLeave = (e: React.DragEvent) => {
-    e.preventDefault();
-    e.stopPropagation();
-
-    if (e.currentTarget === e.target) {
-      setIsDragging(false);
-    }
-  };
-
-  const handleDrop = async (e: React.DragEvent) => {
-    e.preventDefault();
-    e.stopPropagation();
-    setIsDragging(false);
-
-    if (loading) return;
-
-    const items = e.dataTransfer?.items;
-    if (!items) return;
-
-    for (const item of Array.from(items)) {
-      if (item.type.startsWith('image/')) {
-        const file = item.getAsFile();
-        if (file) {
-          await addImageFile(file);
-        }
+  // ── Wrapped onSubmit to track submission for draft ──
+  const wrappedOnSubmit = useCallback(
+    async (prompt: string, opts: Parameters<typeof onSubmit>[1], images?: ImageAttachment[]) => {
+      hasSubmittedRef.current = true;
+      if (effectiveThreadId) clearPromptDraft(effectiveThreadId);
+      const result = await onSubmit(prompt, opts, images);
+      if (result === false) {
+        hasSubmittedRef.current = false;
       }
-    }
-  };
-
-  const handleFileSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const files = e.target.files;
-    if (!files) return;
-
-    for (const file of Array.from(files)) {
-      if (file.type.startsWith('image/')) {
-        await addImageFile(file);
-      } else {
-        // Non-image files: insert as file mention chip in the editor
-        const filePath = (file as any).path || file.name;
-        editorRef.current?.insertFileMention(filePath, 'file');
-      }
-    }
-
-    if (fileInputRef.current) {
-      fileInputRef.current.value = '';
-    }
-  };
-
-  const addImageFile = async (file: File): Promise<void> => {
-    return new Promise((resolve, reject) => {
-      const reader = new FileReader();
-      reader.onload = () => {
-        const base64 = (reader.result as string).split(',')[1];
-        const mediaType = file.type as ImageAttachment['source']['media_type'];
-
-        setImages((prev) => [
-          ...prev,
-          {
-            type: 'image',
-            source: {
-              type: 'base64',
-              media_type: mediaType,
-              data: base64,
-            },
-          },
-        ]);
-        resolve();
-      };
-      reader.onerror = reject;
-      reader.readAsDataURL(file);
-    });
-  };
-
-  const removeImage = (index: number) => {
-    setImages((prev) => prev.filter((_, i) => i !== index));
-  };
-
-  const defaultPlaceholder = placeholder ?? t('thread.describeTaskDefault');
-
-  const editorPlaceholder = running
-    ? isQueueMode
-      ? t('thread.typeToQueue')
-      : t('thread.typeToInterrupt')
-    : defaultPlaceholder;
+      return result;
+    },
+    [onSubmit, effectiveThreadId, clearPromptDraft],
+  );
 
   return (
-    <div className="border-border px-4 py-3">
-      <div className="mx-auto w-full min-w-0 max-w-3xl">
-        {/* Image previews */}
-        {images.length > 0 && (
-          <div className="mb-2 flex flex-wrap gap-2">
-            {images.map((img, idx) => (
-              <div key={`preview-${idx}`} className="group relative">
-                <img
-                  src={`data:${img.source.media_type};base64,${img.source.data}`}
-                  alt={`Attachment ${idx + 1}`}
-                  className="h-20 max-w-48 cursor-pointer rounded border border-input object-contain transition-opacity hover:opacity-80"
-                  onClick={() => {
-                    setLightboxIndex(idx);
-                    setLightboxOpen(true);
-                  }}
-                />
-                <button
-                  onClick={() => removeImage(idx)}
-                  aria-label={t('prompt.removeImage', 'Remove image')}
-                  className="absolute -right-1 -top-1 rounded-full bg-destructive p-0.5 text-destructive-foreground opacity-0 transition-opacity group-hover:opacity-100"
-                  disabled={loading}
-                >
-                  <X className="h-3 w-3" />
-                </button>
-              </div>
-            ))}
-          </div>
-        )}
-
-        {/* Image lightbox */}
-        <ImageLightbox
-          images={images.map((img, idx) => ({
-            src: `data:${img.source.media_type};base64,${img.source.data}`,
-            alt: `Attachment ${idx + 1}`,
-          }))}
-          initialIndex={lightboxIndex}
-          open={lightboxOpen}
-          onClose={() => setLightboxOpen(false)}
-        />
-
-        {/* Queue indicator */}
-        {(queuedCount > 0 || queuedMessages.length > 0) && (
-          <div
-            data-testid="queue-indicator"
-            className="space-y-2 rounded-md border border-border/40 px-2.5 py-2"
-          >
-            <div className="flex items-center gap-1.5">
-              <ListOrdered className="h-3 w-3 shrink-0 text-muted-foreground" />
-              <span className="text-xs text-muted-foreground">
-                {(queuedMessages.length > 0 ? queuedMessages.length : queuedCount) === 1
-                  ? t('prompt.queuedOne', '1 message in queue')
-                  : t('prompt.queuedMany', '{{count}} messages in queue', {
-                      count: queuedMessages.length > 0 ? queuedMessages.length : queuedCount,
-                    })}
-              </span>
-            </div>
-
-            {queueLoading ? (
-              <div className="flex items-center gap-2 rounded-md border border-dashed border-border/60 bg-background/60 px-3 py-2 text-xs text-muted-foreground">
-                <Loader2 className="h-3 w-3 animate-spin" />
-                {t('prompt.loadingQueuedMessages', 'Loading queued messages...')}
-              </div>
-            ) : (
-              <div className="divide-y divide-border [&>*]:bg-transparent">
-                {queuedMessages.map((message, index) => {
-                  const isEditing = editingQueuedMessageId === message.id;
-                  const isBusy = queueActionMessageId === message.id;
-
-                  return (
-                    <div
-                      key={message.id}
-                      data-testid={`queue-item-${message.id}`}
-                      className="bg-transparent px-1 py-1 first:pt-0 last:pb-0"
-                    >
-                      {isEditing ? (
-                        <div className="flex items-center gap-2">
-                          <span className="shrink-0 text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
-                            #{index + 1}
-                          </span>
-                          <Input
-                            data-testid={`queue-edit-textarea-${message.id}`}
-                            value={editingQueuedMessageContent}
-                            onChange={(event) => setEditingQueuedMessageContent(event.target.value)}
-                            disabled={isBusy}
-                            className="h-7 flex-1 bg-background text-xs"
-                          />
-                          <div className="flex shrink-0 items-center gap-0.5">
-                            <Button
-                              data-testid={`queue-save-${message.id}`}
-                              type="button"
-                              size="icon-xs"
-                              onClick={() => handleQueueEditSave(message.id)}
-                              disabled={isBusy}
-                              aria-label={t('prompt.saveQueuedMessage', 'Save')}
-                              title={t('prompt.saveQueuedMessage', 'Save')}
-                              className="text-muted-foreground hover:text-foreground"
-                            >
-                              {isBusy ? (
-                                <Loader2 className="h-3 w-3 animate-spin" />
-                              ) : (
-                                <Check className="h-3 w-3" />
-                              )}
-                            </Button>
-                            <Button
-                              data-testid={`queue-cancel-edit-${message.id}`}
-                              type="button"
-                              variant="ghost"
-                              size="icon-xs"
-                              onClick={handleQueueEditCancel}
-                              disabled={isBusy}
-                              aria-label={t('prompt.cancelQueuedEdit', 'Cancel')}
-                              title={t('prompt.cancelQueuedEdit', 'Cancel')}
-                              className="text-muted-foreground hover:text-foreground"
-                            >
-                              <X className="h-3 w-3" />
-                            </Button>
-                          </div>
-                        </div>
-                      ) : (
-                        <div className="flex items-center gap-2">
-                          <span className="shrink-0 text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
-                            #{index + 1}
-                          </span>
-                          <p
-                            className="min-w-0 flex-1 truncate text-xs text-muted-foreground"
-                            title={message.content}
-                          >
-                            {message.content}
-                          </p>
-                          <div className="flex shrink-0 items-center gap-0.5">
-                            <Button
-                              data-testid={`queue-edit-${message.id}`}
-                              type="button"
-                              variant="ghost"
-                              size="icon-xs"
-                              onClick={() => handleQueueEditStart(message)}
-                              disabled={isBusy}
-                              aria-label={t('prompt.editQueuedMessage', 'Edit')}
-                              title={t('prompt.editQueuedMessage', 'Edit')}
-                              className="text-muted-foreground hover:text-foreground"
-                            >
-                              <Pencil className="h-3 w-3" />
-                            </Button>
-                            <Button
-                              data-testid={`queue-delete-${message.id}`}
-                              type="button"
-                              variant="ghost"
-                              size="icon-xs"
-                              onClick={() => handleQueueDelete(message.id)}
-                              disabled={isBusy}
-                              aria-label={t('prompt.deleteQueuedMessage', 'Delete')}
-                              title={t('prompt.deleteQueuedMessage', 'Delete')}
-                              className="text-destructive hover:text-destructive"
-                            >
-                              {isBusy ? (
-                                <Loader2 className="h-3 w-3 animate-spin" />
-                              ) : (
-                                <Trash2 className="h-3 w-3" />
-                              )}
-                            </Button>
-                          </div>
-                        </div>
-                      )}
-                    </div>
-                  );
-                })}
-              </div>
-            )}
-          </div>
-        )}
-
-        {/* Editor + bottom toolbar */}
-        <div
-          className={cn(
-            'relative rounded-md border bg-input/80',
-            isDragging
-              ? 'border-primary border-2 ring-2 ring-primary/20'
-              : 'border-border/80 focus-within:border-ring',
-          )}
-          onDragOver={handleDragOver}
-          onDragLeave={handleDragLeave}
-          onDrop={handleDrop}
-        >
-          {/* TipTap Editor */}
-          {/* eslint-disable-next-line jsx-a11y/click-events-have-key-events, jsx-a11y/no-static-element-interactions */}
-          <div
-            ref={editorContainerRef}
-            className="px-3 pt-2"
-            onClick={() => editorRef.current?.focus()}
-          >
-            <PromptEditor
-              ref={editorRef}
-              placeholder={editorPlaceholder}
-              disabled={loading}
-              onSubmit={handleSubmit}
-              onCycleMode={handleCycleMode}
-              onChange={handleEditorChange}
-              onPaste={handleEditorPaste}
-              cwd={effectiveCwd}
-              loadSkills={loadSkillsForEditor}
-            />
-          </div>
-          {/* Bottom toolbar */}
-          <input
-            ref={fileInputRef}
-            data-testid="prompt-file-input"
-            type="file"
-            multiple
-            className="hidden"
-            onChange={handleFileSelect}
-            disabled={loading || running}
-          />
-          {/* Bottom toolbar — single row */}
-          <div className="px-2 py-2.5">
-            <div className="no-scrollbar flex h-9 items-center gap-1 overflow-x-auto">
-              <Button
-                data-testid="prompt-attach"
-                onClick={() => fileInputRef.current?.click()}
-                variant="ghost"
-                size="icon-sm"
-                tabIndex={-1}
-                aria-label={t('prompt.attach')}
-                disabled={loading}
-                className="text-muted-foreground hover:text-foreground"
-              >
-                <Paperclip className="h-4 w-4" />
-              </Button>
-              <ModeSelect value={mode} onChange={setMode} modes={modes} />
-              {/* Model + send — always visible, pushed right */}
-              <div className="ml-auto flex shrink-0 items-center gap-1">
-                <ModelSelect
-                  value={unifiedModel}
-                  onChange={setUnifiedModel}
-                  groups={unifiedModelGroups}
-                />
-                {hasAssemblyaiKey && (
-                  <Tooltip>
-                    <TooltipTrigger asChild>
-                      <Button
-                        data-testid="prompt-dictate"
-                        onClick={toggleRecording}
-                        variant="ghost"
-                        size="icon-sm"
-                        tabIndex={-1}
-                        aria-label={
-                          isRecording
-                            ? t('prompt.stopDictation', 'Stop dictation')
-                            : t('prompt.startDictation', 'Start dictation')
-                        }
-                        disabled={loading || isTranscribing}
-                        className={cn(
-                          'text-muted-foreground hover:text-foreground',
-                          isRecording && 'text-destructive hover:text-destructive',
-                        )}
-                      >
-                        {isTranscribing ? (
-                          <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                        ) : isRecording ? (
-                          <MicOff className="h-3.5 w-3.5" />
-                        ) : (
-                          <Mic className="h-3.5 w-3.5" />
-                        )}
-                      </Button>
-                    </TooltipTrigger>
-                    <TooltipContent>
-                      {isTranscribing
-                        ? t('prompt.transcribing', 'Transcribing...')
-                        : isRecording
-                          ? t('prompt.stopDictation', 'Stop dictation')
-                          : t('prompt.startDictationPtt', 'Voice dictation (hold Ctrl+Alt)')}
-                    </TooltipContent>
-                  </Tooltip>
-                )}
-                {running && editorEmpty ? (
-                  <Button
-                    data-testid="prompt-stop"
-                    onClick={onStop}
-                    variant="destructive"
-                    size="icon-sm"
-                    tabIndex={-1}
-                    aria-label={t('prompt.stopAgent')}
-                  >
-                    <Square className="h-3.5 w-3.5" />
-                  </Button>
-                ) : (
-                  <Button
-                    data-testid="prompt-send"
-                    onClick={handleSubmit}
-                    disabled={loading}
-                    size="icon-sm"
-                    tabIndex={-1}
-                    aria-label={
-                      running && isQueueMode
-                        ? t('prompt.queueMessage')
-                        : t('prompt.send', 'Send message')
-                    }
-                  >
-                    {loading ? (
-                      <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                    ) : (
-                      <ArrowUp className="h-3.5 w-3.5" />
-                    )}
-                  </Button>
-                )}
-              </div>
-            </div>
-          </div>
-          {/* Separator + Bottom bar — different content for new thread vs follow-up */}
-          <div className="border-t border-border px-2 py-1.5">
-            {isNewThread ? (
-              <div className="no-scrollbar flex items-center gap-1 overflow-x-auto">
-                {remoteUrl && (
-                  <span className="flex max-w-[200px] shrink-0 items-center gap-1 truncate px-2 py-1 text-xs text-muted-foreground">
-                    {remoteUrl.includes('github.com') ? (
-                      <Github className="h-3 w-3 shrink-0" />
-                    ) : (
-                      <Globe className="h-3 w-3 shrink-0" />
-                    )}
-                    <span className="truncate font-mono">{formatRemoteUrl(remoteUrl)}</span>
-                  </span>
-                )}
-                {newThreadBranchesLoading ? (
-                  <span className="flex items-center gap-1 px-2 py-1 text-xs text-muted-foreground">
-                    <GitBranch className="h-3 w-3 shrink-0" />
-                    <Loader2 className="h-3 w-3 animate-spin" />
-                  </span>
-                ) : (
-                  newThreadBranches.length > 0 && (
-                    <BranchPicker
-                      branches={newThreadBranches}
-                      selected={selectedBranch}
-                      onChange={setSelectedBranch}
-                    />
-                  )
-                )}
-                <label className="flex shrink-0 cursor-pointer items-center gap-1.5 text-xs text-muted-foreground">
-                  <Switch
-                    data-testid="prompt-worktree-switch"
-                    checked={createWorktree}
-                    onCheckedChange={setCreateWorktree}
-                    tabIndex={-1}
-                    size="xs"
-                  />
-                  <span>{t('thread.mode.worktree')}</span>
-                </label>
-                {hasLauncher && (
-                  <ModeSelect
-                    value={runtime}
-                    onChange={(v) => setRuntime(v as 'local' | 'remote')}
-                    modes={[
-                      { value: 'local', label: 'Local' },
-                      { value: 'remote', label: 'Remote' },
-                    ]}
-                  />
-                )}
-                {showBacklog && (
-                  <button
-                    data-testid="prompt-backlog-toggle"
-                    onClick={() => setSendToBacklog((v) => !v)}
-                    tabIndex={-1}
-                    className={cn(
-                      'flex items-center gap-1 pl-2 py-1 text-xs rounded transition-colors shrink-0 ml-auto',
-                      sendToBacklog
-                        ? 'bg-primary/10 text-primary'
-                        : 'text-muted-foreground hover:text-foreground hover:bg-muted',
-                    )}
-                    title={t('prompt.sendToBacklog')}
-                  >
-                    <Inbox className="h-3 w-3" />
-                    {t('prompt.backlog')}
-                  </button>
-                )}
-              </div>
-            ) : (
-              <div className="flex flex-col">
-                {effectiveCwd && (
-                  <div className="no-scrollbar flex items-center gap-1 overflow-x-auto">
-                    <span className="group/cwd flex max-w-[400px] shrink-0 items-center gap-1 truncate px-2 py-1 text-xs text-muted-foreground">
-                      <FolderOpen className="h-3 w-3 shrink-0" />
-                      <span className="truncate font-mono">{effectiveCwd}</span>
-                      <button
-                        type="button"
-                        className="shrink-0 opacity-0 transition-colors hover:text-foreground group-hover/cwd:opacity-100"
-                        onClick={() => {
-                          navigator.clipboard.writeText(effectiveCwd);
-                          toast.success('Path copied');
-                        }}
-                      >
-                        <Copy className="h-3 w-3" />
-                      </button>
-                    </span>
-                  </div>
-                )}
-                {(followUpBranches.length > 0 || activeThreadBranch) && (
-                  <div className="no-scrollbar flex items-center gap-1 overflow-x-auto">
-                    {followUpBranches.length > 0 && (
-                      <BranchPicker
-                        branches={followUpBranches}
-                        selected={followUpSelectedBranch}
-                        onChange={setFollowUpSelectedBranch}
-                      />
-                    )}
-                    {activeThreadBranch && followUpBranches.length > 0 && (
-                      <ArrowLeft className="h-3 w-3 shrink-0 text-muted-foreground" />
-                    )}
-                    {activeThreadBranch && (
-                      <button
-                        type="button"
-                        className="flex shrink-0 items-center gap-1 rounded px-2 py-1 text-xs text-muted-foreground transition-colors hover:bg-muted"
-                        onClick={() => {
-                          navigator.clipboard.writeText(activeThreadBranch);
-                          toast.success(t('prompt.branchCopied', 'Branch copied'));
-                        }}
-                      >
-                        <GitBranch className="h-3 w-3 shrink-0" />
-                        <span className="font-mono font-medium text-foreground">
-                          {activeThreadBranch}
-                        </span>
-                      </button>
-                    )}
-                  </div>
-                )}
-              </div>
-            )}
-          </div>
-        </div>
-      </div>
-    </div>
+    <PromptInputUI
+      onSubmit={wrappedOnSubmit}
+      onStop={onStop}
+      loading={loading}
+      running={running}
+      queuedCount={queuedCount}
+      isQueueMode={isQueueMode}
+      queuedMessages={queuedMessages}
+      queueLoading={queueLoading}
+      onQueueEditSave={handleQueueEditSave}
+      onQueueDelete={handleQueueDelete}
+      unifiedModel={unifiedModel}
+      onUnifiedModelChange={setUnifiedModel}
+      modelGroups={unifiedModelGroups}
+      mode={mode}
+      onModeChange={setMode}
+      modes={modes}
+      isNewThread={isNewThread}
+      createWorktree={createWorktree}
+      onCreateWorktreeChange={setCreateWorktree}
+      runtime={runtime}
+      onRuntimeChange={setRuntime}
+      hasLauncher={hasLauncher}
+      branches={newThreadBranches}
+      branchesLoading={newThreadBranchesLoading}
+      selectedBranch={selectedBranch}
+      onSelectedBranchChange={setSelectedBranch}
+      followUpBranches={followUpBranches}
+      followUpSelectedBranch={followUpSelectedBranch}
+      onFollowUpSelectedBranchChange={setFollowUpSelectedBranch}
+      activeThreadBranch={activeThreadBranch}
+      remoteUrl={remoteUrl}
+      effectiveCwd={threadCwd}
+      showBacklog={showBacklog}
+      sendToBacklog={sendToBacklog}
+      onSendToBacklogChange={setSendToBacklog}
+      hasDictation={hasAssemblyaiKey}
+      isRecording={isRecording}
+      isTranscribing={isTranscribing}
+      onToggleRecording={toggleRecording}
+      onStopRecording={stopRecording}
+      placeholder={placeholder}
+      editorCwd={threadCwd}
+      loadSkills={loadSkillsForEditor}
+      setPromptRef={setPromptRef}
+      editorRef={editorRef}
+      editorContainerRef={editorContainerRef}
+      initialPrompt={initialPromptProp}
+      initialImages={initialImagesProp}
+      onEditorPaste={handleEditorPaste}
+      onCheckoutPreflight={handleCheckoutPreflight}
+    />
   );
 });
