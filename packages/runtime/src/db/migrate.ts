@@ -4,85 +4,23 @@
  * @domain layer: infrastructure
  * @domain depends: Database
  *
- * Dual-dialect migration system — works with both SQLite and PostgreSQL.
- * SQLite migrations are synchronous (db.run/db.get).
- * PostgreSQL migrations are async (db.execute returns a Promise).
+ * Runtime migrations — works with both SQLite and PostgreSQL.
+ * Uses shared migration infrastructure from @funny/shared/db/migrate.
  */
 
-import { sql } from 'drizzle-orm';
+import {
+  type Migration,
+  createMigrationContext,
+  runMigrations,
+  sql,
+} from '@funny/shared/db/migrate';
 
 import { log } from '../lib/logger.js';
 import { db, dbMode } from './index.js';
 
 const isPg = dbMode === 'postgres';
-
-// ── Dialect-aware query helpers ─────────────────────────────────
-// SQLite Drizzle: db.run() / db.get() (synchronous)
-// PG Drizzle:     db.execute() (async, returns Promise)
-
-async function exec(query: ReturnType<typeof sql> | ReturnType<typeof sql.raw>): Promise<void> {
-  if (isPg) {
-    await (db as any).execute(query);
-  } else {
-    (db as any).run(query);
-  }
-}
-
-async function queryOne<T>(
-  query: ReturnType<typeof sql> | ReturnType<typeof sql.raw>,
-): Promise<T | undefined> {
-  if (isPg) {
-    const rows = await (db as any).execute(query);
-    return rows?.[0] as T | undefined;
-  } else {
-    return (db as any).get<T>(query);
-  }
-}
-
-// ── Migration tracking ──────────────────────────────────────────
-
-interface Migration {
-  name: string;
-  up: () => Promise<void>;
-}
-
-async function ensureMigrationTable() {
-  await exec(sql`
-    CREATE TABLE IF NOT EXISTS _migrations (
-      name TEXT PRIMARY KEY,
-      applied_at TEXT NOT NULL
-    )
-  `);
-}
-
-async function hasRun(name: string): Promise<boolean> {
-  const row = await queryOne<{ name: string }>(
-    sql`SELECT name FROM _migrations WHERE name = ${name}`,
-  );
-  return !!row;
-}
-
-async function markRun(name: string) {
-  await exec(
-    sql`INSERT INTO _migrations (name, applied_at) VALUES (${name}, ${new Date().toISOString()})`,
-  );
-}
-
-/** Helper to safely add a column (idempotent) */
-async function addColumn(table: string, column: string, type: string, dflt?: string) {
-  try {
-    const defaultClause = dflt !== undefined ? ` DEFAULT ${dflt}` : '';
-    if (isPg) {
-      await exec(
-        sql.raw(`ALTER TABLE ${table} ADD COLUMN IF NOT EXISTS ${column} ${type}${defaultClause}`),
-      );
-    } else {
-      await exec(sql.raw(`ALTER TABLE ${table} ADD COLUMN ${column} ${type}${defaultClause}`));
-    }
-  } catch {
-    // Column already exists
-  }
-}
+const ctx = createMigrationContext(db, isPg);
+const { exec, queryOne, addColumn } = ctx;
 
 // ── Migrations ──────────────────────────────────────────────────
 // IMPORTANT: Never modify existing migrations. Always append new ones.
@@ -286,30 +224,16 @@ const migrations: Migration[] = [
       if (isPg) {
         await exec(sql`
           INSERT INTO stage_history (id, thread_id, from_stage, to_stage, changed_at)
-          SELECT
-            md5(random()::text),
-            t.id,
-            NULL,
-            t.stage,
-            t.created_at
+          SELECT md5(random()::text), t.id, NULL, t.stage, t.created_at
           FROM threads t
-          WHERE NOT EXISTS (
-            SELECT 1 FROM stage_history sh WHERE sh.thread_id = t.id
-          )
+          WHERE NOT EXISTS (SELECT 1 FROM stage_history sh WHERE sh.thread_id = t.id)
         `);
       } else {
         await exec(sql`
           INSERT INTO stage_history (id, thread_id, from_stage, to_stage, changed_at)
-          SELECT
-            lower(hex(randomblob(16))),
-            t.id,
-            NULL,
-            t.stage,
-            t.created_at
+          SELECT lower(hex(randomblob(16))), t.id, NULL, t.stage, t.created_at
           FROM threads t
-          WHERE NOT EXISTS (
-            SELECT 1 FROM stage_history sh WHERE sh.thread_id = t.id
-          )
+          WHERE NOT EXISTS (SELECT 1 FROM stage_history sh WHERE sh.thread_id = t.id)
         `);
       }
     },
@@ -410,11 +334,7 @@ const migrations: Migration[] = [
         `),
         );
 
-        await exec(
-          sql.raw(`
-          DROP TRIGGER IF EXISTS messages_search_vector_trigger ON messages
-        `),
-        );
+        await exec(sql.raw(`DROP TRIGGER IF EXISTS messages_search_vector_trigger ON messages`));
         await exec(
           sql.raw(`
           CREATE TRIGGER messages_search_vector_trigger
@@ -631,6 +551,7 @@ const migrations: Migration[] = [
       await addColumn('projects', 'default_branch', 'TEXT');
     },
   },
+
   {
     name: '030_pipelines',
     async up() {
@@ -683,18 +604,21 @@ const migrations: Migration[] = [
       `);
     },
   },
+
   {
     name: '031_pipeline_reviewer_thread',
     async up() {
       await addColumn('pipeline_runs', 'reviewer_thread_id', 'TEXT');
     },
   },
+
   {
     name: '032_project_system_prompt',
     async up() {
       await addColumn('projects', 'system_prompt', 'TEXT');
     },
   },
+
   {
     name: '033_pipeline_custom_prompts',
     async up() {
@@ -704,6 +628,7 @@ const migrations: Migration[] = [
       await addColumn('pipelines', 'commit_message_prompt', 'TEXT');
     },
   },
+
   {
     name: '034_podman_remote_runtime',
     async up() {
@@ -713,6 +638,7 @@ const migrations: Migration[] = [
       await addColumn('threads', 'container_name', 'TEXT');
     },
   },
+
   {
     name: '035_team_projects',
     async up() {
@@ -726,12 +652,10 @@ const migrations: Migration[] = [
       `);
 
       await exec(sql`
-        CREATE INDEX IF NOT EXISTS idx_team_projects_team
-        ON team_projects (team_id)
+        CREATE INDEX IF NOT EXISTS idx_team_projects_team ON team_projects (team_id)
       `);
       await exec(sql`
-        CREATE INDEX IF NOT EXISTS idx_team_projects_project
-        ON team_projects (project_id)
+        CREATE INDEX IF NOT EXISTS idx_team_projects_project ON team_projects (project_id)
       `);
     },
   },
@@ -766,6 +690,7 @@ const migrations: Migration[] = [
       `);
     },
   },
+
   {
     name: '038_pty_sessions_metadata',
     async up() {
@@ -773,12 +698,14 @@ const migrations: Migration[] = [
       await addColumn('pty_sessions', 'label', 'TEXT');
     },
   },
+
   {
     name: '039_pty_sessions_terminal_state',
     async up() {
       await addColumn('pty_sessions', 'terminal_state', 'TEXT');
     },
   },
+
   {
     name: '040_pipeline_test_autofix',
     async up() {
@@ -790,6 +717,7 @@ const migrations: Migration[] = [
       await addColumn('pipelines', 'test_fixer_prompt', 'TEXT');
     },
   },
+
   {
     name: '041_runners',
     async up() {
@@ -828,14 +756,13 @@ const migrations: Migration[] = [
       `);
     },
   },
+
   {
     name: '042_runner_project_assignments',
     async up() {
-      // Replace project_paths with os + workspace on runners table
       await addColumn('runners', 'os', 'TEXT NOT NULL', "'unknown'");
       await addColumn('runners', 'workspace', 'TEXT');
 
-      // Create assignment table: admin assigns projects to runners with local paths
       await exec(sql`
         CREATE TABLE IF NOT EXISTS runner_project_assignments (
           runner_id TEXT NOT NULL REFERENCES runners(id) ON DELETE CASCADE,
@@ -852,12 +779,14 @@ const migrations: Migration[] = [
       `);
     },
   },
+
   {
     name: '043_assemblyai_api_key',
     async up() {
       await addColumn('user_profiles', 'assemblyai_api_key', 'TEXT');
     },
   },
+
   {
     // invite_links moved to packages/server (central server only).
     // Migration kept as no-op so existing databases don't re-run it.
@@ -870,30 +799,7 @@ const migrations: Migration[] = [
 
 /**
  * Run all pending migrations in order.
- * Each migration runs exactly once, tracked by the _migrations table.
- * Existing databases (pre-migration-tracking) are handled gracefully
- * because each migration uses CREATE TABLE IF NOT EXISTS / addColumn.
  */
 export async function autoMigrate() {
-  await ensureMigrationTable();
-
-  let applied = 0;
-  for (const migration of migrations) {
-    if (await hasRun(migration.name)) continue;
-
-    try {
-      await migration.up();
-      await markRun(migration.name);
-      applied++;
-    } catch (err) {
-      log.error(`Migration ${migration.name} failed`, { namespace: 'db', error: err });
-      throw err;
-    }
-  }
-
-  if (applied > 0) {
-    log.info(`Applied ${applied} migration(s)`, { namespace: 'db' });
-  }
-
-  log.info('Tables ready', { namespace: 'db' });
+  await runMigrations(db, isPg, migrations, log, 'db');
 }

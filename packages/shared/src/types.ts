@@ -3,7 +3,6 @@ export type { ResumeReason } from './thread-machine.js';
 
 // ─── Auth ────────────────────────────────────────────────
 
-export type AuthMode = 'local' | 'multi';
 export type UserRole = 'admin' | 'user';
 
 export interface SafeUser {

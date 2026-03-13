@@ -2,384 +2,28 @@
  * @domain subdomain: Shared Kernel
  * @domain type: bounded-context
  * @domain layer: infrastructure
- * @domain depends: Thread Management, Agent Execution, Git Operations, Project Management, Authentication, Automation, Analytics, Extensions, Real-time Communication
+ *
+ * Standalone runtime entry point.
+ * Creates the Hono app via createRuntimeApp() and starts Bun.serve().
  */
 
 // On Windows, bun --watch forks worker processes — each has its own globalThis.
-// Ghost sockets from previous workers (whose child processes inherited the
-// server's listening handle) can block the port. Clean them up before binding.
+// Ghost sockets from previous workers can block the port.
 if (process.platform === 'win32') {
   await import('./kill-port.js');
 }
 
-import { existsSync } from 'fs';
-import { basename, dirname, join, resolve } from 'path';
-
-import {
-  getStatusSummary,
-  deriveGitSyncState,
-  getNativeGit,
-  WORKTREE_DIR_NAME,
-} from '@funny/core/git';
-import {
-  getProviderModels,
-  getProviderModelsWithLabels,
-  PROVIDER_LABELS,
-  getDefaultModel,
-} from '@funny/shared/models';
-import { Hono } from 'hono';
-import { serveStatic } from 'hono/bun';
-import { cors } from 'hono/cors';
-import { logger } from 'hono/logger';
-import { secureHeaders } from 'hono/secure-headers';
-
-import { initPostgres } from './db/index.js';
-import { autoMigrate } from './db/migrate.js';
-import { getAuthMode, validateAuthDbCompat } from './lib/auth-mode.js';
+import { createRuntimeApp } from './app.js';
 import { log } from './lib/logger.js';
-import './db/index.js'; // triggers self-registration with shutdownManager
-import { authMiddleware } from './middleware/auth.js';
-import { handleError } from './middleware/error-handler.js';
-import { rateLimit } from './middleware/rate-limit.js';
-import { tracingMiddleware } from './middleware/tracing.js';
-import { analyticsRoutes } from './routes/analytics.js';
-import { authRoutes } from './routes/auth.js';
-import { automationRoutes } from './routes/automations.js';
-import browseRoutes from './routes/browse.js';
-import filesRoutes from './routes/files.js';
-import { gitRoutes, invalidateGitStatusCacheByProject } from './routes/git.js';
-import { githubRoutes } from './routes/github.js';
-import { ingestRoutes } from './routes/ingest.js';
-import mcpRoutes from './routes/mcp.js';
-import { memoryRoutes } from './routes/memory.js';
-import { pipelineRoutes } from './routes/pipelines.js';
-import pluginRoutes from './routes/plugins.js';
-import { profileRoutes } from './routes/profile.js';
-import { projectRoutes } from './routes/projects.js';
-import { settingsRoutes } from './routes/settings.js';
-import skillsRoutes from './routes/skills.js';
-import { teamProjectRoutes } from './routes/team-projects.js';
-import { teamSettingsRoutes } from './routes/team-settings.js';
-import { testRoutes } from './routes/tests.js';
-import { threadRoutes } from './routes/threads.js';
-import { worktreeRoutes } from './routes/worktrees.js';
-import { startAgent } from './services/agent-runner.js';
-import { getAuthToken, validateToken } from './services/auth-service.js';
-import { startScheduler } from './services/automation-scheduler.js';
-import { rehydrateWatchers } from './services/git-watcher-service.js';
-import { registerAllHandlers } from './services/handlers/handler-registry.js';
-import type { HandlerServiceContext } from './services/handlers/types.js';
-import { startExternalThreadSweep } from './services/ingest-mapper.js';
-import * as mq from './services/message-queue.js';
-import * as pm from './services/project-manager.js';
-import * as ptyManager from './services/pty-manager.js';
-import { saveThreadEvent } from './services/thread-event-service.js';
-import {
-  markStaleThreadsInterrupted,
-  markStaleExternalThreadsStopped,
-} from './services/thread-manager.js';
-import * as tm from './services/thread-manager.js';
-import { handleTranscribeWs } from './services/transcribe-stream.js';
-import { wsBroker } from './services/ws-broker.js';
-import { resetBinaryCache } from './utils/claude-binary.js';
-import {
-  getAvailableProviders,
-  resetProviderCache,
-  logProviderStatus,
-} from './utils/provider-detection.js';
-
-// Resolve client dist directory (works both in dev and when installed via npm)
-const clientDistDir = resolve(import.meta.dir, '..', '..', 'client', 'dist');
+import { shutdownManager, ShutdownPhase } from './services/shutdown-manager.js';
 
 const port = Number(process.env.PORT) || 3001;
 const host = process.env.HOST || '127.0.0.1';
-const clientPort = Number(process.env.CLIENT_PORT) || 5173;
-const corsOrigin = process.env.CORS_ORIGIN;
-const authMode = getAuthMode();
 
-// Fail fast: multi-user mode requires PostgreSQL
-validateAuthDbCompat();
-
-const app = new Hono();
-
-// Global error handler (must be set before routes)
-app.onError(handleError);
-
-// Middleware
-app.use('*', logger());
-app.use('*', secureHeaders());
-app.use(
-  '*',
-  cors({
-    origin: corsOrigin
-      ? corsOrigin.split(',').map((o) => o.trim())
-      : (origin: string) => {
-          const allowed = [
-            `http://localhost:${clientPort}`,
-            `http://127.0.0.1:${clientPort}`,
-            'tauri://localhost',
-            'https://tauri.localhost',
-          ];
-          if (allowed.includes(origin)) return origin;
-          if (origin.startsWith('chrome-extension://')) return origin;
-          return undefined;
-        },
-    credentials: true,
-  }),
-);
-app.use('/api/*', rateLimit({ windowMs: 60_000, max: 5000 }));
-app.use('/api/*', tracingMiddleware);
-app.route('/api/ingest', ingestRoutes);
-
-app.use('/api/*', authMiddleware);
-
-// Health check
-app.get('/api/health', (c) => {
-  return c.json({ status: 'ok', timestamp: new Date().toISOString() });
-});
-
-// Available shells endpoint — returns shells installed on this system
-app.get('/api/system/shells', (c) => {
-  const { detectShells } =
-    require('./services/shell-detector.js') as typeof import('./services/shell-detector.js');
-  return c.json({ shells: detectShells() });
-});
-
-// Setup status endpoint — multi-provider detection
-app.get('/api/setup/status', async (c) => {
-  resetProviderCache();
-  resetBinaryCache();
-  const providers = await getAvailableProviders();
-
-  // Build provider info for the response
-  const providerInfo: Record<string, any> = {};
-  for (const [name, info] of providers) {
-    providerInfo[name] = {
-      available: info.available,
-      sdkAvailable: info.sdkAvailable,
-      cliAvailable: info.cliAvailable,
-      cliPath: info.cliPath ?? null,
-      cliVersion: info.cliVersion ?? null,
-      error: info.error ?? null,
-      label: PROVIDER_LABELS[name] ?? name,
-      defaultModel: info.available ? getDefaultModel(name as any) : null,
-      models: info.available ? getProviderModels(name as any) : [],
-      modelsWithLabels: info.available ? getProviderModelsWithLabels(name as any) : [],
-    };
-  }
-
-  // Legacy fields for backward compatibility
-  const claude = providers.get('claude');
-  return c.json({
-    providers: providerInfo,
-    // Legacy fields
-    claudeCli: {
-      available: claude?.cliAvailable ?? false,
-      path: claude?.cliPath ?? null,
-      error: !claude?.cliAvailable ? (claude?.error ?? 'Not available') : null,
-      version: claude?.cliVersion ?? null,
-    },
-    agentSdk: {
-      available: claude?.sdkAvailable ?? false,
-    },
-  });
-});
-
-// Auth mode endpoint (public — client needs this before login)
-app.get('/api/auth/mode', (c) => {
-  return c.json({ mode: authMode });
-});
-
-// Combined bootstrap endpoint — returns auth mode + token in a single response
-// Eliminates a network round trip during app initialization
-app.get('/api/bootstrap', (c) => {
-  const response: Record<string, unknown> = { mode: authMode };
-  if (authMode === 'local') {
-    response.token = getAuthToken();
-  }
-  // Prevent caching of auth tokens by browsers/proxies
-  c.header('Cache-Control', 'no-store, no-cache, must-revalidate');
-  c.header('Pragma', 'no-cache');
-  return c.json(response);
-});
-
-// Mount Better Auth routes (multi mode only)
-if (authMode === 'multi') {
-  const { auth } = await import('./lib/auth.js');
-  app.on(['POST', 'GET'], '/api/auth/*', (c) => auth.handler(c.req.raw));
-}
-
-// Mount local auth routes (local mode only — token endpoint)
-if (authMode === 'local') {
-  app.route('/api/auth', authRoutes);
-}
-
-// Mount routes
-app.route('/api/projects', projectRoutes);
-app.route('/api/threads', threadRoutes);
-app.route('/api/git', gitRoutes);
-app.route('/api/browse', browseRoutes);
-app.route('/api/files', filesRoutes);
-app.route('/api/mcp', mcpRoutes);
-app.route('/api/skills', skillsRoutes);
-app.route('/api/plugins', pluginRoutes);
-app.route('/api/worktrees', worktreeRoutes);
-app.route('/api/automations', automationRoutes);
-app.route('/api/pipelines', pipelineRoutes);
-app.route('/api/profile', profileRoutes);
-app.route('/api/github', githubRoutes);
-app.route('/api/analytics', analyticsRoutes);
-app.route('/api/settings', settingsRoutes);
-app.route('/api/team-projects', teamProjectRoutes);
-app.route('/api/team-settings', teamSettingsRoutes);
-app.route('/api/tests', testRoutes);
-app.route('/api/projects', memoryRoutes);
-
-// Serve static files from client build (only if dist exists)
-if (existsSync(clientDistDir)) {
-  app.use('/*', serveStatic({ root: clientDistDir }));
-  // SPA fallback: serve index.html for all non-API routes
-  app.get('*', async (c) => {
-    return c.html(await Bun.file(join(clientDistDir, 'index.html')).text());
-  });
-  log.info('Serving static files', { namespace: 'server', dir: clientDistDir });
-} else {
-  log.info('Client build not found — static serving disabled', {
-    namespace: 'server',
-    dir: clientDistDir,
-  });
-}
-
-// Initialize PostgreSQL if needed (no-op in SQLite mode)
-await initPostgres();
-
-// Auto-create tables on startup, then start server
-await autoMigrate();
-void startScheduler();
-
-// Initialize team mode if --team flag was used
-if (process.env.TEAM_SERVER_URL && !process.env.RUNNER_AUTH_SECRET) {
-  log.error(
-    'RUNNER_AUTH_SECRET is required when TEAM_SERVER_URL is set. Set it in your .env file.',
-    {
-      namespace: 'server',
-    },
-  );
-  process.exit(1);
-}
-if (process.env.TEAM_SERVER_URL) {
-  const { initTeamMode, setBrowserWSHandler } = await import('./services/team-client.js');
-  await initTeamMode(process.env.TEAM_SERVER_URL);
-
-  // Register handler for browser WS messages forwarded through the central server
-  setBrowserWSHandler(async (userId, data, respond) => {
-    const parsed = data as { type: string; data: any };
-    if (!parsed?.type) return;
-
-    switch (parsed.type) {
-      case 'pty:spawn': {
-        const d = parsed.data;
-        // Validate cwd against user projects
-        const userProjects = await pm.listProjects(userId);
-        const resolvedCwd = resolve(d.cwd);
-        const isAllowed = userProjects.some((p: any) => {
-          const projectPath = resolve(p.path);
-          if (resolvedCwd.startsWith(projectPath)) return true;
-          const worktreeBase = resolve(
-            dirname(projectPath),
-            WORKTREE_DIR_NAME,
-            basename(projectPath),
-          );
-          return resolvedCwd.startsWith(worktreeBase);
-        });
-        if (!isAllowed) {
-          respond({
-            type: 'pty:error',
-            data: { ptyId: d.id, error: 'Access denied: directory not in a registered project' },
-          });
-          break;
-        }
-        ptyManager.spawnPty(d.id, d.cwd, d.cols, d.rows, userId, d.shell, d.projectId, d.label);
-        break;
-      }
-      case 'pty:write':
-        ptyManager.writePty(parsed.data.id, parsed.data.data);
-        break;
-      case 'pty:resize':
-        ptyManager.resizePty(parsed.data.id, parsed.data.cols, parsed.data.rows);
-        break;
-      case 'pty:kill':
-        ptyManager.killPty(parsed.data.id);
-        break;
-      case 'pty:restore': {
-        const captured = ptyManager.capturePane(parsed.data.id);
-        if (captured) {
-          respond({
-            type: 'pty:data',
-            threadId: '',
-            data: { ptyId: parsed.data.id, data: captured },
-          });
-        }
-        break;
-      }
-      case 'pty:list': {
-        const sessions = ptyManager.listActiveSessions(userId);
-        respond({
-          type: 'pty:sessions',
-          threadId: '',
-          data: {
-            sessions: sessions.map((s) => ({
-              ptyId: s.ptyId,
-              cwd: s.cwd,
-              projectId: s.projectId,
-              label: s.label,
-              shell: s.shell,
-            })),
-          },
-        });
-        break;
-      }
-    }
-  });
-}
-
-// Build handler service context from existing singletons
-const handlerCtx: HandlerServiceContext = {
-  getThread: tm.getThread,
-  updateThread: tm.updateThread,
-  insertComment: tm.insertComment,
-  getProject: pm.getProject,
-  emitToUser: (userId, event) => wsBroker.emitToUser(userId, event),
-  broadcast: (event) => wsBroker.emit(event),
-  startAgent,
-  getGitStatusSummary: getStatusSummary,
-  deriveGitSyncState,
-  invalidateGitStatusCache: invalidateGitStatusCacheByProject,
-  saveThreadEvent,
-  dequeueMessage: mq.dequeue,
-  queueCount: mq.queueCount,
-  peekMessage: mq.peek,
-  log: (msg) => log.info(msg, { namespace: 'handler' }),
-};
-registerAllHandlers(handlerCtx);
-
-if (authMode === 'local') {
-  getAuthToken(); // Ensure auth token file exists before accepting connections
-} else {
-  // Multi mode: initialize Better Auth tables and default admin
-  const { initBetterAuth } = await import('./lib/auth.js');
-  await initBetterAuth();
-}
-
-log.info(`Auth mode: ${authMode}`, { namespace: 'server' });
-
-// Detect available providers at startup
-await logProviderStatus();
+// Create the runtime app
+const runtime = await createRuntimeApp();
 
 // Clean up previous instance on bun --watch restarts.
-// globalThis persists across watch re-evaluations — modules do NOT.
-// We must call the PREVIOUS run's cleanup (stored on globalThis) to close
-// the old DB connection, stop old agents, etc., not the freshly-imported ones.
 const prev = (globalThis as any).__bunServer;
 const prevCleanup = (globalThis as any).__bunCleanup as (() => Promise<void>) | undefined;
 if (prev) {
@@ -388,253 +32,36 @@ if (prev) {
   log.info('Cleaned up previous instance (watch restart)', { namespace: 'server' });
 }
 
-// Mark orphaned threads as interrupted — but only on cold starts.
-// On --watch restarts, agent processes survive (stored on globalThis by the
-// previous cleanup) and are adopted by the new AgentRunner. Those threads
-// remain running seamlessly. Only on a true cold start (no prev instance)
-// do we need to mark stale threads.
-if (!prev) {
-  await markStaleThreadsInterrupted();
-  await markStaleExternalThreadsStopped();
-}
-
-// Re-register existing threads with the git file watcher so external git
-// changes (stage, commit, branch switch) trigger status updates even after
-// a server restart where the in-memory watcher registry was lost.
-void rehydrateWatchers();
-
-// Periodic sweep: stop external threads that haven't received events in 10 minutes
-startExternalThreadSweep();
-
-// Reattach to persisted PTY sessions (tmux backend only)
-ptyManager.reattachSessions();
+// Initialize (DB, migrations, auth, handlers)
+await runtime.init();
 
 const server = Bun.serve({
   port,
   hostname: host,
-  reusePort: true, // Allow binding even if old socket is in TIME_WAIT
+  reusePort: true,
   async fetch(req: Request, server: any) {
-    // Handle WebSocket upgrade
     const url = new URL(req.url);
-    // Transcription WebSocket — real-time speech-to-text via AssemblyAI
-    if (url.pathname === '/ws/transcribe') {
-      let userId = '__local__';
-      if (authMode === 'local') {
-        const token = url.searchParams.get('token');
-        if (!token || !validateToken(token)) {
-          return new Response('Unauthorized', { status: 401 });
-        }
-      } else {
-        const { auth } = await import('./lib/auth.js');
-        const session = await auth.api.getSession({ headers: req.headers });
-        if (!session) return new Response('Unauthorized', { status: 401 });
-        userId = session.user.id;
-      }
-      if (server.upgrade(req, { data: { isTranscribe: true, userId } })) return;
-      return new Response('WebSocket upgrade failed', { status: 400 });
-    }
-    // Browser WebSocket — UI clients connect here
-    if (url.pathname === '/ws') {
-      if (authMode === 'local') {
-        // Local mode: validate token from query param
-        const token = url.searchParams.get('token');
-        if (!token || !validateToken(token)) {
-          return new Response('Unauthorized', { status: 401 });
-        }
-        if (server.upgrade(req, { data: { userId: '__local__', organizationId: null } })) return;
-      } else {
-        // Try central server session validation first (team mode — browser talks directly to runtime)
-        const teamServerUrl = process.env.TEAM_SERVER_URL;
-        const cookie = req.headers.get('Cookie');
-        if (teamServerUrl && cookie) {
-          try {
-            const res = await fetch(`${teamServerUrl}/api/auth/get-session`, {
-              headers: { Cookie: cookie },
-            });
-            if (res.ok) {
-              const data = (await res.json()) as any;
-              if (data?.user?.id) {
-                const organizationId = data.session?.activeOrganizationId ?? null;
-                if (server.upgrade(req, { data: { userId: data.user.id, organizationId } })) return;
-              }
-            }
-          } catch {
-            // Fall through to local Better Auth validation
-          }
-        }
 
-        // Multi mode: validate session from local Better Auth
-        const { auth } = await import('./lib/auth.js');
-        const session = await auth.api.getSession({ headers: req.headers });
-        if (!session) {
-          return new Response('Unauthorized', { status: 401 });
-        }
-        const organizationId = (session.session as any).activeOrganizationId ?? null;
-        if (server.upgrade(req, { data: { userId: session.user.id, organizationId } })) return;
-      }
+    // Handle WebSocket upgrade
+    if (url.pathname === '/ws/transcribe' || url.pathname === '/ws') {
+      const wsData = await runtime.authenticateWs(req);
+      if (!wsData) return new Response('Unauthorized', { status: 401 });
+      if (server.upgrade(req, { data: wsData })) return;
       return new Response('WebSocket upgrade failed', { status: 400 });
     }
+
     // All other requests handled by Hono
-    return app.fetch(req);
+    return runtime.app.fetch(req);
   },
-  websocket: {
-    open(ws: any) {
-      if (ws.data?.isTranscribe) {
-        handleTranscribeWs(ws, ws.data.userId);
-        return;
-      }
-      const userId = ws.data?.userId ?? '__local__';
-      const organizationId = ws.data?.organizationId ?? null;
-      wsBroker.addClient(ws, userId, organizationId);
-    },
-    close(ws: any) {
-      if (ws.data?.isTranscribe) {
-        // Close the upstream AssemblyAI WebSocket
-        const assemblyWs = ws.data?.assemblyWs;
-        if (assemblyWs && assemblyWs.readyState === 1 /* OPEN */) {
-          try {
-            assemblyWs.send(JSON.stringify({ type: 'Terminate' }));
-          } catch {}
-          assemblyWs.close();
-        }
-        return;
-      }
-      wsBroker.removeClient(ws);
-    },
-    async message(ws: any, msg: any) {
-      try {
-        // Handle transcribe WebSocket messages — forward raw audio to AssemblyAI
-        if (ws.data?.isTranscribe) {
-          const assemblyWs = ws.data?.assemblyWs;
-          if (!assemblyWs || assemblyWs.readyState !== 1 /* OPEN */) return;
-          // Forward binary audio directly; ignore string messages
-          if (typeof msg !== 'string') {
-            assemblyWs.send(msg);
-          }
-          return;
-        }
-
-        const parsed = JSON.parse(msg.toString());
-        const { type, data } = parsed;
-
-        const userId = ws.data?.userId ?? '__local__';
-
-        switch (type) {
-          case 'pty:spawn': {
-            // Validate that cwd is within a registered project for this user
-            const userProjects = await pm.listProjects(userId);
-            const resolvedCwd = resolve(data.cwd);
-            const isAllowed = userProjects.some((p: any) => {
-              const projectPath = resolve(p.path);
-              if (resolvedCwd.startsWith(projectPath)) return true;
-              // Worktrees live in ../.funny-worktrees/<project-name>/, a sibling of the project
-              const worktreeBase = resolve(
-                dirname(projectPath),
-                WORKTREE_DIR_NAME,
-                basename(projectPath),
-              );
-              return resolvedCwd.startsWith(worktreeBase);
-            });
-            if (!isAllowed) {
-              log.warn(`PTY spawn denied: cwd not in user's projects`, {
-                namespace: 'ws',
-                cwd: data.cwd,
-                userId,
-              });
-              try {
-                ws.send(
-                  JSON.stringify({
-                    type: 'pty:error',
-                    data: {
-                      ptyId: data.id,
-                      error: 'Access denied: directory not in a registered project',
-                    },
-                  }),
-                );
-              } catch {}
-              break;
-            }
-            ptyManager.spawnPty(
-              data.id,
-              data.cwd,
-              data.cols,
-              data.rows,
-              userId,
-              data.shell,
-              data.projectId,
-              data.label,
-            );
-            break;
-          }
-          case 'pty:write':
-            ptyManager.writePty(data.id, data.data);
-            break;
-          case 'pty:resize':
-            ptyManager.resizePty(data.id, data.cols, data.rows);
-            break;
-          case 'pty:kill':
-            ptyManager.killPty(data.id);
-            break;
-          case 'pty:restore': {
-            // Capture current tmux pane content and send it back to the client
-            const captured = ptyManager.capturePane(data.id);
-            if (captured) {
-              try {
-                ws.send(
-                  JSON.stringify({
-                    type: 'pty:data',
-                    threadId: '',
-                    data: { ptyId: data.id, data: captured },
-                  }),
-                );
-              } catch {}
-            }
-            break;
-          }
-          case 'pty:list': {
-            const sessions = ptyManager.listActiveSessions(userId);
-            try {
-              ws.send(
-                JSON.stringify({
-                  type: 'pty:sessions',
-                  threadId: '',
-                  data: {
-                    sessions: sessions.map((s) => ({
-                      ptyId: s.ptyId,
-                      cwd: s.cwd,
-                      projectId: s.projectId,
-                      label: s.label,
-                      shell: s.shell,
-                    })),
-                  },
-                }),
-              );
-            } catch {}
-            break;
-          }
-          default:
-            log.warn(`Unknown message type: ${type}`, { namespace: 'ws' });
-        }
-      } catch (err) {
-        log.error('Error handling message', { namespace: 'ws', error: err });
-      }
-    },
-  },
+  websocket: runtime.websocket,
 });
 
-// ── Shutdown registry ──────────────────────────────────────────────
-// Services self-register via shutdownManager.register() at import time.
-// Here we register items that are created in index.ts itself.
-import { shutdownManager, ShutdownPhase } from './services/shutdown-manager.js';
-
-// Phase 0: release the port immediately
+// ── Shutdown registry ──────────────────────────────────────────
 shutdownManager.register('http-server', () => server.stop(true), ShutdownPhase.SERVER);
 
-// Flush Paisley Park access tracking before shutdown
 import { destroyAllInstances } from '@funny/memory';
 shutdownManager.register('memory-shutdown', () => destroyAllInstances(), ShutdownPhase.SERVICES);
 
-// Phase 3: Windows tree kill + exit (only on hard shutdown)
 shutdownManager.register(
   'process-exit',
   () => {
@@ -649,18 +76,17 @@ shutdownManager.register(
   false,
 );
 
-// Store for next --watch restart.
+// Store for next --watch restart
 (globalThis as any).__bunServer = server;
 (globalThis as any).__bunCleanup = () => shutdownManager.run('hotReload');
 
-// Graceful shutdown — all cleanup is handled by shutdownManager in phase order.
+// Graceful shutdown
 let shuttingDown = false;
 async function shutdown() {
   if (shuttingDown) return;
   shuttingDown = true;
   log.info('Shutting down...', { namespace: 'server' });
 
-  // Force exit after 5s in case cleanup hangs
   const forceExit = setTimeout(() => {
     log.warn('Force exit after timeout', { namespace: 'server' });
     if (process.platform === 'win32') {
@@ -672,13 +98,12 @@ async function shutdown() {
   }, 5000);
 
   await shutdownManager.run('hard');
-
   clearTimeout(forceExit);
 }
 process.on('SIGINT', () => void shutdown());
 process.on('SIGTERM', () => void shutdown());
 
-// Catch unhandled errors so a stray rejection doesn't silently kill the server (exit 255).
+// Catch unhandled errors
 process.on('uncaughtException', (err) => {
   log.error('Uncaught exception — keeping server alive', {
     namespace: 'server',
@@ -694,9 +119,6 @@ process.on('unhandledRejection', (reason) => {
     stack: reason instanceof Error ? reason.stack : undefined,
   });
 });
-
-// Eagerly load native git module so the log message appears at startup
-getNativeGit();
 
 log.info(`Listening on http://localhost:${server.port}`, {
   namespace: 'server',

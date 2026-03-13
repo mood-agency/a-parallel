@@ -15,7 +15,6 @@ type Step = 'verifying' | 'register' | 'accepting' | 'success' | 'already' | 'er
 
 export function AcceptInvitePage({ token }: Props) {
   const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
-  const mode = useAuthStore((s) => s.mode);
 
   const [step, setStep] = useState<Step>('verifying');
   const [errorMessage, setErrorMessage] = useState('');

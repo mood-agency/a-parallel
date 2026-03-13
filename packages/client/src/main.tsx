@@ -58,7 +58,6 @@ function getInviteToken(): string | null {
 }
 
 function AuthGate() {
-  const mode = useAuthStore((s) => s.mode);
   const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
   const isLoading = useAuthStore((s) => s.isLoading);
   const initialize = useAuthStore((s) => s.initialize);
@@ -78,7 +77,7 @@ function AuthGate() {
   // This loads setup status, settings, and theme in a single request.
   // Retries on failure so a slow server start doesn't force the user
   // back through the setup wizard.
-  const canCheckSetup = !isLoading && (mode === 'local' || isAuthenticated);
+  const canCheckSetup = !isLoading && isAuthenticated;
   useEffect(() => {
     if (!canCheckSetup) return;
 
@@ -121,7 +120,7 @@ function AuthGate() {
 
   // Invite link: show the accept/register page regardless of auth state.
   // The AcceptInvitePage handles both registration and login internally.
-  if (inviteToken && mode === 'multi') {
+  if (inviteToken) {
     return (
       <Suspense fallback={<AppShellSkeleton />}>
         <AcceptInvitePage token={inviteToken} />
@@ -129,8 +128,8 @@ function AuthGate() {
     );
   }
 
-  // Multi mode and not authenticated -> show login page
-  if (mode === 'multi' && !isAuthenticated) {
+  // Not authenticated -> show login page
+  if (!isAuthenticated) {
     return (
       <Suspense fallback={<AppShellSkeleton />}>
         <LoginPage />

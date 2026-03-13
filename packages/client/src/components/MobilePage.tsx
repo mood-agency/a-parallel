@@ -9,7 +9,6 @@ import { Badge } from '@/components/ui/badge';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Toaster } from '@/components/ui/sonner';
 import { useWS } from '@/hooks/use-ws';
-import { initAuth } from '@/lib/api';
 import { api } from '@/lib/api';
 import { resolveModelLabel } from '@/lib/thread-utils';
 import { cn, TOAST_DURATION } from '@/lib/utils';
@@ -40,11 +39,9 @@ export function MobilePage() {
   // Connect WebSocket
   useWS();
 
-  // Init auth + load projects on mount
+  // Load projects on mount (auth handled by Better Auth session cookies)
   useEffect(() => {
-    initAuth()
-      .then(() => loadProjects())
-      .finally(() => setReady(true));
+    loadProjects().finally(() => setReady(true));
   }, [loadProjects]);
 
   if (!ready) {

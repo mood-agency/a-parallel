@@ -18,6 +18,12 @@ export interface CopyButtonProps extends Omit<ButtonProps, 'onClick' | 'children
   duration?: number;
 }
 
+const iconSizeMap: Record<string, string> = {
+  'icon-xs': 'h-3 w-3',
+  'icon-sm': 'h-3.5 w-3.5',
+  icon: 'h-4 w-4',
+};
+
 const CopyButton = React.forwardRef<HTMLButtonElement, CopyButtonProps>(
   (
     {
@@ -33,6 +39,7 @@ const CopyButton = React.forwardRef<HTMLButtonElement, CopyButtonProps>(
     ref,
   ) => {
     const [copied, copy] = useCopyToClipboard(duration);
+    const iconClass = iconSizeMap[size ?? 'icon-xs'] ?? 'h-3.5 w-3.5';
 
     return (
       <Tooltip>
@@ -47,7 +54,7 @@ const CopyButton = React.forwardRef<HTMLButtonElement, CopyButtonProps>(
             aria-label={copied ? copiedLabel : label}
             {...props}
           >
-            {copied ? <Check className="h-3.5 w-3.5" /> : <Copy className="h-3.5 w-3.5" />}
+            {copied ? <Check className={iconClass} /> : <Copy className={iconClass} />}
           </Button>
         </TooltipTrigger>
         <TooltipContent>{copied ? copiedLabel : label}</TooltipContent>

@@ -24,7 +24,8 @@
   ],
   "scripts": {
     "start": "bun ./bin/funny.js",
-    "dev": "concurrently --kill-others \"bun run --env-file .env --cwd packages/runtime dev\" \"bun run --cwd packages/client dev\"",
+    "dev": "concurrently --kill-others \"bun run --env-file .env --cwd packages/server dev\" \"bun run --cwd packages/client dev\"",
+    "dev:legacy": "concurrently --kill-others \"bun run --env-file .env --cwd packages/runtime dev\" \"bun run --cwd packages/client dev\"",
     "dev:debug": "concurrently --kill-others \"bun run --env-file .env.debug --cwd packages/runtime dev\" \"bun run --cwd packages/client dev\"",
     "dev:test": "concurrently --kill-others \"bun run --cwd packages/runtime dev:test\" \"bun run --cwd packages/client dev:test\"",
     "dev:server": "bun run --env-file .env --cwd packages/server dev",

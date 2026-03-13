@@ -2,7 +2,6 @@ import { useEffect, startTransition } from 'react';
 import { toast } from 'sonner';
 
 import { closePreviewForCommand } from '@/hooks/use-preview-window';
-import { getAuthToken, getAuthMode } from '@/lib/api';
 import { createClientLogger } from '@/lib/client-logger';
 import { useCircuitBreakerStore } from '@/stores/circuit-breaker-store';
 import { useTerminalStore } from '@/stores/terminal-store';
@@ -504,8 +503,6 @@ function disconnectAllRemote() {
 function connect() {
   if (stopped) return;
 
-  const mode = getAuthMode();
-
   const isTauri = !!(window as any).__TAURI_INTERNALS__;
   const serverPort = import.meta.env.VITE_SERVER_PORT || '3001';
 
@@ -518,25 +515,10 @@ function connect() {
     base = `${window.location.protocol === 'https:' ? 'wss:' : 'ws:'}//${window.location.host}/ws`;
   }
 
-  if (mode === 'local' || !mode) {
-    // Local mode: require token
-    const token = getAuthToken();
-    if (!token) {
-      // Token not yet available (initAuth still in progress), retry shortly
-      reconnectTimer = setTimeout(connect, 500);
-      return;
-    }
-
-    const url = `${base}?token=${encodeURIComponent(token)}`;
-    const ws = new WebSocket(url);
-    activeWS = ws;
-    setupWS(ws);
-  } else {
-    // Multi mode: no token needed, cookies are sent automatically
-    const ws = new WebSocket(base);
-    activeWS = ws;
-    setupWS(ws);
-  }
+  // Cookies are sent automatically — no token needed
+  const ws = new WebSocket(base);
+  activeWS = ws;
+  setupWS(ws);
 }
 
 function setupWS(ws: WebSocket) {
@@ -562,15 +544,12 @@ function setupWS(ws: WebSocket) {
 
   ws.onclose = (e) => {
     if (stopped) return;
-    // If closed with 4001 (auth failed), trigger logout in multi mode
+    // If closed with 4001 (auth failed), trigger logout
     if (e.code === 4001 || e.code === 1008) {
-      const mode = getAuthMode();
-      if (mode === 'multi') {
-        import('@/stores/auth-store').then(({ useAuthStore }) => {
-          useAuthStore.getState().logout();
-        });
-        return;
-      }
+      import('@/stores/auth-store').then(({ useAuthStore }) => {
+        useAuthStore.getState().logout();
+      });
+      return;
     }
     reconnectTimer = setTimeout(connect, 2000);
   };

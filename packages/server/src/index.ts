@@ -1,17 +1,8 @@
 /**
- * Central server entry point.
- * Lightweight coordination server for team collaboration.
+ * Universal server entry point.
  *
- * Responsibilities:
- * - User authentication (Better Auth)
- * - Project management (source of truth for team projects)
- * - Runner registration and task dispatch
- * - WebSocket relay between runners and browser clients
- *
- * Does NOT:
- * - Execute git operations
- * - Spawn Claude agents
- * - Access local filesystem repos
+ * Standalone mode (default): mounts runtime in-process (Client → Server → Runtime, same process).
+ * Team mode (TEAM_SERVER_URL set): acts as coordination server, proxies to remote runners.
  */
 
 import { existsSync } from 'fs';
@@ -30,35 +21,51 @@ type WSData = {
   req?: Request;
   userId?: string;
   runnerId?: string;
+  organizationId?: string | null;
+  isTranscribe?: boolean;
 };
 
-import { initDatabase } from './db/index.js';
-import { autoMigrate } from './db/migrate.js';
-import { initBetterAuth } from './lib/auth.js';
-import { auth } from './lib/auth.js';
 import { log } from './lib/logger.js';
 import { authMiddleware } from './middleware/auth.js';
-import { proxyToRunner } from './middleware/proxy.js';
-import { authRoutes } from './routes/auth.js';
-import { inviteLinkPublicRoutes, inviteLinkRoutes } from './routes/invite-links.js';
-import { profileRoutes } from './routes/profile.js';
-import { projectRoutes } from './routes/projects.js';
-import { runnerRoutes } from './routes/runners.js';
-import { threadRoutes } from './routes/threads.js';
-import * as rm from './services/runner-manager.js';
-import * as threadRegistry from './services/thread-registry.js';
-import * as wsRelay from './services/ws-relay.js';
+
+const isTeamMode = !!process.env.TEAM_SERVER_URL;
+const isStandalone = !isTeamMode;
 
 // ── Init ────────────────────────────────────────────────
 
-if (!process.env.RUNNER_AUTH_SECRET) {
-  log.error('RUNNER_AUTH_SECRET is required. Set it in your .env file.', { namespace: 'server' });
-  process.exit(1);
-}
+let runtimeApp: Awaited<
+  ReturnType<typeof import('@ironmussa/funny-runtime/app').createRuntimeApp>
+> | null = null;
 
-await initDatabase();
-await autoMigrate();
-await initBetterAuth();
+if (isStandalone) {
+  // ── Standalone: mount runtime in-process ─────────────────
+  // Generate a RUNNER_AUTH_SECRET for server→runtime communication if not set
+  if (!process.env.RUNNER_AUTH_SECRET) {
+    const crypto = await import('crypto');
+    process.env.RUNNER_AUTH_SECRET = crypto.randomUUID();
+  }
+
+  const { createRuntimeApp } = await import('@ironmussa/funny-runtime/app');
+  runtimeApp = await createRuntimeApp({
+    skipStaticServing: true, // Server handles static files
+  });
+  await runtimeApp.init();
+  log.info('Runtime mounted in-process (standalone mode)', { namespace: 'server' });
+} else {
+  // ── Team mode: initialize central server DB ─────────────
+  if (!process.env.RUNNER_AUTH_SECRET) {
+    log.error('RUNNER_AUTH_SECRET is required. Set it in your .env file.', { namespace: 'server' });
+    process.exit(1);
+  }
+
+  const { initDatabase } = await import('./db/index.js');
+  const { autoMigrate } = await import('./db/migrate.js');
+  const { initBetterAuth } = await import('./lib/auth.js');
+
+  await initDatabase();
+  await autoMigrate();
+  await initBetterAuth();
+}
 
 // ── App ─────────────────────────────────────────────────
 
@@ -72,93 +79,118 @@ const corsOrigins = process.env.CORS_ORIGIN
 app.use('*', cors({ origin: corsOrigins, credentials: true }));
 app.use('*', logger());
 
-// Public invite-link routes (before auth middleware)
-app.route('/api/invite-links', inviteLinkPublicRoutes);
-
-app.use('*', authMiddleware);
-
-// Routes
-app.route('/api/auth', authRoutes);
-app.route('/api/projects', projectRoutes);
-app.route('/api/runners', runnerRoutes);
-app.route('/api/profile', profileRoutes);
-app.route('/api/threads', threadRoutes);
-app.route('/api/invite-links', inviteLinkRoutes);
-
-// Health check
+// Health check (before auth)
 app.get('/api/health', (c) => {
+  if (isStandalone) {
+    return c.json({ status: 'ok', mode: 'standalone', timestamp: new Date().toISOString() });
+  }
+  const wsRelay = require('./services/ws-relay.js') as typeof import('./services/ws-relay.js');
   const stats = wsRelay.getRelayStats();
-  return c.json({
-    status: 'ok',
-    service: 'funny-server',
-    ...stats,
-  });
+  return c.json({ status: 'ok', service: 'funny-server', mode: 'team', ...stats });
 });
 
-app.get('/api/auth/mode', (c) => {
-  return c.json({ mode: 'multi' }); // Central always runs in multi mode
-});
-
-// Bootstrap endpoint — tells the client this is a multi-user server
+// Bootstrap endpoint (public — minimal, no token)
 app.get('/api/bootstrap', (c) => {
-  return c.json({ mode: 'multi' });
+  c.header('Cache-Control', 'no-store, no-cache, must-revalidate');
+  c.header('Pragma', 'no-cache');
+  return c.json({});
 });
 
-// Setup status — central server doesn't run agents locally, always "ready"
-app.get('/api/setup/status', (c) => {
-  return c.json({
-    providers: {},
-    claudeCli: { available: true, path: null, error: null, version: null },
-    agentSdk: { available: true },
+if (isStandalone) {
+  // ── Standalone routes ─────────────────────────────────────
+  // Auth middleware for standalone mode
+  app.use('/api/*', authMiddleware);
+
+  // Mount the runtime app's routes directly
+  if (runtimeApp) {
+    app.route('/', runtimeApp.app);
+  }
+} else {
+  // ── Team mode routes ──────────────────────────────────────
+  const { inviteLinkPublicRoutes, inviteLinkRoutes } = await import('./routes/invite-links.js');
+  const { authRoutes } = await import('./routes/auth.js');
+  const { projectRoutes } = await import('./routes/projects.js');
+  const { runnerRoutes } = await import('./routes/runners.js');
+  const { profileRoutes } = await import('./routes/profile.js');
+  const { threadRoutes } = await import('./routes/threads.js');
+  const { proxyToRunner } = await import('./middleware/proxy.js');
+  const { auth } = await import('./lib/auth.js');
+
+  // Public invite-link routes (before auth middleware)
+  app.route('/api/invite-links', inviteLinkPublicRoutes);
+
+  // Better Auth routes
+  app.on(['POST', 'GET'], '/api/auth/*', (c) => auth.handler(c.req.raw));
+
+  app.use('*', authMiddleware);
+
+  // Server-managed routes
+  app.route('/api/auth', authRoutes);
+  app.route('/api/projects', projectRoutes);
+  app.route('/api/runners', runnerRoutes);
+  app.route('/api/profile', profileRoutes);
+  app.route('/api/threads', threadRoutes);
+  app.route('/api/invite-links', inviteLinkRoutes);
+
+  // Setup status — central server doesn't run agents locally
+  app.get('/api/setup/status', (c) => {
+    return c.json({
+      providers: {},
+      claudeCli: { available: true, path: null, error: null, version: null },
+      agentSdk: { available: true },
+    });
   });
-});
 
-// Proxy catch-all: forward everything else to the appropriate runner
-app.all('/api/*', proxyToRunner);
+  // Proxy catch-all: forward everything else to the appropriate runner
+  app.all('/api/*', proxyToRunner);
+}
 
 // Serve static files from client build (only if dist exists)
 const clientDistDir = resolve(import.meta.dir, '..', '..', 'client', 'dist');
 
 if (existsSync(clientDistDir)) {
   app.use('/*', serveStatic({ root: clientDistDir }));
-  // SPA fallback: serve index.html for all non-API routes
   app.get('*', async (c) => {
     return c.html(await Bun.file(join(clientDistDir, 'index.html')).text());
   });
   log.info('Serving static files', { namespace: 'server', dir: clientDistDir });
-} else {
-  log.info('Client build not found — static serving disabled', {
-    namespace: 'server',
-    dir: clientDistDir,
-  });
 }
 
 // ── Server ──────────────────────────────────────────────
 
-const PORT = parseInt(process.env.PORT || '3002', 10);
-const HOST = process.env.HOST || '0.0.0.0';
+const PORT = parseInt(process.env.PORT || (isStandalone ? '3001' : '3002'), 10);
+const HOST = process.env.HOST || (isStandalone ? '127.0.0.1' : '0.0.0.0');
 
 const server = Bun.serve({
   port: PORT,
   hostname: HOST,
-  fetch(req, server) {
+  reusePort: true,
+  async fetch(req, server) {
     const url = new URL(req.url);
 
-    // WebSocket upgrades
-    if (url.pathname === '/ws' && req.headers.get('upgrade') === 'websocket') {
-      // Browser client WebSocket — authenticate via session cookie
-      const upgraded = server.upgrade(req, {
-        data: { type: 'browser', req } as any,
-      });
-      return upgraded ? undefined : new Response('WebSocket upgrade failed', { status: 500 });
-    }
+    if (isStandalone && runtimeApp) {
+      // Standalone: handle WS with runtime's auth + handlers
+      if (url.pathname === '/ws' || url.pathname === '/ws/transcribe') {
+        const wsData = await runtimeApp.authenticateWs(req);
+        if (!wsData) return new Response('Unauthorized', { status: 401 });
+        if (server.upgrade(req, { data: { type: 'browser', ...wsData } as any })) return;
+        return new Response('WebSocket upgrade failed', { status: 400 });
+      }
+    } else {
+      // Team mode: handle WS for browsers and runners
+      if (url.pathname === '/ws' && req.headers.get('upgrade') === 'websocket') {
+        const upgraded = server.upgrade(req, {
+          data: { type: 'browser', req } as any,
+        });
+        return upgraded ? undefined : new Response('WebSocket upgrade failed', { status: 500 });
+      }
 
-    if (url.pathname === '/ws/runner' && req.headers.get('upgrade') === 'websocket') {
-      // Runner WebSocket — authenticated after connection via first message
-      const upgraded = server.upgrade(req, {
-        data: { type: 'runner' } as any,
-      });
-      return upgraded ? undefined : new Response('WebSocket upgrade failed', { status: 500 });
+      if (url.pathname === '/ws/runner' && req.headers.get('upgrade') === 'websocket') {
+        const upgraded = server.upgrade(req, {
+          data: { type: 'runner' } as any,
+        });
+        return upgraded ? undefined : new Response('WebSocket upgrade failed', { status: 500 });
+      }
     }
 
     return app.fetch(req, { IP: server.requestIP(req) });
@@ -167,60 +199,58 @@ const server = Bun.serve({
     async open(ws) {
       const wsData = ws.data as unknown as WSData;
 
+      if (isStandalone && runtimeApp) {
+        // Standalone: delegate to runtime WS handler
+        runtimeApp.websocket.open(ws);
+        return;
+      }
+
+      // Team mode
       if (wsData.type === 'browser' && wsData.req) {
-        // Authenticate browser via session cookie
+        const { auth } = await import('./lib/auth.js');
         const session = await auth.api.getSession({ headers: wsData.req.headers });
         if (!session) {
-          log.warn('Browser WS rejected — no valid session', { namespace: 'ws-relay' });
           ws.close(4001, 'Unauthorized');
           return;
         }
         (ws.data as any).userId = session.user.id;
+        const wsRelay = await import('./services/ws-relay.js');
         wsRelay.addBrowserClient(session.user.id, ws);
-        log.info('Browser WS authenticated', {
-          namespace: 'ws-relay',
-          userId: session.user.id,
-          stats: JSON.stringify(wsRelay.getRelayStats()),
-        });
       }
-      // Runner auth happens on first message (runner:auth)
     },
 
-    message(ws, message) {
+    async message(ws, message) {
       const wsData = ws.data as unknown as WSData;
 
+      if (isStandalone && runtimeApp) {
+        await runtimeApp.websocket.message(ws, message);
+        return;
+      }
+
+      // Team mode relay logic
       try {
         const data = JSON.parse(typeof message === 'string' ? message : message.toString());
+        const rm = await import('./services/runner-manager.js');
+        const wsRelay = await import('./services/ws-relay.js');
+        const threadRegistry = await import('./services/thread-registry.js');
 
         if (wsData.type === 'runner') {
-          // Handle runner messages
           if (data.type === 'runner:auth' && data.token) {
-            // Authenticate runner
-            rm.authenticateRunner(data.token).then((runnerId) => {
-              if (runnerId) {
-                (ws.data as any).runnerId = runnerId;
-                wsRelay.addRunnerClient(runnerId, ws);
-                ws.send(JSON.stringify({ type: 'runner:auth_ok', runnerId }));
-              } else {
-                ws.close(4001, 'Invalid runner token');
-              }
-            });
+            const runnerId = await rm.authenticateRunner(data.token);
+            if (runnerId) {
+              (ws.data as any).runnerId = runnerId;
+              wsRelay.addRunnerClient(runnerId, ws);
+              ws.send(JSON.stringify({ type: 'runner:auth_ok', runnerId }));
+            } else {
+              ws.close(4001, 'Invalid runner token');
+            }
             return;
           }
 
-          // Relay agent events from runner to browser clients
           if (data.type === 'runner:agent_event') {
-            if (!data.userId) {
-              log.warn('runner:agent_event missing userId — event dropped', {
-                namespace: 'ws-relay',
-                eventType: data.event?.type,
-                threadId: data.event?.threadId,
-              });
-              return;
-            }
+            if (!data.userId) return;
             wsRelay.relayToUser(data.userId, data.event);
 
-            // Update thread status in the registry for status/result events
             if (data.event?.type === 'agent:status' && data.event?.threadId) {
               threadRegistry
                 .updateThreadStatus(data.event.threadId, data.event.data?.status || 'running')
@@ -231,20 +261,17 @@ const server = Bun.serve({
             }
           }
 
-          // Relay browser-targeted responses from runner to specific user
           if (data.type === 'runner:browser_relay' && data.userId) {
             wsRelay.relayToUser(data.userId, data.data);
           }
         }
 
         if (wsData.type === 'browser' && (wsData as any).userId) {
-          // Forward browser messages (PTY, etc.) to the appropriate runner
           const userId = (wsData as any).userId as string;
           const innerType = data.type as string;
           if (innerType?.startsWith('pty:')) {
             const projectId = data.data?.projectId;
             if (projectId) {
-              // Route by project assignment
               rm.findRunnerForProject(projectId)
                 .then((result) => {
                   if (result) {
@@ -258,7 +285,6 @@ const server = Bun.serve({
                 })
                 .catch(() => {});
             } else {
-              // No projectId (e.g. pty:list) — forward to any connected runner
               const runnerId = wsRelay.getAnyConnectedRunnerId();
               if (runnerId) {
                 wsRelay.forwardBrowserMessageToRunner(runnerId, userId, undefined, data);
@@ -274,16 +300,30 @@ const server = Bun.serve({
     close(ws) {
       const d = ws.data as any;
 
+      if (isStandalone && runtimeApp) {
+        runtimeApp.websocket.close(ws);
+        return;
+      }
+
       if (d.type === 'browser' && d.userId) {
-        wsRelay.removeBrowserClient(d.userId, ws);
+        import('./services/ws-relay.js').then((wsRelay) => {
+          wsRelay.removeBrowserClient(d.userId, ws);
+        });
       }
       if (d.type === 'runner' && d.runnerId) {
-        wsRelay.removeRunnerClient(d.runnerId);
+        import('./services/ws-relay.js').then((wsRelay) => {
+          wsRelay.removeRunnerClient(d.runnerId);
+        });
       }
     },
   },
 });
 
-log.info(`funny-server running on http://${HOST}:${PORT}`, { namespace: 'server' });
+log.info(
+  `funny-server running on http://${HOST}:${PORT} (${isStandalone ? 'standalone' : 'team'} mode)`,
+  {
+    namespace: 'server',
+  },
+);
 
 export { app, server };

@@ -11,6 +11,7 @@ import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { ScrollArea } from '@/components/ui/scroll-area';
+import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group';
 import { api } from '@/lib/api';
 import { cn } from '@/lib/utils';
 
@@ -110,50 +111,58 @@ export function MonacoEditorDialog({
             >
               {filePath}
             </DialogTitle>
-            <div className="flex flex-shrink-0 items-center gap-1">
+            <ToggleGroup
+              type="multiple"
+              size="sm"
+              value={[
+                ...(showPreview ? ['preview'] : []),
+                ...(showMinimap ? ['minimap'] : []),
+                ...(isFullscreen ? ['fullscreen'] : []),
+              ]}
+              onValueChange={(value: string[]) => {
+                if (isMarkdown) setShowPreview(value.includes('preview'));
+                setShowMinimap(value.includes('minimap'));
+                setIsFullscreen(value.includes('fullscreen'));
+              }}
+              className="flex-shrink-0 rounded-md border border-border bg-muted/30 p-0.5"
+            >
               {/* Markdown preview toggle */}
               {isMarkdown && (
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  onClick={() => setShowPreview(!showPreview)}
+                <ToggleGroupItem
+                  value="preview"
                   title={
                     showPreview
                       ? t('editor.showCode', 'Show code')
                       : t('editor.showPreview', 'Show preview')
                   }
-                  className="h-8 w-8"
+                  data-testid="editor-toggle-preview"
                 >
                   {showPreview ? <Code className="h-4 w-4" /> : <BookOpen className="h-4 w-4" />}
-                </Button>
+                </ToggleGroupItem>
               )}
 
               {/* Minimap toggle */}
-              <Button
-                variant="ghost"
-                size="icon"
-                onClick={() => setShowMinimap(!showMinimap)}
+              <ToggleGroupItem
+                value="minimap"
                 title={showMinimap ? t('editor.hideMinimap') : t('editor.showMinimap')}
-                className="h-8 w-8"
+                data-testid="editor-toggle-minimap"
               >
                 {showMinimap ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
-              </Button>
+              </ToggleGroupItem>
 
               {/* Fullscreen toggle */}
-              <Button
-                variant="ghost"
-                size="icon"
-                onClick={() => setIsFullscreen(!isFullscreen)}
+              <ToggleGroupItem
+                value="fullscreen"
                 title={isFullscreen ? t('editor.exitFullscreen') : t('editor.fullscreen')}
-                className="h-8 w-8"
+                data-testid="editor-toggle-fullscreen"
               >
                 {isFullscreen ? (
                   <Minimize2 className="h-4 w-4" />
                 ) : (
                   <Maximize2 className="h-4 w-4" />
                 )}
-              </Button>
-            </div>
+              </ToggleGroupItem>
+            </ToggleGroup>
           </div>
         </DialogHeader>
 

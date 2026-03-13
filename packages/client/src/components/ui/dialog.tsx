@@ -2,6 +2,7 @@ import * as DialogPrimitive from '@radix-ui/react-dialog';
 import { X } from 'lucide-react';
 import * as React from 'react';
 
+import { buttonVariants } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 
 const Dialog = DialogPrimitive.Root;
@@ -123,6 +124,23 @@ const DialogDescription = React.forwardRef<
 ));
 DialogDescription.displayName = DialogPrimitive.Description.displayName;
 
+const DialogCancelButton = React.forwardRef<
+  HTMLButtonElement,
+  React.ComponentPropsWithoutRef<'button'> & { children?: React.ReactNode }
+>(({ children = 'Cancel', className, ...props }, ref) => (
+  <DialogPrimitive.Close asChild>
+    <button
+      ref={ref}
+      type="button"
+      className={cn(buttonVariants({ variant: 'outline' }), className)}
+      {...props}
+    >
+      {children}
+    </button>
+  </DialogPrimitive.Close>
+));
+DialogCancelButton.displayName = 'DialogCancelButton';
+
 export {
   Dialog,
   DialogPortal,
@@ -134,4 +152,5 @@ export {
   DialogFooter,
   DialogTitle,
   DialogDescription,
+  DialogCancelButton,
 };

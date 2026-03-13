@@ -66,7 +66,6 @@ export function SettingsPanel() {
   const setSettingsOpen = useUIStore((s) => s.setSettingsOpen);
   const activeSettingsPage = useUIStore((s) => s.activeSettingsPage);
   const selectedProjectId = useProjectStore((s) => s.selectedProjectId);
-  const authMode = useAuthStore((s) => s.mode);
   const authUser = useAuthStore((s) => s.user);
 
   // Build items list dynamically
@@ -74,7 +73,7 @@ export function SettingsPanel() {
   const items: Array<{ id: string; label: string; icon: typeof Settings }> = selectedProjectId
     ? [...baseSettingsItems].filter((item) => item.id !== 'archived-threads')
     : [...baseSettingsItems];
-  if (authMode === 'multi' && authUser?.role === 'admin') {
+  if (authUser?.role === 'admin') {
     items.push({ id: 'users', label: 'Users', icon: Users });
     items.push({ id: 'team-members', label: 'Team Members', icon: UsersRound });
   }

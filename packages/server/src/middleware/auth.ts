@@ -1,22 +1,14 @@
 /**
  * Auth middleware for the central server.
- * Supports two auth modes:
- * - Session cookie (for browser clients)
- * - Bearer token (for runners)
+ * Always uses Better Auth sessions for browser requests.
+ * Runner auth via bearer token or X-Runner-Auth header.
  */
 
 import type { Context, Next } from 'hono';
 
-import { auth } from '../lib/auth.js';
 import type { ServerEnv } from '../lib/types.js';
-import * as rm from '../services/runner-manager.js';
 
-const PUBLIC_PATHS = new Set([
-  '/api/health',
-  '/api/auth/mode',
-  '/api/bootstrap',
-  '/api/setup/status',
-]);
+const PUBLIC_PATHS = new Set(['/api/health', '/api/bootstrap', '/api/setup/status']);
 
 const PUBLIC_PREFIXES = ['/api/invite-links/verify/', '/api/invite-links/register'];
 
@@ -29,12 +21,16 @@ export async function authMiddleware(c: Context<ServerEnv>, next: Next) {
   // Public invite-link paths
   if (PUBLIC_PREFIXES.some((p) => path.startsWith(p))) return next();
 
-  // Better Auth handles its own routes
+  // Auth routes are handled by their own handlers
   if (path.startsWith('/api/auth/')) return next();
 
-  // Runner auth via bearer token (preferred — identifies which runner)
+  // MCP OAuth callback
+  if (path === '/api/mcp/oauth/callback') return next();
+
+  // ── Runner auth via bearer token ───────────────────────────────
   const authHeader = c.req.header('Authorization');
   if (authHeader?.startsWith('Bearer runner_')) {
+    const rm = await import('../services/runner-manager.js');
     const token = authHeader.slice(7);
     const runnerId = await rm.authenticateRunner(token);
     if (!runnerId) return c.json({ error: 'Invalid runner token' }, 401);
@@ -44,7 +40,7 @@ export async function authMiddleware(c: Context<ServerEnv>, next: Next) {
     return next();
   }
 
-  // Runner auth via shared secret (used for registration before a runner token exists)
+  // ── Runner auth via shared secret ──────────────────────────────
   const RUNNER_AUTH_SECRET = process.env.RUNNER_AUTH_SECRET;
   if (RUNNER_AUTH_SECRET) {
     const runnerSecret = c.req.header('X-Runner-Auth');
@@ -54,7 +50,8 @@ export async function authMiddleware(c: Context<ServerEnv>, next: Next) {
     }
   }
 
-  // Session auth for browser clients
+  // ── Better Auth session ────────────────────────────────────────
+  const { auth } = await import('../lib/auth.js');
   const session = await auth.api.getSession({ headers: c.req.raw.headers });
   if (!session) return c.json({ error: 'Unauthorized' }, 401);
 

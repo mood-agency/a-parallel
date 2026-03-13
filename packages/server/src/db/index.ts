@@ -1,63 +1,94 @@
 /**
- * Central server database connection (PostgreSQL only).
+ * Central server database connection.
  *
- * Requires DATABASE_URL environment variable.
- * Call `initDatabase()` at startup before using `db`.
+ * Uses the shared connection factory from @funny/shared.
+ * In multi mode, defaults to PostgreSQL. In local mode, can use SQLite.
  */
 
-import { SQL } from 'bun';
-import { drizzle } from 'drizzle-orm/bun-sql';
-import type { BunSQLDatabase } from 'drizzle-orm/bun-sql';
+import {
+  type AppDatabase,
+  type DatabaseConnection,
+  createSqliteDatabase,
+  createPostgresDatabase,
+  dbAll as _dbAll,
+  dbGet as _dbGet,
+  dbRun as _dbRun,
+} from '@funny/shared/db/connection';
+import { getDbMode } from '@funny/shared/db/db-mode';
 
 import { log } from '../lib/logger.js';
 import * as schema from './schema.js';
 
-export type AppDatabase = BunSQLDatabase<typeof schema>;
+export type { AppDatabase };
 
-let _db: AppDatabase | null = null;
-let _pgClient: SQL | null = null;
+let _connection: DatabaseConnection | null = null;
 
 /**
- * Initialize the PostgreSQL connection.
+ * Initialize the database connection.
  * Must be called once at startup before any DB access.
  */
-export async function initDatabase(): Promise<void> {
-  const databaseUrl = process.env.DATABASE_URL;
-  if (!databaseUrl) {
-    log.error('DATABASE_URL is required for the central server.', { namespace: 'db' });
-    process.exit(1);
+export async function initDatabase(options?: {
+  /** Override mode detection */
+  mode?: 'sqlite' | 'postgres';
+  /** SQLite path (only for sqlite mode) */
+  sqlitePath?: string;
+  /** PostgreSQL URL (only for postgres mode) */
+  postgresUrl?: string;
+}): Promise<void> {
+  const mode = options?.mode ?? getDbMode();
+
+  if (mode === 'postgres') {
+    _connection = await createPostgresDatabase({
+      mode: 'postgres',
+      url: options?.postgresUrl,
+      log,
+    });
+  } else {
+    if (!options?.sqlitePath) {
+      throw new Error('SQLite mode requires a path. Provide sqlitePath option.');
+    }
+    _connection = createSqliteDatabase({
+      mode: 'sqlite',
+      path: options.sqlitePath,
+      log,
+    });
   }
-
-  _pgClient = new SQL(databaseUrl);
-  _db = drizzle({ client: _pgClient, schema });
-
-  log.info('Connected to PostgreSQL', { namespace: 'db' });
 }
 
 /** The Drizzle database instance. `initDatabase()` must be called first. */
 export const db: AppDatabase = new Proxy({} as AppDatabase, {
   get(_target, prop) {
-    if (!_db) {
+    if (!_connection) {
       throw new Error('Database not initialized. Call initDatabase() at startup.');
     }
-    return (_db as any)[prop];
+    return (_connection.db as any)[prop];
   },
 });
 
 export { schema };
 
+/** Get the underlying DatabaseConnection. */
+export function getConnection(): DatabaseConnection | null {
+  return _connection;
+}
+
+/** Set a pre-existing connection (e.g. shared from runtime in local mode). */
+export function setConnection(conn: DatabaseConnection): void {
+  _connection = conn;
+}
+
 /** The raw SQL client for use with adapters that need it (e.g. Better Auth). */
-export function getRawClient(): SQL | null {
-  return _pgClient;
+export function getRawClient(): any | null {
+  return _connection?.pgClient ?? null;
 }
 
 export async function closeDatabase(): Promise<void> {
-  if (_pgClient) {
-    try {
-      await _pgClient.close();
-      log.info('PostgreSQL connection closed', { namespace: 'db' });
-    } catch (err) {
-      log.warn('Error closing PostgreSQL connection', { namespace: 'db', error: err });
-    }
+  if (_connection) {
+    await _connection.close();
   }
 }
+
+// Compat helpers
+export const dbAll = _dbAll;
+export const dbGet = _dbGet;
+export const dbRun = _dbRun;

@@ -19,14 +19,14 @@ interface OrgInfo {
 }
 
 export function OrgSwitcher() {
-  const authMode = useAuthStore((s) => s.mode);
+  const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
   const [orgs, setOrgs] = useState<OrgInfo[]>([]);
   const [activeOrgId, setActiveOrgId] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const loadProjects = useProjectStore((s) => s.loadProjects);
 
   useEffect(() => {
-    if (authMode !== 'multi') {
+    if (!isAuthenticated) {
       setLoading(false);
       return;
     }
@@ -51,7 +51,7 @@ export function OrgSwitcher() {
     return () => {
       cancelled = true;
     };
-  }, [authMode]);
+  }, [isAuthenticated]);
 
   const handleSwitch = useCallback(
     async (orgId: string) => {
@@ -67,7 +67,7 @@ export function OrgSwitcher() {
     [loadProjects],
   );
 
-  if (authMode !== 'multi' || loading) return null;
+  if (loading) return null;
   if (orgs.length === 0) return null;
 
   const activeOrg = orgs.find((o) => o.id === activeOrgId);

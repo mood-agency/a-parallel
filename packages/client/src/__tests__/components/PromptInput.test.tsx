@@ -41,8 +41,6 @@ vi.mock('@/lib/api', async () => {
         ),
       cancelQueuedMessage: vi.fn().mockReturnValue(okAsync({ ok: true, queuedCount: 0 })),
     },
-    getAuthToken: vi.fn(() => null),
-    getAuthMode: vi.fn(() => 'local'),
   };
 });
 

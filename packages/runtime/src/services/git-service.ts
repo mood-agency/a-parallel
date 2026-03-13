@@ -31,7 +31,6 @@ import type { DomainError } from '@funny/shared/errors';
 import { badRequest, internal, notFound } from '@funny/shared/errors';
 import { type Result, ResultAsync, err, errAsync, ok } from 'neverthrow';
 
-import { getAuthMode } from '../lib/auth-mode.js';
 import { log } from '../lib/logger.js';
 import { getGitIdentity, getGithubToken } from './profile-service.js';
 import * as pm from './project-manager.js';
@@ -43,15 +42,11 @@ import { wsBroker } from './ws-broker.js';
 // ── Helpers ─────────────────────────────────────────────────────
 
 /**
- * Resolve per-user git identity.
- * In local mode, uses the '__local__' profile for GitHub token support.
- * In multi-user mode, uses the authenticated user's profile.
+ * Resolve per-user git identity from the user's profile.
  */
 export async function resolveIdentity(userId: string): Promise<GitIdentityOptions | undefined> {
-  const effectiveUserId =
-    getAuthMode() === 'local' || userId === '__local__' ? '__local__' : userId;
-  const author = (await getGitIdentity(effectiveUserId)) ?? undefined;
-  const githubToken = (await getGithubToken(effectiveUserId)) ?? undefined;
+  const author = (await getGitIdentity(userId)) ?? undefined;
+  const githubToken = (await getGithubToken(userId)) ?? undefined;
   if (!author && !githubToken) return undefined;
   return { author, githubToken };
 }

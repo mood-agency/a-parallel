@@ -17,8 +17,6 @@ vi.mock('@/lib/api', () => ({
     archiveThread: vi.fn(),
     getGitStatuses: vi.fn().mockReturnValue({ isOk: () => false, isErr: () => true }),
   },
-  getAuthToken: vi.fn(() => null),
-  getAuthMode: vi.fn(() => 'local'),
 }));
 
 import { api } from '@/lib/api';

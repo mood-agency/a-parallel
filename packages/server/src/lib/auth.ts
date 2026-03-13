@@ -19,6 +19,11 @@ import { log } from './logger.js';
 const SECRET_PATH = resolve(DATA_DIR, 'auth-secret');
 
 function getOrCreateSecret(): string {
+  // Prefer env var (essential for platforms like Railway where the filesystem is ephemeral)
+  if (process.env.BETTER_AUTH_SECRET) {
+    return process.env.BETTER_AUTH_SECRET;
+  }
+
   if (existsSync(SECRET_PATH)) {
     const secret = readFileSync(SECRET_PATH, 'utf-8').trim();
     if (secret.length > 0) return secret;
