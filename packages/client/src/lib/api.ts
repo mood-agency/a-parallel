@@ -50,50 +50,7 @@ export function getBaseUrlForThread(thread?: { runtime?: string; containerUrl?: 
   return BASE;
 }
 
-// ── Auth token ──────────────────────────────────────────
-let authToken: string | null = null;
-
-/** Fetch the auth token from the server. Call once at app startup. */
-let _initAuthPromise: Promise<void> | null = null;
-export function initAuth(): Promise<void> {
-  if (_initAuthPromise) return _initAuthPromise;
-  _initAuthPromise = (async () => {
-    try {
-      const res = await fetch(`${BASE}/auth/token`);
-      if (res.ok) {
-        const data = await res.json();
-        authToken = data.token;
-      }
-    } catch (e) {
-      console.error('[auth] Failed to fetch auth token:', e);
-    }
-  })();
-  return _initAuthPromise;
-}
-
-/** Set the auth token directly (used by bootstrap endpoint). */
-export function setAuthToken(token: string) {
-  authToken = token;
-  if (!_initAuthPromise) {
-    _initAuthPromise = Promise.resolve();
-  }
-}
-
-/** Get the current auth token (for WebSocket connections). */
-export function getAuthToken(): string | null {
-  return authToken;
-}
-
-// ── Auth mode ────────────────────────────────────────────
-let authMode: 'local' | 'multi' | null = null;
-
-export function setAuthMode(mode: 'local' | 'multi') {
-  authMode = mode;
-}
-
-export function getAuthMode() {
-  return authMode;
-}
+// ── Auth (cookie-based via Better Auth) ──────────────────
 
 // ── Request helper ──────────────────────────────────────
 
@@ -118,10 +75,6 @@ function request<T>(path: string, init?: RequestInit): ResultAsync<T, DomainErro
         // W3C Trace Context — propagate client span to the server
         traceparent: span.traceparent,
       };
-      // In local mode, use Bearer token; in multi mode, rely on cookies
-      if (authMode !== 'multi' && authToken) {
-        headers['Authorization'] = `Bearer ${authToken}`;
-      }
       if (init?.headers) {
         Object.assign(headers, init.headers);
       }
@@ -131,8 +84,7 @@ function request<T>(path: string, init?: RequestInit): ResultAsync<T, DomainErro
         res = await fetch(`${BASE}${path}`, {
           ...init,
           headers,
-          credentials:
-            authMode === 'multi' || import.meta.env.VITE_SERVER_URL ? 'include' : 'same-origin',
+          credentials: 'include',
         });
       } catch (networkError) {
         // Network error (server down, no connectivity, etc.)
@@ -154,8 +106,8 @@ function request<T>(path: string, init?: RequestInit): ResultAsync<T, DomainErro
       if (!res.ok) {
         span.end('ERROR');
 
-        // On 401 in multi mode, trigger logout
-        if (res.status === 401 && authMode === 'multi') {
+        // On 401, trigger logout
+        if (res.status === 401) {
           import('@/stores/auth-store').then(({ useAuthStore }) => {
             useAuthStore.getState().logout();
           });

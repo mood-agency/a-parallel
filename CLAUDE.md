@@ -20,7 +20,6 @@ funny
 
 # CLI options
 funny --port 8080              # Custom port
-funny --auth-mode multi        # Multi-user mode
 funny --help                   # Show all options
 ```
 
@@ -108,27 +107,7 @@ bun run db:studio
 
 ## Authentication
 
-The app supports two authentication modes controlled by the `AUTH_MODE` environment variable.
-
-### Local Mode (default)
-
-Single-user mode. No login page. A bearer token is auto-generated and stored at `~/.funny/auth-token`. This is the default when `AUTH_MODE` is not set.
-
-```bash
-# Just start normally — no configuration needed
-bun run dev
-```
-
-### Multi-User Mode
-
-Multiple users with login page, per-user data isolation, and admin-managed accounts. Uses [Better Auth](https://www.better-auth.com/) with cookie-based sessions stored in the same SQLite database.
-
-```bash
-# Set the environment variable before starting the server
-AUTH_MODE=multi bun run dev
-```
-
-On first startup in multi mode, a default admin account is created automatically:
+The app always uses [Better Auth](https://www.better-auth.com/) with cookie-based sessions. On first startup, a default admin account is created automatically:
 
 - **Username:** `admin`
 - **Password:** `admin`
@@ -141,11 +120,16 @@ The admin can create additional users from **Settings > Users** in the UI. Self-
 - Auth secret is auto-generated and stored at `~/.funny/auth-secret`
 - Each user only sees their own projects, threads, and automations
 - WebSocket events are filtered per user
-- Legacy data (created in local mode) is reassigned to the first admin on login
+- SQLite is the default database; PostgreSQL is optional (set `DATABASE_URL`)
 
-### Per-User Git Identity (Multi-User Only)
+### Deployment Topologies
 
-In multi-user mode, each user can configure their own git identity and GitHub credentials from **Settings > Profile**:
+- **Standalone** (default): Runtime mounted in-process. Client → Server(:3001, in-process runtime). Single SQLite DB.
+- **Team mode** (`TEAM_SERVER_URL` set): Central server coordinates remote runners. Client → Server(:3002) → Runner(s). Server uses PostgreSQL; runners use SQLite.
+
+### Per-User Git Identity
+
+Each user can configure their own git identity and GitHub credentials from **Settings > Profile**:
 
 - **Git Name / Email** — Used as `--author` on commits and merges
 - **GitHub Personal Access Token** — Used as `GH_TOKEN` for push and PR operations
@@ -158,14 +142,11 @@ Tokens are encrypted at rest using **AES-256-GCM**. The encryption key is auto-g
 
 > **Important:** If this file is deleted, any previously saved GitHub tokens become unrecoverable. Back it up if needed. The file is created with restricted permissions (`0600`).
 
-In local mode, this feature is inactive — git operations use the machine's default git config.
-
 ### Auth Architecture
 
-- `packages/runtime/src/lib/auth-mode.ts` — Reads `AUTH_MODE` env var
-- `packages/runtime/src/lib/auth.ts` — Better Auth instance (only loaded in multi mode)
-- `packages/runtime/src/middleware/auth.ts` — Dual-mode middleware (bearer token vs session cookie)
-- `packages/client/src/stores/auth-store.ts` — Client auth state (mode detection, login, logout)
+- `packages/runtime/src/lib/auth.ts` — Better Auth instance (always initialized on startup)
+- `packages/runtime/src/middleware/auth.ts` — Auth middleware (Runner auth → Team mode → Better Auth session)
+- `packages/client/src/stores/auth-store.ts` — Client auth state (session-based login/logout)
 - `packages/client/src/lib/auth-client.ts` — Better Auth client with username + admin plugins
 
 ## TypeScript

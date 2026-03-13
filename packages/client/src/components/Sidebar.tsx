@@ -84,7 +84,6 @@ export function AppSidebar() {
   const settingsOpen = useUIStore((s) => s.settingsOpen);
   const startNewThread = useUIStore((s) => s.startNewThread);
   const showGlobalSearch = useUIStore((s) => s.showGlobalSearch);
-  const authMode = useAuthStore((s) => s.mode);
   const authUser = useAuthStore((s) => s.user);
   const logout = useAuthStore((s) => s.logout);
 
@@ -568,7 +567,7 @@ export function AppSidebar() {
           <AutomationInboxButton />
         </div>
         <div className="flex items-center gap-2 px-1">
-          {authMode === 'multi' && authUser ? (
+          {authUser ? (
             <>
               <Avatar size="sm">
                 <AvatarFallback className="text-xs">

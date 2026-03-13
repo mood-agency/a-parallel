@@ -25,7 +25,8 @@
   "type": "module",
   "main": "./dist/index.js",
   "exports": {
-    ".": "./dist/index.js"
+    ".": "./dist/index.js",
+    "./app": "./src/app.ts"
   },
   "publishConfig": {
     "access": "public"

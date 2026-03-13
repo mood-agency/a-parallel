@@ -1,12 +1,20 @@
 import type { Meta, StoryObj } from '@storybook/react-vite';
 
 import { CopyButton } from '@/components/ui/copy-button';
+import { TooltipProvider } from '@/components/ui/tooltip';
 
 const meta = {
   title: 'UI/CopyButton',
   component: CopyButton,
   parameters: { layout: 'centered' },
   tags: ['autodocs'],
+  decorators: [
+    (Story) => (
+      <TooltipProvider>
+        <Story />
+      </TooltipProvider>
+    ),
+  ],
   argTypes: {
     variant: {
       control: 'select',
@@ -48,9 +56,18 @@ export const Sizes: Story = {
   args: { value: 'copied text' },
   render: () => (
     <div className="flex items-center gap-4">
-      <CopyButton value="xs" size="icon-xs" />
-      <CopyButton value="sm" size="icon-sm" />
-      <CopyButton value="default" size="icon" />
+      <div className="flex flex-col items-center gap-1">
+        <CopyButton value="xs" size="icon-xs" />
+        <span className="text-xs text-muted-foreground">xs</span>
+      </div>
+      <div className="flex flex-col items-center gap-1">
+        <CopyButton value="sm" size="icon-sm" />
+        <span className="text-xs text-muted-foreground">sm</span>
+      </div>
+      <div className="flex flex-col items-center gap-1">
+        <CopyButton value="default" size="icon" />
+        <span className="text-xs text-muted-foreground">default</span>
+      </div>
     </div>
   ),
 };

@@ -1,0 +1,510 @@
+/**
+ * Runtime Hono application factory.
+ *
+ * Exports `createRuntimeApp()` which builds the Hono app with all routes
+ * and middleware, without starting Bun.serve(). This allows the server
+ * package to mount the runtime in-process for standalone deployments.
+ */
+
+import { existsSync } from 'fs';
+import { basename, dirname, join, resolve } from 'path';
+
+import {
+  getStatusSummary,
+  deriveGitSyncState,
+  getNativeGit,
+  WORKTREE_DIR_NAME,
+} from '@funny/core/git';
+import {
+  getProviderModels,
+  getProviderModelsWithLabels,
+  PROVIDER_LABELS,
+  getDefaultModel,
+} from '@funny/shared/models';
+import { Hono } from 'hono';
+import { serveStatic } from 'hono/bun';
+import { cors } from 'hono/cors';
+import { logger as honoLogger } from 'hono/logger';
+import { secureHeaders } from 'hono/secure-headers';
+
+import { initPostgres } from './db/index.js';
+import { autoMigrate } from './db/migrate.js';
+import { log } from './lib/logger.js';
+import './db/index.js'; // triggers self-registration with shutdownManager
+import { authMiddleware } from './middleware/auth.js';
+import { handleError } from './middleware/error-handler.js';
+import { rateLimit } from './middleware/rate-limit.js';
+import { tracingMiddleware } from './middleware/tracing.js';
+import { analyticsRoutes } from './routes/analytics.js';
+import { automationRoutes } from './routes/automations.js';
+import browseRoutes from './routes/browse.js';
+import filesRoutes from './routes/files.js';
+import { gitRoutes, invalidateGitStatusCacheByProject } from './routes/git.js';
+import { githubRoutes } from './routes/github.js';
+import { ingestRoutes } from './routes/ingest.js';
+import mcpRoutes from './routes/mcp.js';
+import { memoryRoutes } from './routes/memory.js';
+import { pipelineRoutes } from './routes/pipelines.js';
+import pluginRoutes from './routes/plugins.js';
+import { profileRoutes } from './routes/profile.js';
+import { projectRoutes } from './routes/projects.js';
+import { settingsRoutes } from './routes/settings.js';
+import skillsRoutes from './routes/skills.js';
+import { teamProjectRoutes } from './routes/team-projects.js';
+import { teamSettingsRoutes } from './routes/team-settings.js';
+import { testRoutes } from './routes/tests.js';
+import { threadRoutes } from './routes/threads.js';
+import { worktreeRoutes } from './routes/worktrees.js';
+import { startAgent } from './services/agent-runner.js';
+import { startScheduler } from './services/automation-scheduler.js';
+import { rehydrateWatchers } from './services/git-watcher-service.js';
+import { registerAllHandlers } from './services/handlers/handler-registry.js';
+import type { HandlerServiceContext } from './services/handlers/types.js';
+import { startExternalThreadSweep } from './services/ingest-mapper.js';
+import * as mq from './services/message-queue.js';
+import * as pm from './services/project-manager.js';
+import * as ptyManager from './services/pty-manager.js';
+import { saveThreadEvent } from './services/thread-event-service.js';
+import {
+  markStaleThreadsInterrupted,
+  markStaleExternalThreadsStopped,
+} from './services/thread-manager.js';
+import * as tm from './services/thread-manager.js';
+import { handleTranscribeWs } from './services/transcribe-stream.js';
+import { wsBroker } from './services/ws-broker.js';
+import { resetBinaryCache } from './utils/claude-binary.js';
+import {
+  getAvailableProviders,
+  resetProviderCache,
+  logProviderStatus,
+} from './utils/provider-detection.js';
+
+// Resolve client dist directory (works both in dev and when installed via npm)
+const clientDistDir = resolve(import.meta.dir, '..', '..', 'client', 'dist');
+
+export interface RuntimeAppOptions {
+  /** Client dev server port for CORS (default: 5173) */
+  clientPort?: number;
+  /** Custom CORS origin (comma-separated) */
+  corsOrigin?: string;
+  /** Skip DB init (if caller already initialized DB) */
+  skipDbInit?: boolean;
+  /** Skip auth setup (if server handles auth) */
+  skipAuthSetup?: boolean;
+  /** Skip static file serving */
+  skipStaticServing?: boolean;
+}
+
+export interface RuntimeApp {
+  /** The Hono app instance */
+  app: Hono;
+  /** Initialize DB, run migrations, set up auth, register handlers. */
+  init(): Promise<void>;
+  /** WebSocket handlers for Bun.serve() */
+  websocket: {
+    open(ws: any): void;
+    close(ws: any): void;
+    message(ws: any, msg: any): Promise<void>;
+  };
+  /** Authenticate and upgrade a WebSocket request. Returns upgrade data or null. */
+  authenticateWs(
+    req: Request,
+  ): Promise<{ userId: string; organizationId: string | null; isTranscribe?: boolean } | null>;
+}
+
+/**
+ * Create the runtime Hono application with all routes mounted.
+ * Does NOT start a server — caller is responsible for that.
+ */
+export async function createRuntimeApp(options: RuntimeAppOptions = {}): Promise<RuntimeApp> {
+  const clientPort = options.clientPort ?? (Number(process.env.CLIENT_PORT) || 5173);
+  const corsOrigin = options.corsOrigin ?? process.env.CORS_ORIGIN;
+
+  const app = new Hono();
+
+  // Global error handler
+  app.onError(handleError);
+
+  // Middleware
+  app.use('*', honoLogger());
+  app.use('*', secureHeaders());
+  app.use(
+    '*',
+    cors({
+      origin: corsOrigin
+        ? corsOrigin.split(',').map((o) => o.trim())
+        : (origin: string) => {
+            const allowed = [
+              `http://localhost:${clientPort}`,
+              `http://127.0.0.1:${clientPort}`,
+              'tauri://localhost',
+              'https://tauri.localhost',
+            ];
+            if (allowed.includes(origin)) return origin;
+            if (origin.startsWith('chrome-extension://')) return origin;
+            return undefined;
+          },
+      credentials: true,
+    }),
+  );
+  app.use('/api/*', rateLimit({ windowMs: 60_000, max: 5000 }));
+  app.use('/api/*', tracingMiddleware);
+  app.route('/api/ingest', ingestRoutes);
+
+  app.use('/api/*', authMiddleware);
+
+  // Health check
+  app.get('/api/health', (c) => {
+    return c.json({ status: 'ok', timestamp: new Date().toISOString() });
+  });
+
+  // Available shells endpoint
+  app.get('/api/system/shells', (c) => {
+    const { detectShells } =
+      require('./services/shell-detector.js') as typeof import('./services/shell-detector.js');
+    return c.json({ shells: detectShells() });
+  });
+
+  // Setup status endpoint
+  app.get('/api/setup/status', async (c) => {
+    resetProviderCache();
+    resetBinaryCache();
+    const providers = await getAvailableProviders();
+
+    const providerInfo: Record<string, any> = {};
+    for (const [name, info] of providers) {
+      providerInfo[name] = {
+        available: info.available,
+        sdkAvailable: info.sdkAvailable,
+        cliAvailable: info.cliAvailable,
+        cliPath: info.cliPath ?? null,
+        cliVersion: info.cliVersion ?? null,
+        error: info.error ?? null,
+        label: PROVIDER_LABELS[name] ?? name,
+        defaultModel: info.available ? getDefaultModel(name as any) : null,
+        models: info.available ? getProviderModels(name as any) : [],
+        modelsWithLabels: info.available ? getProviderModelsWithLabels(name as any) : [],
+      };
+    }
+
+    const claude = providers.get('claude');
+    return c.json({
+      providers: providerInfo,
+      claudeCli: {
+        available: claude?.cliAvailable ?? false,
+        path: claude?.cliPath ?? null,
+        error: !claude?.cliAvailable ? (claude?.error ?? 'Not available') : null,
+        version: claude?.cliVersion ?? null,
+      },
+      agentSdk: {
+        available: claude?.sdkAvailable ?? false,
+      },
+    });
+  });
+
+  // Bootstrap endpoint (public — returns minimal info for client init)
+  app.get('/api/bootstrap', (c) => {
+    c.header('Cache-Control', 'no-store, no-cache, must-revalidate');
+    c.header('Pragma', 'no-cache');
+    return c.json({});
+  });
+
+  // Mount Better Auth routes
+  {
+    const { auth } = await import('./lib/auth.js');
+    app.on(['POST', 'GET'], '/api/auth/*', (c) => auth.handler(c.req.raw));
+  }
+
+  // Mount routes
+  app.route('/api/projects', projectRoutes);
+  app.route('/api/threads', threadRoutes);
+  app.route('/api/git', gitRoutes);
+  app.route('/api/browse', browseRoutes);
+  app.route('/api/files', filesRoutes);
+  app.route('/api/mcp', mcpRoutes);
+  app.route('/api/skills', skillsRoutes);
+  app.route('/api/plugins', pluginRoutes);
+  app.route('/api/worktrees', worktreeRoutes);
+  app.route('/api/automations', automationRoutes);
+  app.route('/api/pipelines', pipelineRoutes);
+  app.route('/api/profile', profileRoutes);
+  app.route('/api/github', githubRoutes);
+  app.route('/api/analytics', analyticsRoutes);
+  app.route('/api/settings', settingsRoutes);
+  app.route('/api/team-projects', teamProjectRoutes);
+  app.route('/api/team-settings', teamSettingsRoutes);
+  app.route('/api/tests', testRoutes);
+  app.route('/api/projects', memoryRoutes);
+
+  // Serve static files from client build
+  if (!options.skipStaticServing && existsSync(clientDistDir)) {
+    app.use('/*', serveStatic({ root: clientDistDir }));
+    app.get('*', async (c) => {
+      return c.html(await Bun.file(join(clientDistDir, 'index.html')).text());
+    });
+    log.info('Serving static files', { namespace: 'server', dir: clientDistDir });
+  }
+
+  // ── init() — database, migrations, auth, handlers ──────────────
+  async function init() {
+    if (!options.skipDbInit) {
+      await initPostgres();
+      await autoMigrate();
+    }
+
+    void startScheduler();
+
+    // Register handler registry
+    const handlerCtx: HandlerServiceContext = {
+      getThread: tm.getThread,
+      updateThread: tm.updateThread,
+      insertComment: tm.insertComment,
+      getProject: pm.getProject,
+      emitToUser: (userId, event) => wsBroker.emitToUser(userId, event),
+      broadcast: (event) => wsBroker.emit(event),
+      startAgent,
+      getGitStatusSummary: getStatusSummary,
+      deriveGitSyncState,
+      invalidateGitStatusCache: invalidateGitStatusCacheByProject,
+      saveThreadEvent,
+      dequeueMessage: mq.dequeue,
+      queueCount: mq.queueCount,
+      peekMessage: mq.peek,
+      log: (msg) => log.info(msg, { namespace: 'handler' }),
+    };
+    registerAllHandlers(handlerCtx);
+
+    if (!options.skipAuthSetup) {
+      const { initBetterAuth } = await import('./lib/auth.js');
+      await initBetterAuth();
+    }
+
+    log.info('Auth: Better Auth (always multi-user)', { namespace: 'server' });
+    await logProviderStatus();
+
+    // Mark stale threads
+    await markStaleThreadsInterrupted();
+    await markStaleExternalThreadsStopped();
+
+    // Re-register watchers
+    void rehydrateWatchers();
+
+    // Periodic sweep for external threads
+    startExternalThreadSweep();
+
+    // Reattach PTY sessions
+    ptyManager.reattachSessions();
+
+    // Eagerly load native git
+    getNativeGit();
+
+    // Team mode init
+    if (process.env.TEAM_SERVER_URL) {
+      if (!process.env.RUNNER_AUTH_SECRET) {
+        log.error('RUNNER_AUTH_SECRET is required when TEAM_SERVER_URL is set.', {
+          namespace: 'server',
+        });
+        process.exit(1);
+      }
+      const { initTeamMode, setBrowserWSHandler } = await import('./services/team-client.js');
+      await initTeamMode(process.env.TEAM_SERVER_URL);
+
+      setBrowserWSHandler(async (userId, data, respond) => {
+        const parsed = data as { type: string; data: any };
+        if (!parsed?.type) return;
+        handlePtyMessage(parsed.type, parsed.data, userId, (msg) => respond(msg));
+      });
+    }
+  }
+
+  // ── WebSocket authentication ───────────────────────────────────
+  async function authenticateWs(
+    req: Request,
+  ): Promise<{ userId: string; organizationId: string | null; isTranscribe?: boolean } | null> {
+    const url = new URL(req.url);
+
+    // Transcription WebSocket
+    if (url.pathname === '/ws/transcribe') {
+      const { auth } = await import('./lib/auth.js');
+      const session = await auth.api.getSession({ headers: req.headers });
+      if (!session) return null;
+      return { userId: session.user.id, isTranscribe: true };
+    }
+
+    // Browser WebSocket
+    if (url.pathname === '/ws') {
+      // Try central server session validation first (team mode)
+      const teamServerUrl = process.env.TEAM_SERVER_URL;
+      const cookie = req.headers.get('Cookie');
+      if (teamServerUrl && cookie) {
+        try {
+          const forwardCookie = cookie.replace(/\bbetter-auth\./g, '__Secure-better-auth.');
+          const res = await fetch(`${teamServerUrl}/api/auth/get-session`, {
+            headers: { Cookie: forwardCookie },
+          });
+          if (res.ok) {
+            const data = (await res.json()) as any;
+            if (data?.user?.id) {
+              return {
+                userId: data.user.id,
+                organizationId: data.session?.activeOrganizationId ?? null,
+              };
+            }
+          }
+        } catch {
+          // Fall through to local Better Auth
+        }
+      }
+
+      // Validate with local Better Auth
+      const { auth } = await import('./lib/auth.js');
+      const session = await auth.api.getSession({ headers: req.headers });
+      if (!session) return null;
+      return {
+        userId: session.user.id,
+        organizationId: (session.session as any).activeOrganizationId ?? null,
+      };
+    }
+
+    return null;
+  }
+
+  // ── WebSocket handlers ─────────────────────────────────────────
+  const websocket = {
+    open(ws: any) {
+      if (ws.data?.isTranscribe) {
+        handleTranscribeWs(ws, ws.data.userId);
+        return;
+      }
+      const userId = ws.data?.userId;
+      if (!userId) return;
+      const organizationId = ws.data?.organizationId ?? null;
+      wsBroker.addClient(ws, userId, organizationId);
+    },
+    close(ws: any) {
+      if (ws.data?.isTranscribe) {
+        const assemblyWs = ws.data?.assemblyWs;
+        if (assemblyWs && assemblyWs.readyState === 1) {
+          try {
+            assemblyWs.send(JSON.stringify({ type: 'Terminate' }));
+          } catch {}
+          assemblyWs.close();
+        }
+        return;
+      }
+      wsBroker.removeClient(ws);
+    },
+    async message(ws: any, msg: any) {
+      try {
+        if (ws.data?.isTranscribe) {
+          const assemblyWs = ws.data?.assemblyWs;
+          if (!assemblyWs || assemblyWs.readyState !== 1) return;
+          if (typeof msg !== 'string') assemblyWs.send(msg);
+          return;
+        }
+
+        const parsed = JSON.parse(msg.toString());
+        const { type, data } = parsed;
+        const userId = ws.data?.userId;
+        if (!userId) return;
+
+        handlePtyMessage(type, data, userId, (msg) => {
+          try {
+            ws.send(JSON.stringify(msg));
+          } catch {}
+        });
+      } catch (err) {
+        log.error('Error handling message', { namespace: 'ws', error: err });
+      }
+    },
+  };
+
+  return { app, init, websocket, authenticateWs };
+}
+
+// ── Shared PTY message handler ─────────────────────────────────
+function handlePtyMessage(type: string, data: any, userId: string, send: (msg: any) => void) {
+  switch (type) {
+    case 'pty:spawn': {
+      // Validate cwd against user projects
+      pm.listProjects(userId).then((userProjects) => {
+        const resolvedCwd = resolve(data.cwd);
+        const isAllowed = userProjects.some((p: any) => {
+          const projectPath = resolve(p.path);
+          if (resolvedCwd.startsWith(projectPath)) return true;
+          const worktreeBase = resolve(
+            dirname(projectPath),
+            WORKTREE_DIR_NAME,
+            basename(projectPath),
+          );
+          return resolvedCwd.startsWith(worktreeBase);
+        });
+        if (!isAllowed) {
+          log.warn(`PTY spawn denied: cwd not in user's projects`, {
+            namespace: 'ws',
+            cwd: data.cwd,
+            userId,
+          });
+          send({
+            type: 'pty:error',
+            data: {
+              ptyId: data.id,
+              error: 'Access denied: directory not in a registered project',
+            },
+          });
+          return;
+        }
+        ptyManager.spawnPty(
+          data.id,
+          data.cwd,
+          data.cols,
+          data.rows,
+          userId,
+          data.shell,
+          data.projectId,
+          data.label,
+        );
+      });
+      break;
+    }
+    case 'pty:write':
+      ptyManager.writePty(data.id, data.data);
+      break;
+    case 'pty:resize':
+      ptyManager.resizePty(data.id, data.cols, data.rows);
+      break;
+    case 'pty:kill':
+      ptyManager.killPty(data.id);
+      break;
+    case 'pty:restore': {
+      const captured = ptyManager.capturePane(data.id);
+      if (captured) {
+        send({
+          type: 'pty:data',
+          threadId: '',
+          data: { ptyId: data.id, data: captured },
+        });
+      }
+      break;
+    }
+    case 'pty:list': {
+      const sessions = ptyManager.listActiveSessions(userId);
+      send({
+        type: 'pty:sessions',
+        threadId: '',
+        data: {
+          sessions: sessions.map((s) => ({
+            ptyId: s.ptyId,
+            cwd: s.cwd,
+            projectId: s.projectId,
+            label: s.label,
+            shell: s.shell,
+          })),
+        },
+      });
+      break;
+    }
+    default:
+      log.warn(`Unknown message type: ${type}`, { namespace: 'ws' });
+  }
+}

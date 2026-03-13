@@ -1,55 +1,32 @@
 /**
  * Central server migrations (PostgreSQL).
+ *
+ * Uses the shared migration infrastructure from @funny/shared.
+ * Each package defines its own migrations array and calls `runMigrations()`.
  */
 
-import { sql } from 'drizzle-orm';
+import {
+  type Migration,
+  createMigrationContext,
+  runMigrations,
+  sql,
+} from '@funny/shared/db/migrate';
 
 import { log } from '../lib/logger.js';
 import { db } from './index.js';
 
-async function exec(query: ReturnType<typeof sql> | ReturnType<typeof sql.raw>): Promise<void> {
-  await (db as any).execute(query);
-}
-
-async function queryOne<T>(
-  query: ReturnType<typeof sql> | ReturnType<typeof sql.raw>,
-): Promise<T | undefined> {
-  const rows = await (db as any).execute(query);
-  return rows?.[0] as T | undefined;
-}
-
-interface Migration {
-  name: string;
-  up: () => Promise<void>;
-}
-
-async function ensureMigrationTable() {
-  await exec(sql`
-    CREATE TABLE IF NOT EXISTS _migrations (
-      name TEXT PRIMARY KEY,
-      applied_at TEXT NOT NULL
-    )
-  `);
-}
-
-async function hasRun(name: string): Promise<boolean> {
-  const row = await queryOne<{ name: string }>(
-    sql`SELECT name FROM _migrations WHERE name = ${name}`,
-  );
-  return !!row;
-}
-
-async function markRun(name: string) {
-  await exec(
-    sql`INSERT INTO _migrations (name, applied_at) VALUES (${name}, ${new Date().toISOString()})`,
-  );
+// Lazily create context — db may not be ready at import time
+let _ctx: ReturnType<typeof createMigrationContext> | null = null;
+function ctx() {
+  if (!_ctx) _ctx = createMigrationContext(db, /* isPg */ true);
+  return _ctx;
 }
 
 const migrations: Migration[] = [
   {
     name: '001_projects',
     async up() {
-      await exec(sql`
+      await ctx().exec(sql`
         CREATE TABLE IF NOT EXISTS projects (
           id TEXT PRIMARY KEY,
           name TEXT NOT NULL,
@@ -62,7 +39,7 @@ const migrations: Migration[] = [
         )
       `);
 
-      await exec(sql`
+      await ctx().exec(sql`
         CREATE TABLE IF NOT EXISTS project_members (
           project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
           user_id TEXT NOT NULL,
@@ -73,7 +50,7 @@ const migrations: Migration[] = [
         )
       `);
 
-      await exec(sql`
+      await ctx().exec(sql`
         CREATE INDEX IF NOT EXISTS idx_project_members_user
         ON project_members (user_id)
       `);
@@ -82,7 +59,7 @@ const migrations: Migration[] = [
   {
     name: '002_runners',
     async up() {
-      await exec(sql`
+      await ctx().exec(sql`
         CREATE TABLE IF NOT EXISTS runners (
           id TEXT PRIMARY KEY,
           name TEXT NOT NULL,
@@ -99,7 +76,7 @@ const migrations: Migration[] = [
         )
       `);
 
-      await exec(sql`
+      await ctx().exec(sql`
         CREATE TABLE IF NOT EXISTS runner_project_assignments (
           runner_id TEXT NOT NULL REFERENCES runners(id) ON DELETE CASCADE,
           project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
@@ -109,12 +86,12 @@ const migrations: Migration[] = [
         )
       `);
 
-      await exec(sql`
+      await ctx().exec(sql`
         CREATE INDEX IF NOT EXISTS idx_runner_assignments_project
         ON runner_project_assignments (project_id)
       `);
 
-      await exec(sql`
+      await ctx().exec(sql`
         CREATE TABLE IF NOT EXISTS runner_tasks (
           id TEXT PRIMARY KEY,
           runner_id TEXT NOT NULL REFERENCES runners(id) ON DELETE CASCADE,
@@ -129,7 +106,7 @@ const migrations: Migration[] = [
         )
       `);
 
-      await exec(sql`
+      await ctx().exec(sql`
         CREATE INDEX IF NOT EXISTS idx_runner_tasks_runner_status
         ON runner_tasks (runner_id, status)
       `);
@@ -138,7 +115,7 @@ const migrations: Migration[] = [
   {
     name: '003_user_profiles',
     async up() {
-      await exec(sql`
+      await ctx().exec(sql`
         CREATE TABLE IF NOT EXISTS user_profiles (
           id TEXT PRIMARY KEY,
           user_id TEXT NOT NULL UNIQUE,
@@ -154,7 +131,7 @@ const migrations: Migration[] = [
   {
     name: '004_instance_settings',
     async up() {
-      await exec(sql`
+      await ctx().exec(sql`
         CREATE TABLE IF NOT EXISTS instance_settings (
           key TEXT PRIMARY KEY,
           value TEXT NOT NULL,
@@ -166,7 +143,7 @@ const migrations: Migration[] = [
   {
     name: '005_runner_http_url',
     async up() {
-      await exec(sql`
+      await ctx().exec(sql`
         ALTER TABLE runners ADD COLUMN IF NOT EXISTS http_url TEXT
       `);
     },
@@ -174,7 +151,7 @@ const migrations: Migration[] = [
   {
     name: '006_threads',
     async up() {
-      await exec(sql`
+      await ctx().exec(sql`
         CREATE TABLE IF NOT EXISTS threads (
           id TEXT PRIMARY KEY,
           project_id TEXT REFERENCES projects(id) ON DELETE CASCADE,
@@ -192,21 +169,21 @@ const migrations: Migration[] = [
       `);
 
       // Add runner_id if the table already existed without it
-      await exec(sql`
+      await ctx().exec(sql`
         ALTER TABLE threads ADD COLUMN IF NOT EXISTS runner_id TEXT REFERENCES runners(id) ON DELETE SET NULL
       `);
 
-      await exec(sql`
+      await ctx().exec(sql`
         CREATE INDEX IF NOT EXISTS idx_threads_project
         ON threads (project_id)
       `);
 
-      await exec(sql`
+      await ctx().exec(sql`
         CREATE INDEX IF NOT EXISTS idx_threads_runner
         ON threads (runner_id)
       `);
 
-      await exec(sql`
+      await ctx().exec(sql`
         CREATE INDEX IF NOT EXISTS idx_threads_user
         ON threads (user_id)
       `);
@@ -217,7 +194,7 @@ const migrations: Migration[] = [
     async up() {
       // The runners table may have been created by the runtime package (migration 041_runners)
       // with a different schema (project_paths instead of user_id). Ensure user_id exists.
-      await exec(sql`
+      await ctx().exec(sql`
         ALTER TABLE runners ADD COLUMN IF NOT EXISTS user_id TEXT
       `);
     },
@@ -225,7 +202,7 @@ const migrations: Migration[] = [
   {
     name: '008_invite_links',
     async up() {
-      await exec(sql`
+      await ctx().exec(sql`
         CREATE TABLE IF NOT EXISTS invite_links (
           id TEXT PRIMARY KEY,
           organization_id TEXT NOT NULL,
@@ -240,12 +217,12 @@ const migrations: Migration[] = [
         )
       `);
 
-      await exec(sql`
+      await ctx().exec(sql`
         CREATE INDEX IF NOT EXISTS idx_invite_links_token
         ON invite_links (token)
       `);
 
-      await exec(sql`
+      await ctx().exec(sql`
         CREATE INDEX IF NOT EXISTS idx_invite_links_org
         ON invite_links (organization_id)
       `);
@@ -254,25 +231,5 @@ const migrations: Migration[] = [
 ];
 
 export async function autoMigrate() {
-  await ensureMigrationTable();
-
-  let applied = 0;
-  for (const migration of migrations) {
-    if (await hasRun(migration.name)) continue;
-
-    try {
-      await migration.up();
-      await markRun(migration.name);
-      applied++;
-    } catch (err) {
-      log.error(`Migration ${migration.name} failed`, { namespace: 'db', error: err as any });
-      throw err;
-    }
-  }
-
-  if (applied > 0) {
-    log.info(`Applied ${applied} migration(s)`, { namespace: 'db' });
-  }
-
-  log.info('Central DB tables ready', { namespace: 'db' });
+  await runMigrations(db as any, /* isPg */ true, migrations, log, 'central-db');
 }
