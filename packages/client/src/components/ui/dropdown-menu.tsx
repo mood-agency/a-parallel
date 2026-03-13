@@ -22,7 +22,7 @@ const dropdownMenuContentVariants = cva(
       },
     },
     defaultVariants: {
-      size: 'default',
+      size: 'sm',
     },
   },
 );
@@ -54,7 +54,7 @@ const dropdownMenuItemVariants = cva(
       },
     },
     defaultVariants: {
-      size: 'default',
+      size: 'sm',
     },
   },
 );
@@ -101,7 +101,7 @@ const dropdownMenuSubTriggerVariants = cva(
       },
     },
     defaultVariants: {
-      size: 'default',
+      size: 'sm',
     },
   },
 );

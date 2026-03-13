@@ -9,10 +9,7 @@ import {
   XCircle,
   ArrowDown,
   ShieldQuestion,
-  FileText,
-  FolderOpen,
   ChevronRight,
-  ChevronDown,
 } from 'lucide-react';
 import { motion, useReducedMotion } from 'motion/react';
 import {
@@ -33,8 +30,8 @@ import { flushSync } from 'react-dom';
 import { useTranslation } from 'react-i18next';
 import { toast } from 'sonner';
 
+import { UserMessageCard } from '@/components/thread/UserMessageCard';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
-import { Badge } from '@/components/ui/badge';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
 import { Input } from '@/components/ui/input';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
@@ -44,7 +41,6 @@ import { useTodoSnapshots } from '@/hooks/use-todo-panel';
 import { api } from '@/lib/api';
 import { createClientLogger } from '@/lib/client-logger';
 import { remarkPlugins, baseMarkdownComponents } from '@/lib/markdown-components';
-import { parseReferencedFiles } from '@/lib/parse-referenced-files';
 import {
   buildGroupedRenderItems,
   getItemKey,
@@ -434,60 +430,6 @@ const McpToolGroup = memo(function McpToolGroup({
     </Collapsible>
   );
 }, mcpToolGroupAreEqual);
-
-const COLLAPSED_MAX_H = 48; // px – roughly 8 lines of text
-
-function UserMessageContent({ content }: { content: string }) {
-  const { t } = useTranslation();
-  const [expanded, setExpanded] = useState(false);
-  const [isOverflowing, setIsOverflowing] = useState(false);
-  const preRef = useRef<HTMLPreElement>(null);
-
-  useLayoutEffect(() => {
-    const el = preRef.current;
-    if (el) {
-      setIsOverflowing(el.scrollHeight > COLLAPSED_MAX_H);
-    }
-  }, [content]);
-
-  return (
-    <div className="relative">
-      <pre
-        ref={preRef}
-        className={cn(
-          'whitespace-pre-wrap font-mono text-xs leading-relaxed break-words overflow-x-auto',
-          !expanded && isOverflowing && 'overflow-hidden',
-          expanded && 'max-h-[50vh] overflow-y-auto',
-        )}
-        style={!expanded && isOverflowing ? { maxHeight: COLLAPSED_MAX_H } : undefined}
-      >
-        {content}
-      </pre>
-      {isOverflowing && !expanded && (
-        <div className="pointer-events-none absolute bottom-6 left-0 right-0 h-10 bg-gradient-to-t from-foreground to-transparent" />
-      )}
-      {isOverflowing && (
-        <button
-          type="button"
-          onClick={() => setExpanded(!expanded)}
-          className="mt-1 flex items-center gap-1 text-[11px] font-medium text-background transition-colors hover:text-background/80"
-        >
-          {expanded ? (
-            <>
-              <ChevronRight className="h-3 w-3 -rotate-90" />
-              {t('thread.showLess', 'Show less')}
-            </>
-          ) : (
-            <>
-              <ChevronDown className="h-3 w-3" />
-              {t('thread.showMore', 'Show more')}
-            </>
-          )}
-        </button>
-      )}
-    </div>
-  );
-}
 
 /* ── Windowed rendering constants ─────────────────────────────────── */
 const INITIAL_WINDOW = 30;
@@ -904,13 +846,13 @@ const MemoizedMessageList = memo(
         const msg = item.msg;
         return (
           <div className="sticky top-0 z-20 pb-3 pt-3">
-            <div
-              className={cn(
-                'relative group text-sm',
-                'w-full rounded-lg px-3 py-2 bg-foreground text-background cursor-pointer',
-                'shadow-md',
-              )}
-              data-user-msg={msg.id}
+            <UserMessageCard
+              data-testid={`user-message-${msg.id}`}
+              content={msg.content}
+              images={msg.images}
+              model={msg.model}
+              permissionMode={msg.permissionMode}
+              timestamp={msg.timestamp}
               onClick={() => {
                 const section = scrollRef.current?.querySelector(
                   `[data-section-msg-id="${msg.id}"]`,
@@ -919,87 +861,12 @@ const MemoizedMessageList = memo(
                   section.scrollIntoView({ behavior: 'smooth', block: 'start' });
                 }
               }}
-            >
-              {msg.images &&
-                msg.images.length > 0 &&
-                (() => {
-                  const allImages = msg.images!.map((i: any, j: number) => ({
-                    src: `data:${i.source.media_type};base64,${i.source.data}`,
-                    alt: `Attachment ${j + 1}`,
-                  }));
-                  return (
-                    <div className="mb-2 flex flex-wrap gap-2">
-                      {msg.images!.map((img: any, idx: number) => (
-                        <img
-                          key={`attachment-${idx}`}
-                          src={`data:${img.source.media_type};base64,${img.source.data}`}
-                          alt={`Attachment ${idx + 1}`}
-                          width={160}
-                          height={160}
-                          loading="lazy"
-                          className="max-h-40 cursor-pointer rounded border border-border transition-opacity hover:opacity-80"
-                          onClick={() => onOpenLightbox(allImages, idx)}
-                        />
-                      ))}
-                    </div>
-                  );
-                })()}
-              {(() => {
-                const { files, cleanContent } = parseReferencedFiles(msg.content);
-                return (
-                  <>
-                    {files.length > 0 && (
-                      <div className="mb-1.5 flex flex-wrap gap-1">
-                        {files.map((fileItem) => (
-                          <span
-                            key={`${fileItem.type}:${fileItem.path}`}
-                            className="inline-flex items-center gap-1 rounded bg-background/20 px-1.5 py-0.5 font-mono text-xs text-background/70"
-                            title={fileItem.path}
-                          >
-                            {fileItem.type === 'folder' ? (
-                              <FolderOpen className="h-3 w-3 shrink-0" />
-                            ) : (
-                              <FileText className="h-3 w-3 shrink-0" />
-                            )}
-                            {fileItem.path.split('/').pop()}
-                          </span>
-                        ))}
-                      </div>
-                    )}
-                    <UserMessageContent content={cleanContent.trim()} />
-                    <div className="mt-1.5 flex items-center justify-between">
-                      <div className="flex gap-1">
-                        {msg.model && (
-                          <Badge
-                            variant="outline"
-                            className="h-4 border-background/20 bg-background/10 px-1.5 py-0 text-[10px] font-medium text-background/60"
-                          >
-                            {resolveModelLabel(msg.model, t)}
-                          </Badge>
-                        )}
-                        {msg.permissionMode && (
-                          <Badge
-                            variant="outline"
-                            className="h-4 border-background/20 bg-background/10 px-1.5 py-0 text-[10px] font-medium text-background/60"
-                          >
-                            {t(`prompt.${msg.permissionMode}`)}
-                          </Badge>
-                        )}
-                      </div>
-                      {msg.timestamp && (
-                        <span className="text-[10px] text-background/50">
-                          {timeAgo(msg.timestamp, t)}
-                        </span>
-                      )}
-                    </div>
-                  </>
-                );
-              })()}
-            </div>
+              onImageClick={onOpenLightbox}
+            />
           </div>
         );
       },
-      [onOpenLightbox, scrollRef, t],
+      [onOpenLightbox, scrollRef],
     );
 
     return (

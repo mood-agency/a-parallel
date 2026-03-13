@@ -1,15 +1,13 @@
 import type { Thread } from '@funny/shared';
-import { ChevronRight } from 'lucide-react';
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useNavigate } from 'react-router-dom';
 
-import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
-import { cn } from '@/lib/utils';
 import { useGitStatusStore, branchKey as computeBranchKey } from '@/stores/git-status-store';
 import { useProjectStore } from '@/stores/project-store';
 import { useThreadStore } from '@/stores/thread-store';
 
+import { ThreadGroup } from './ThreadGroup';
 import { ThreadItem } from './ThreadItem';
 
 interface RunningThread extends Thread {
@@ -25,8 +23,6 @@ export function RunningThreads() {
   const selectedThreadId = useThreadStore((s) => s.selectedThreadId);
   const projects = useProjectStore((s) => s.projects);
   const statusByBranch = useGitStatusStore((s) => s.statusByBranch);
-  const [isExpanded, setIsExpanded] = useState(true);
-
   const runningThreads = useMemo(() => {
     const result: RunningThread[] = [];
     const projectMap = new Map(
@@ -65,46 +61,37 @@ export function RunningThreads() {
   if (runningThreads.length === 0) return null;
 
   return (
-    <Collapsible open={isExpanded} onOpenChange={setIsExpanded} className="mb-1 min-w-0">
-      <CollapsibleTrigger className="flex w-full min-w-0 items-center gap-1.5 px-2 py-1.5 text-left text-xs text-muted-foreground transition-colors hover:text-foreground">
-        <ChevronRight
-          className={cn(
-            'h-3 w-3 flex-shrink-0 transition-transform duration-200',
-            isExpanded && 'rotate-90',
-          )}
-        />
+    <ThreadGroup
+      title={t('sidebar.activeThreads')}
+      count={runningThreads.length}
+      iconElement={
         <span className="h-1.5 w-1.5 flex-shrink-0 animate-pulse rounded-full bg-status-info" />
-        <span className="truncate font-medium">
-          {t('sidebar.activeThreads')} ({runningThreads.length})
-        </span>
-      </CollapsibleTrigger>
-      <CollapsibleContent className="data-[state=open]:animate-slide-down">
-        <div className="mt-0.5 min-w-0 space-y-0.5">
-          {runningThreads.map((thread) => {
-            return (
-              <ThreadItem
-                key={thread.id}
-                thread={thread}
-                projectPath={thread.projectPath}
-                isSelected={selectedThreadId === thread.id}
-                subtitle={thread.projectName}
-                projectColor={thread.projectColor}
-                gitStatus={statusByBranch[computeBranchKey(thread)]}
-                onSelect={() => {
-                  const store = useThreadStore.getState();
-                  if (
-                    store.selectedThreadId === thread.id &&
-                    (!store.activeThread || store.activeThread.id !== thread.id)
-                  ) {
-                    store.selectThread(thread.id);
-                  }
-                  navigate(`/projects/${thread.projectId}/threads/${thread.id}`);
-                }}
-              />
-            );
-          })}
-        </div>
-      </CollapsibleContent>
-    </Collapsible>
+      }
+      data-testid="sidebar-running-threads"
+    >
+      {runningThreads.map((thread) => {
+        return (
+          <ThreadItem
+            key={thread.id}
+            thread={thread}
+            projectPath={thread.projectPath}
+            isSelected={selectedThreadId === thread.id}
+            subtitle={thread.projectName}
+            projectColor={thread.projectColor}
+            gitStatus={statusByBranch[computeBranchKey(thread)]}
+            onSelect={() => {
+              const store = useThreadStore.getState();
+              if (
+                store.selectedThreadId === thread.id &&
+                (!store.activeThread || store.activeThread.id !== thread.id)
+              ) {
+                store.selectThread(thread.id);
+              }
+              navigate(`/projects/${thread.projectId}/threads/${thread.id}`);
+            }}
+          />
+        );
+      })}
+    </ThreadGroup>
   );
 }
