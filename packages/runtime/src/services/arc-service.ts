@@ -3,7 +3,7 @@
  * and reading arc artifact files from the project repository.
  */
 
-import { readdir, readFile, mkdir } from 'fs/promises';
+import { readdir, readFile, mkdir, stat } from 'fs/promises';
 import { join } from 'path';
 
 import type { ArcArtifacts } from '@funny/shared';
@@ -47,11 +47,26 @@ export async function createArcDirectory(
 }
 
 /**
- * Read arc artifact files from `arcs/<name>/` in the project directory.
+ * Resolve the artifact directory for a change.
+ * Checks `openspec/changes/<name>/` first, falls back to `arcs/<name>/`.
+ */
+async function resolveArtifactDir(projectPath: string, name: string): Promise<string> {
+  const openspecDir = join(projectPath, 'openspec', 'changes', name);
+  try {
+    await stat(openspecDir);
+    return openspecDir;
+  } catch {
+    return join(projectPath, 'arcs', name);
+  }
+}
+
+/**
+ * Read arc artifact files from the project directory.
+ * Looks in `openspec/changes/<name>/` first, falls back to `arcs/<name>/`.
  * Returns content for each file that exists; missing files are omitted.
  */
 export async function readArcArtifacts(projectPath: string, name: string): Promise<ArcArtifacts> {
-  const arcDir = join(projectPath, 'arcs', name);
+  const arcDir = await resolveArtifactDir(projectPath, name);
   const artifacts: ArcArtifacts = {};
 
   // Read top-level artifact files

@@ -62,6 +62,9 @@ const ReviewPane = lazy(reviewPaneImport);
 const TestRunnerPane = lazy(() =>
   import('@/components/TestRunnerPane').then((m) => ({ default: m.TestRunnerPane })),
 );
+const TasksPane = lazy(() =>
+  import('@/components/sidebar/TasksPanel').then((m) => ({ default: m.TasksPanel })),
+);
 const TerminalPanel = lazy(() =>
   import('@/components/TerminalPanel').then((m) => ({ default: m.TerminalPanel })),
 );
@@ -283,7 +286,15 @@ export function App() {
           >
             {/* Pane content — controlled by header toggle buttons */}
             <div className="min-h-0 flex-1 overflow-hidden">
-              <Suspense>{rightPaneTab === 'review' ? <ReviewPane /> : <TestRunnerPane />}</Suspense>
+              <Suspense>
+                {rightPaneTab === 'review' ? (
+                  <ReviewPane />
+                ) : rightPaneTab === 'tasks' ? (
+                  <TasksPane />
+                ) : (
+                  <TestRunnerPane />
+                )}
+              </Suspense>
             </div>
           </div>
         )}

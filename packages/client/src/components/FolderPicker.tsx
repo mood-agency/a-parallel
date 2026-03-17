@@ -310,7 +310,7 @@ export function FolderPicker({ onSelect, onClose }: FolderPickerProps) {
               className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-xs text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
             >
               <Folder className="h-3.5 w-3.5 flex-shrink-0 text-status-info" />
-              <span className="truncate">{dir.name}</span>
+              <span className="truncate font-mono-explorer">{dir.name}</span>
               <ChevronRight className="ml-auto h-3 w-3 flex-shrink-0 opacity-40" />
             </button>
           ))}

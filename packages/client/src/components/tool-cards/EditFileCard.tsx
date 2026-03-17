@@ -4,6 +4,7 @@ import { useTranslation } from 'react-i18next';
 
 import { Button } from '@/components/ui/button';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
+import { useDiffHighlight } from '@/hooks/use-diff-highlight';
 import { cn } from '@/lib/utils';
 import { useSettingsStore } from '@/stores/settings-store';
 
@@ -39,6 +40,8 @@ export function EditFileCard({
   const hasDiff = useMemo(() => {
     return filePath && oldString != null && newString != null && oldString !== newString;
   }, [filePath, oldString, newString]);
+
+  const { renderContent } = useDiffHighlight(oldString || '', newString || '', filePath || '');
 
   return (
     <div className="w-full min-w-0 overflow-hidden rounded-lg border border-border text-sm">
@@ -127,6 +130,7 @@ export function EditFileCard({
                 hideLineNumbers={false}
                 showDiffOnly={true}
                 styles={DIFF_VIEWER_STYLES}
+                renderContent={renderContent}
               />
             </Suspense>
           </div>

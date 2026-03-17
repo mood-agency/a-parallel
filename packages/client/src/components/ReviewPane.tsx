@@ -33,7 +33,7 @@ import {
   RotateCcw,
   ChevronRight,
 } from 'lucide-react';
-import { useState, useEffect, useRef, useMemo, useCallback, memo, Suspense } from 'react';
+import { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
 import { toast } from 'sonner';
 
@@ -58,7 +58,6 @@ import {
 } from '@/components/ui/dropdown-menu';
 import { Input } from '@/components/ui/input';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
-import { ScrollArea, ScrollBar } from '@/components/ui/scroll-area';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { useAutoRefreshDiff } from '@/hooks/use-auto-refresh-diff';
 import { api } from '@/lib/api';
@@ -77,7 +76,7 @@ import { useUIStore } from '@/stores/ui-store';
 
 import { DiffStats } from './DiffStats';
 import { InlineProgressSteps } from './InlineProgressSteps';
-import { ReactDiffViewer, DIFF_VIEWER_STYLES } from './tool-cards/utils';
+import { ExpandedDiffDialog } from './tool-cards/ExpandedDiffDialog';
 
 const fileStatusIcons: Record<string, typeof FileCode> = {
   added: FilePlus,
@@ -87,7 +86,7 @@ const fileStatusIcons: Record<string, typeof FileCode> = {
 };
 
 const FILE_ROW_HEIGHT = 24;
-const FOLDER_ROW_HEIGHT = 22;
+const FOLDER_ROW_HEIGHT = 24;
 const INDENT_PX = 12;
 
 type TreeRow =
@@ -224,31 +223,6 @@ function parseDiffNew(unifiedDiff: string): string {
 
   return newLines.join('\n');
 }
-
-const MemoizedDiffView = memo(function MemoizedDiffView({
-  diff,
-  splitView = false,
-}: {
-  diff: string;
-  splitView?: boolean;
-}) {
-  const oldValue = useMemo(() => parseDiffOld(diff), [diff]);
-  const newValue = useMemo(() => parseDiffNew(diff), [diff]);
-
-  return (
-    <ReactDiffViewer
-      oldValue={oldValue}
-      newValue={newValue}
-      splitView={splitView}
-      useDarkTheme={true}
-      hideLineNumbers={false}
-      showDiffOnly={true}
-      hideSummary={true}
-      styles={DIFF_VIEWER_STYLES}
-      codeFoldMessageRenderer={() => <></>}
-    />
-  );
-});
 
 export function ReviewPane() {
   const { t } = useTranslation();
@@ -1086,11 +1060,11 @@ export function ReviewPane() {
     (effectiveThreadId ? true : !isAgentRunning);
 
   return (
-    <div className="flex h-full flex-col" style={{ contain: 'strict' }}>
+    <div className="flex h-full flex-col text-xs" style={{ contain: 'strict' }}>
       {/* Header */}
       <div className="flex items-center justify-between border-b border-sidebar-border px-4 py-3">
         <div className="flex items-center gap-1">
-          <h3 className="mr-1 text-sm font-semibold uppercase tracking-wider text-sidebar-foreground">
+          <h3 className="mr-1 text-xs font-semibold uppercase tracking-wider text-sidebar-foreground">
             {t('review.title')}
           </h3>
         </div>
@@ -1115,7 +1089,7 @@ export function ReviewPane() {
         <div className="flex min-w-0 flex-1 flex-col">
           {/* Truncation warning */}
           {truncatedInfo.truncated && (
-            <div className="border-b border-sidebar-border bg-yellow-500/10 px-3 py-1.5 text-sm text-yellow-600 dark:text-yellow-400">
+            <div className="border-b border-sidebar-border bg-yellow-500/10 px-3 py-1.5 text-xs text-yellow-600 dark:text-yellow-400">
               {t('review.truncatedWarning', {
                 shown: summaries.length,
                 total: truncatedInfo.total,
@@ -1179,24 +1153,24 @@ export function ReviewPane() {
               </Tooltip>
               <PopoverContent align="start" className="max-h-[360px] w-[400px] overflow-auto p-0">
                 {logLoading ? (
-                  <div className="flex items-center gap-2 p-3 text-sm text-muted-foreground">
+                  <div className="flex items-center gap-2 p-3 text-xs text-muted-foreground">
                     <Loader2 className="h-3.5 w-3.5 animate-spin" />
                     {t('review.loadingLog', 'Loading commits\u2026')}
                   </div>
                 ) : logEntries.length === 0 ? (
-                  <p className="p-3 text-sm text-muted-foreground">
+                  <p className="p-3 text-xs text-muted-foreground">
                     {t('review.noCommits', 'No commits yet')}
                   </p>
                 ) : (
                   <div className="divide-y divide-border">
                     {logEntries.map((entry) => (
-                      <div key={entry.hash} className="px-3 py-2 text-sm hover:bg-accent/50">
+                      <div key={entry.hash} className="px-3 py-2 text-xs hover:bg-accent/50">
                         <div className="flex items-center gap-2">
-                          <code className="font-mono text-sm text-primary">{entry.shortHash}</code>
+                          <code className="font-mono text-xs text-primary">{entry.shortHash}</code>
                           <span className="text-muted-foreground">{entry.relativeDate}</span>
                         </div>
                         <p className="mt-0.5 truncate text-foreground">{entry.message}</p>
-                        <p className="text-sm text-muted-foreground">{entry.author}</p>
+                        <p className="text-xs text-muted-foreground">{entry.author}</p>
                       </div>
                     ))}
                   </div>
@@ -1262,7 +1236,7 @@ export function ReviewPane() {
                     data-testid="review-file-filter"
                     value={fileSearch}
                     onChange={(e) => setFileSearch(e.target.value)}
-                    className="h-7 pl-7 pr-7 text-sm md:text-sm"
+                    className="h-7 pl-7 pr-7 text-xs md:text-xs"
                   />
                   {fileSearch && (
                     <Button
@@ -1311,7 +1285,7 @@ export function ReviewPane() {
                   >
                     {checkedFiles.size > 0 && <Check className="h-2.5 w-2.5" />}
                   </button>
-                  <span className="text-sm text-muted-foreground">
+                  <span className="text-xs text-muted-foreground">
                     {checkedCount}/{totalCount} {t('review.selected', 'selected')}
                   </span>
                 </>
@@ -1320,13 +1294,13 @@ export function ReviewPane() {
           )}
 
           {/* File list (virtualized) */}
-          {loading ? (
-            <div className="flex items-center gap-2 p-3 text-sm text-muted-foreground">
+          {loading && summaries.length === 0 ? (
+            <div className="flex items-center gap-2 p-3 text-xs text-muted-foreground">
               <Loader2 className="h-3.5 w-3.5 animate-spin" />
               {t('review.loading', 'Loading changes\u2026')}
             </div>
           ) : loadError ? (
-            <div className="flex flex-col items-center gap-2 p-4 text-sm text-muted-foreground">
+            <div className="flex flex-col items-center gap-2 p-4 text-xs text-muted-foreground">
               <AlertTriangle className="h-4 w-4 text-status-error" />
               <p>{t('review.loadFailed', 'Failed to load changes')}</p>
               <Button
@@ -1340,14 +1314,17 @@ export function ReviewPane() {
                 {t('common.retry', 'Retry')}
               </Button>
             </div>
-          ) : summaries.length === 0 ? (
-            <p className="p-3 text-sm text-muted-foreground">{t('review.noChanges')}</p>
-          ) : filteredDiffs.length === 0 ? (
-            <p className="p-3 text-sm text-muted-foreground">
+          ) : summaries.length === 0 && !loading ? (
+            <p className="p-3 text-xs text-muted-foreground">{t('review.noChanges')}</p>
+          ) : filteredDiffs.length === 0 && !loading ? (
+            <p className="p-3 text-xs text-muted-foreground">
               {t('review.noMatchingFiles', 'No matching files')}
             </p>
           ) : (
-            <div ref={fileListRef} className="flex-1 overflow-auto">
+            <div
+              ref={fileListRef}
+              className={cn('flex-1 overflow-auto', loading && 'opacity-60 pointer-events-none')}
+            >
               <div
                 style={{
                   height: `${virtualizer.getTotalSize()}px`,
@@ -1371,29 +1348,33 @@ export function ReviewPane() {
                     return (
                       <div
                         key={`folder-${row.path}`}
-                        className="flex cursor-pointer select-none items-center gap-1 text-sm text-muted-foreground/80 hover:bg-sidebar-accent/30"
+                        className="flex cursor-pointer select-none items-center gap-1.5 text-xs text-muted-foreground transition-colors hover:bg-sidebar-accent/50"
                         style={{ ...baseStyle, paddingLeft: `${8 + row.depth * INDENT_PX}px` }}
                         onClick={() => toggleFolder(row.path)}
                         data-testid={`review-folder-${row.path}`}
                       >
                         <ChevronRight
                           className={cn(
-                            'h-3 w-3 flex-shrink-0 transition-transform',
+                            'h-3.5 w-3.5 flex-shrink-0 transition-transform',
                             !isCollapsed && 'rotate-90',
                           )}
                         />
                         {isCollapsed ? (
-                          <Folder className="h-3.5 w-3.5 flex-shrink-0 text-muted-foreground/70" />
+                          <Folder className="h-4 w-4 flex-shrink-0 text-muted-foreground/70" />
                         ) : (
-                          <FolderOpen className="h-3.5 w-3.5 flex-shrink-0 text-muted-foreground/70" />
+                          <FolderOpen className="h-4 w-4 flex-shrink-0 text-muted-foreground/70" />
                         )}
-                        <span className="truncate text-sm font-medium">{row.label}</span>
+                        <span className="flex-1 truncate font-mono-explorer text-xs">
+                          {row.label}
+                        </span>
                         <DiffStats
                           linesAdded={row.additions}
                           linesDeleted={row.deletions}
-                          size="sm"
-                          className="ml-auto pr-2"
+                          size="xs"
                         />
+                        {/* Spacers to align with file rows (status letter + 3-dot menu) */}
+                        <span className="invisible flex-shrink-0 text-xs font-medium">M</span>
+                        <span className="h-4 w-4 flex-shrink-0" />
                       </div>
                     );
                   }
@@ -1405,7 +1386,7 @@ export function ReviewPane() {
                       key={f.path}
                       style={{ ...baseStyle, paddingLeft: `${8 + row.depth * INDENT_PX}px` }}
                       className={cn(
-                        'group flex items-center gap-1.5 text-sm cursor-pointer transition-colors',
+                        'group flex items-center gap-1.5 text-xs cursor-pointer transition-colors',
                         selectedFile === f.path
                           ? 'bg-sidebar-accent text-sidebar-accent-foreground'
                           : 'hover:bg-sidebar-accent/50 text-muted-foreground',
@@ -1440,22 +1421,26 @@ export function ReviewPane() {
                         filePath={f.path}
                         className="h-4 w-4 flex-shrink-0 text-muted-foreground/80"
                       />
-                      <span className="flex-1 truncate font-mono text-sm">
+                      <span className="flex-1 truncate font-mono-explorer text-xs">
                         {f.path.split('/').pop()}
                       </span>
                       <DiffStats
                         linesAdded={f.additions ?? 0}
                         linesDeleted={f.deletions ?? 0}
-                        size="sm"
+                        size="xs"
                       />
                       <span
-                        className={cn(
-                          'text-sm font-medium flex-shrink-0',
-                          f.status === 'added' && 'text-diff-added',
-                          f.status === 'modified' && 'text-status-pending',
-                          f.status === 'deleted' && 'text-diff-removed',
-                          f.status === 'renamed' && 'text-status-info',
-                        )}
+                        className="flex-shrink-0 text-xs font-medium"
+                        style={{
+                          color:
+                            f.status === 'added'
+                              ? 'hsl(142 40% 45%)'
+                              : f.status === 'modified'
+                                ? 'hsl(30 90% 55%)'
+                                : f.status === 'deleted'
+                                  ? 'hsl(0 45% 55%)'
+                                  : 'hsl(200 80% 60%)',
+                        }}
                       >
                         {f.status === 'added'
                           ? 'A'
@@ -1610,7 +1595,7 @@ export function ReviewPane() {
           {/* Commit controls */}
           {summaries.length > 0 && commitInProgress && (
             <div className="flex-shrink-0 space-y-2 border-t border-sidebar-border p-2">
-              <p className="text-sm font-medium text-foreground">{commitEntry.title}</p>
+              <p className="text-xs font-medium text-foreground">{commitEntry.title}</p>
               <InlineProgressSteps steps={commitEntry.steps} />
               {(() => {
                 const hasFailed = commitEntry.steps.some((s) => s.status === 'failed');
@@ -1650,11 +1635,11 @@ export function ReviewPane() {
                 value={commitTitle}
                 onChange={(e) => setCommitTitle(e.target.value)}
                 disabled={!!actionInProgress || generatingMsg}
-                className="w-full rounded-md border border-input bg-background px-2 py-1.5 text-sm placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                className="w-full rounded-md border border-input bg-background px-2 py-1.5 text-xs placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
               />
               <div className="rounded-md border border-input bg-background focus-within:ring-1 focus-within:ring-ring">
                 <textarea
-                  className="w-full resize-none bg-transparent px-2 py-1.5 text-sm placeholder:text-muted-foreground focus-visible:outline-none"
+                  className="w-full resize-none bg-transparent px-2 py-1.5 text-xs placeholder:text-muted-foreground focus-visible:outline-none"
                   rows={7}
                   aria-label={t('review.commitBody', 'Commit body')}
                   data-testid="review-commit-body"
@@ -1744,7 +1729,7 @@ export function ReviewPane() {
                         <ActionIcon
                           className={cn('h-4 w-4', selectedAction === value && 'text-primary')}
                         />
-                        <span className="text-sm font-medium leading-tight">{label}</span>
+                        <span className="text-xs font-medium leading-tight">{label}</span>
                       </button>
                     </TooltipTrigger>
                     {isAgentRunning && (
@@ -1782,7 +1767,7 @@ export function ReviewPane() {
           {/* Standalone push button — shown when no dirty files but there are unpushed commits */}
           {showPushOnly && (
             <div className="flex-shrink-0 space-y-2 border-t border-sidebar-border p-3">
-              <div className="flex items-center gap-2 text-sm text-muted-foreground">
+              <div className="flex items-center gap-2 text-xs text-muted-foreground">
                 <Upload className="h-3.5 w-3.5" />
                 <span>
                   {t('review.readyToPush', {
@@ -1844,7 +1829,7 @@ export function ReviewPane() {
           {/* Stash pop — shown when no dirty files but there are stashed changes */}
           {summaries.length === 0 && !loading && stashEntries.length > 0 && (
             <div className="flex-shrink-0 space-y-3 border-t border-sidebar-border p-3">
-              <div className="flex items-center gap-2 text-sm text-muted-foreground">
+              <div className="flex items-center gap-2 text-xs text-muted-foreground">
                 <ArchiveRestore className="h-3.5 w-3.5" />
                 <span>
                   {t('review.stashedChanges', {
@@ -1883,7 +1868,7 @@ export function ReviewPane() {
             <div className="flex-shrink-0 space-y-3 border-t border-sidebar-border p-3">
               {commitInProgress && commitEntry?.action === 'merge' ? (
                 <>
-                  <p className="text-sm font-medium text-foreground">{commitEntry.title}</p>
+                  <p className="text-xs font-medium text-foreground">{commitEntry.title}</p>
                   <InlineProgressSteps steps={commitEntry.steps} />
                   {(() => {
                     const hasFailed = commitEntry.steps.some((s) => s.status === 'failed');
@@ -1914,7 +1899,7 @@ export function ReviewPane() {
                 </>
               ) : (
                 <>
-                  <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                  <div className="flex items-center gap-2 text-xs text-muted-foreground">
                     <GitMerge className="h-3.5 w-3.5" />
                     <span>
                       {t('review.readyToMerge', {
@@ -1980,7 +1965,7 @@ export function ReviewPane() {
           {/* Rebase conflict resolution — shown when merge/rebase failed with conflicts */}
           {hasRebaseConflict && (
             <div className="flex-shrink-0 space-y-2 border-t border-sidebar-border p-3">
-              <div className="flex items-center gap-2 text-sm text-destructive">
+              <div className="flex items-center gap-2 text-xs text-destructive">
                 <AlertTriangle className="h-3.5 w-3.5" />
                 <span>{t('review.mergeConflict', { target: baseBranch || 'main' })}</span>
               </div>
@@ -2059,7 +2044,7 @@ export function ReviewPane() {
           </DialogHeader>
           <div className="space-y-2">
             <input
-              className="w-full rounded-md border border-input bg-background px-2 py-1.5 text-sm placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+              className="w-full rounded-md border border-input bg-background px-2 py-1.5 text-xs placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
               placeholder={t('review.prTitle', 'PR title')}
               data-testid="review-pr-title"
               value={prDialog?.title ?? ''}
@@ -2068,7 +2053,7 @@ export function ReviewPane() {
               }
             />
             <textarea
-              className="w-full resize-none rounded-md border border-input bg-background px-2 py-1.5 text-sm placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+              className="w-full resize-none rounded-md border border-input bg-background px-2 py-1.5 text-xs placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
               rows={4}
               placeholder={t('review.commitBody', 'Description (optional)')}
               data-testid="review-pr-body"
@@ -2105,68 +2090,36 @@ export function ReviewPane() {
       </Dialog>
 
       {/* Expanded diff modal */}
-      <Dialog
-        open={!!expandedFile}
-        onOpenChange={(open) => {
-          if (!open) setExpandedFile(null);
-        }}
-      >
-        <DialogContent className="flex h-[85vh] w-[90vw] max-w-[90vw] flex-col gap-0 p-0">
-          {(() => {
-            if (!expandedFile) return null;
-            const expandedSummary = summaries.find((s) => s.path === expandedFile);
-            if (!expandedSummary) return null;
-            const expandedDiffContent = diffCache.get(expandedFile);
-            const Icon = fileStatusIcons[expandedSummary.status] || FileCode;
-            return (
-              <>
-                <DialogHeader className="flex-shrink-0 overflow-hidden border-b border-border px-4 py-3 pr-10">
-                  <div className="flex min-w-0 items-center gap-2 overflow-hidden">
-                    <Icon className="h-4 w-4 flex-shrink-0" />
-                    <DialogTitle
-                      className="min-w-0 overflow-hidden text-ellipsis whitespace-nowrap font-mono text-sm"
-                      style={{ direction: 'rtl', textAlign: 'left' }}
-                    >
-                      {expandedSummary.path}
-                    </DialogTitle>
-                  </div>
-                  <DialogDescription className="sr-only">
-                    {t('review.diffFor', {
-                      file: expandedSummary.path,
-                      defaultValue: `Diff for ${expandedSummary.path}`,
-                    })}
-                  </DialogDescription>
-                </DialogHeader>
-                <ScrollArea className="min-h-0 flex-1">
-                  {loadingDiff === expandedFile ? (
-                    <div className="flex items-center gap-2 p-4 text-sm text-muted-foreground">
-                      <Loader2 className="h-4 w-4 animate-spin" />
-                      Loading diff\u2026
-                    </div>
-                  ) : expandedDiffContent ? (
-                    <div className="[&_.diff-container]:font-mono [&_table]:w-full [&_td]:overflow-hidden [&_td]:text-ellipsis">
-                      <Suspense
-                        fallback={
-                          <div className="p-4 text-sm text-muted-foreground">
-                            Loading diff\u2026
-                          </div>
-                        }
-                      >
-                        <MemoizedDiffView diff={expandedDiffContent} splitView={true} />
-                      </Suspense>
-                    </div>
-                  ) : (
-                    <p className="p-4 text-sm text-muted-foreground">
-                      {t('review.binaryOrNoDiff')}
-                    </p>
-                  )}
-                  <ScrollBar orientation="horizontal" />
-                </ScrollArea>
-              </>
-            );
-          })()}
-        </DialogContent>
-      </Dialog>
+      {(() => {
+        const expandedSummary = expandedFile
+          ? summaries.find((s) => s.path === expandedFile)
+          : undefined;
+        const expandedDiffContent = expandedFile ? diffCache.get(expandedFile) : undefined;
+        const ExpandedIcon = expandedSummary
+          ? fileStatusIcons[expandedSummary.status] || FileCode
+          : FileCode;
+        return (
+          <ExpandedDiffDialog
+            open={!!expandedFile}
+            onOpenChange={(open) => {
+              if (!open) setExpandedFile(null);
+            }}
+            filePath={expandedSummary?.path || ''}
+            oldValue={expandedDiffContent ? parseDiffOld(expandedDiffContent) : ''}
+            newValue={expandedDiffContent ? parseDiffNew(expandedDiffContent) : ''}
+            icon={ExpandedIcon}
+            loading={loadingDiff === expandedFile}
+            description={
+              expandedSummary
+                ? t('review.diffFor', {
+                    file: expandedSummary.path,
+                    defaultValue: `Diff for ${expandedSummary.path}`,
+                  })
+                : undefined
+            }
+          />
+        );
+      })()}
     </div>
   );
 }

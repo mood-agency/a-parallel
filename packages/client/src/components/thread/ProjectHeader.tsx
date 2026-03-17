@@ -20,6 +20,7 @@ import {
   Trash2,
   FolderOpen,
   FlaskConical,
+  ListChecks,
 } from 'lucide-react';
 import { memo, useState, useEffect, useCallback, startTransition } from 'react';
 import { useTranslation } from 'react-i18next';
@@ -420,6 +421,7 @@ export const ProjectHeader = memo(function ProjectHeader() {
     activeThreadParentId,
     activeThreadBranch,
     activeThreadBaseBranch,
+    activeThreadArcId,
   } = useThreadStore(
     useShallow((s) => ({
       activeThreadId: s.activeThread?.id,
@@ -431,6 +433,7 @@ export const ProjectHeader = memo(function ProjectHeader() {
       activeThreadParentId: s.activeThread?.parentThreadId,
       activeThreadBranch: s.activeThread?.branch,
       activeThreadBaseBranch: s.activeThread?.baseBranch,
+      activeThreadArcId: s.activeThread?.arcId,
     })),
   );
   const selectedProjectId = useProjectStore((s) => s.selectedProjectId);
@@ -438,6 +441,7 @@ export const ProjectHeader = memo(function ProjectHeader() {
   const setReviewPaneOpen = useUIStore((s) => s.setReviewPaneOpen);
   const reviewPaneOpen = useUIStore((s) => s.reviewPaneOpen);
   const setTestPaneOpen = useUIStore((s) => s.setTestPaneOpen);
+  const setTasksPaneOpen = useUIStore((s) => s.setTasksPaneOpen);
   const rightPaneTab = useUIStore((s) => s.rightPaneTab);
   const kanbanContext = useUIStore((s) => s.kanbanContext);
   const { openPreview, isTauri } = usePreviewWindow();
@@ -758,6 +762,34 @@ export const ProjectHeader = memo(function ProjectHeader() {
               </TooltipTrigger>
               <TooltipContent>{t('tests.title', 'Tests')}</TooltipContent>
             </Tooltip>
+            {activeThreadArcId && (
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button
+                    variant="ghost"
+                    size="icon-sm"
+                    onClick={() =>
+                      startTransition(() => {
+                        if (reviewPaneOpen && rightPaneTab === 'tasks') {
+                          setTasksPaneOpen(false);
+                        } else {
+                          setTasksPaneOpen(true);
+                        }
+                      })
+                    }
+                    data-testid="header-toggle-tasks"
+                    className={
+                      reviewPaneOpen && rightPaneTab === 'tasks'
+                        ? 'text-foreground'
+                        : 'text-muted-foreground'
+                    }
+                  >
+                    <ListChecks className="h-4 w-4" />
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent>Tasks</TooltipContent>
+              </Tooltip>
+            )}
             {activeThreadId && <MoreActionsMenu />}
           </div>
         )}
