@@ -147,7 +147,9 @@ function TreeItem({
           ) : (
             <ChevronRight className="h-3.5 w-3.5 flex-shrink-0 text-muted-foreground" />
           )}
-          <span className="truncate font-medium text-muted-foreground">{node.name}</span>
+          <span className="truncate font-mono-explorer font-medium text-muted-foreground">
+            {node.name}
+          </span>
         </button>
         {isExpanded &&
           node.children.map((child) => (
@@ -205,7 +207,10 @@ function TreeItem({
           )}
         </button>
         <FileCode className="h-3.5 w-3.5 flex-shrink-0 text-muted-foreground" />
-        <span className="flex-1 cursor-pointer truncate" onClick={handleToggleFile}>
+        <span
+          className="flex-1 cursor-pointer truncate font-mono-explorer"
+          onClick={handleToggleFile}
+        >
           {node.name}
         </span>
         <StatusDot status={status} />

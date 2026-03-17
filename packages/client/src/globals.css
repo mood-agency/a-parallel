@@ -32,6 +32,7 @@
   :root {
     --font-sans: 'Geist Sans', 'Geist Sans Fallback', sans-serif;
     --font-mono: 'JetBrains Mono', ui-monospace, monospace;
+    --font-mono-explorer: 'Geist Mono', ui-monospace, monospace;
     --background: 0 0% 100%;
     --foreground: 240 10% 3.9%;
     --card: 0 0% 100%;
@@ -476,6 +477,7 @@
   /* ── Monochrome Dark (Black & White) ─────────────────────── */
   .theme-monochrome-dark {
     --font-sans: 'Noto Sans', sans-serif;
+    --font-mono-explorer: 'Noto Sans Mono', ui-monospace, monospace;
     --background: 0 0% 4%;
     --foreground: 0 0% 93%;
     --card: 0 0% 3%;

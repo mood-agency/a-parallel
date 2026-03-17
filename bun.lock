@@ -84,6 +84,7 @@
         "@fontsource/geist-sans": "^5.2.5",
         "@fontsource/jetbrains-mono": "^5.2.8",
         "@fontsource/noto-sans": "^5.2.10",
+        "@fontsource/noto-sans-mono": "^5.2.10",
         "@funny/shared": "*",
         "@iconify-json/vscode-icons": "^1.2.44",
         "@iconify/react": "^6.0.2",
@@ -668,6 +669,8 @@
     "@fontsource/jetbrains-mono": ["@fontsource/jetbrains-mono@5.2.8", "", {}, "sha512-6w8/SG4kqvIMu7xd7wt6x3idn1Qux3p9N62s6G3rfldOUYHpWcc2FKrqf+Vo44jRvqWj2oAtTHrZXEP23oSKwQ=="],
 
     "@fontsource/noto-sans": ["@fontsource/noto-sans@5.2.10", "", {}, "sha512-J58RVfS/C0Z2VBF+PoU260Tx8cdRGYuS+e3yQe4hYaIYDl0sEVn5CzlLo5zVRvQD0HaIUTV8AZMfqR7rtdEpqQ=="],
+
+    "@fontsource/noto-sans-mono": ["@fontsource/noto-sans-mono@5.2.10", "", {}, "sha512-YG3ev3Bc24UGd1x0THgtU3LG1j+sKahhDgo0vTpEfB0wkXD1+tGSq1fJD+QqnYLXjPhMRNe0ZKWoUi1MPH7Qdg=="],
 
     "@funny/api-acp": ["@funny/api-acp@workspace:packages/api-acp"],
 

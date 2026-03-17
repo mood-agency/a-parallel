@@ -8,6 +8,7 @@ const config: Config = {
       fontFamily: {
         sans: ['var(--font-sans)'],
         mono: ['var(--font-mono)'],
+        'mono-explorer': ['var(--font-mono-explorer)'],
       },
       colors: {
         border: 'hsl(var(--border))',

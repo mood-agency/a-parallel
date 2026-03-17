@@ -9,7 +9,7 @@ const MIN_REVIEW_PANE_WIDTH = 20;
 const MAX_REVIEW_PANE_WIDTH = 70;
 const TIMELINE_VISIBLE_KEY = 'timeline_visible';
 
-export type RightPaneTab = 'review' | 'tests';
+export type RightPaneTab = 'review' | 'tests' | 'tasks';
 
 interface UIState {
   reviewPaneOpen: boolean;
@@ -30,6 +30,7 @@ interface UIState {
   kanbanContext: { projectId?: string; search?: string; threadId?: string } | null;
   setReviewPaneOpen: (open: boolean) => void;
   setTestPaneOpen: (open: boolean) => void;
+  setTasksPaneOpen: (open: boolean) => void;
   setReviewPaneWidth: (width: number) => void;
   setRightPaneTab: (tab: RightPaneTab) => void;
   setSettingsOpen: (open: boolean) => void;
@@ -91,6 +92,12 @@ export const useUIStore = create<UIState>((set) => ({
     set(
       open
         ? { reviewPaneOpen: true, rightPaneTab: 'tests' as RightPaneTab }
+        : { reviewPaneOpen: false },
+    ),
+  setTasksPaneOpen: (open) =>
+    set(
+      open
+        ? { reviewPaneOpen: true, rightPaneTab: 'tasks' as RightPaneTab }
         : { reviewPaneOpen: false },
     ),
   setRightPaneTab: (tab) => set({ rightPaneTab: tab, reviewPaneOpen: true }),
