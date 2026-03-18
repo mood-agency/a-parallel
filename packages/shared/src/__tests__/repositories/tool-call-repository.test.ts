@@ -48,6 +48,38 @@ describe('insertToolCall', () => {
   });
 });
 
+describe('insertToolCall with parentToolCallId', () => {
+  test('stores parentToolCallId when provided', async () => {
+    const parentId = await repo.insertToolCall({ messageId: 'm1', name: 'Task', input: '{}' });
+    const childId = await repo.insertToolCall({
+      messageId: 'm1',
+      name: 'Read',
+      input: '{"file":"a.ts"}',
+      parentToolCallId: parentId,
+    });
+    const child = await repo.getToolCall(childId);
+    expect(child).toBeDefined();
+    expect(child!.parentToolCallId).toBe(parentId);
+  });
+
+  test('parentToolCallId defaults to null when not provided', async () => {
+    const id = await repo.insertToolCall({ messageId: 'm1', name: 'Read', input: '{}' });
+    const tc = await repo.getToolCall(id);
+    expect(tc!.parentToolCallId).toBeNull();
+  });
+
+  test('parentToolCallId is null when explicitly set to null', async () => {
+    const id = await repo.insertToolCall({
+      messageId: 'm1',
+      name: 'Read',
+      input: '{}',
+      parentToolCallId: null,
+    });
+    const tc = await repo.getToolCall(id);
+    expect(tc!.parentToolCallId).toBeNull();
+  });
+});
+
 describe('updateToolCallOutput', () => {
   test('updates the output field', async () => {
     const id = await repo.insertToolCall({ messageId: 'm1', name: 'Read', input: '{}' });
