@@ -24,3 +24,6 @@ layout {
         }
     }
 }
+cuando hago push a origin hay 2 detalles. mira la imagen, los toolcards no tiene el mismo estilo de los toolcards de read, write bash etc, 
+
+Por otra parte  no se estan guardando en cabasee de datos, porque cuando refresco ya no estan

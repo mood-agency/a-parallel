@@ -282,6 +282,138 @@ describe('buildGroupedRenderItems', () => {
     expect(exitPlanTc._planText).toBe('# My Plan\nStep 1\nStep 2');
   });
 
+  test('skips child tool calls with parentToolCallId from top-level', () => {
+    const parentTc = {
+      id: 'tc-parent',
+      name: 'Task',
+      input: '{"prompt":"do stuff"}',
+      timestamp: '2024-01-01T00:00:00Z',
+    };
+    const childTc = {
+      id: 'tc-child',
+      name: 'Read',
+      input: '{}',
+      timestamp: '2024-01-01T00:00:01Z',
+      parentToolCallId: 'tc-parent',
+    };
+    const messages = [makeMessage('m1', '', [parentTc, childTc])];
+
+    const result = buildGroupedRenderItems(messages);
+
+    // Collect all tool call IDs that appear at top level
+    const allIds: string[] = [];
+    for (const item of result) {
+      if (item.type === 'toolcall') allIds.push(item.tc.id);
+      if (item.type === 'toolcall-group') allIds.push(...(item as any).calls.map((c: any) => c.id));
+      if (item.type === 'toolcall-run') {
+        for (const sub of (item as any).items) {
+          if (sub.type === 'toolcall') allIds.push(sub.tc.id);
+          if (sub.type === 'toolcall-group') allIds.push(...sub.calls.map((c: any) => c.id));
+        }
+      }
+    }
+    expect(allIds).toContain('tc-parent');
+    expect(allIds).not.toContain('tc-child');
+  });
+
+  test('attaches _childToolCalls to Task tool calls', () => {
+    const parentTc = {
+      id: 'tc-parent',
+      name: 'Task',
+      input: '{"prompt":"do stuff"}',
+      timestamp: '2024-01-01T00:00:00Z',
+    };
+    const childTc1 = {
+      id: 'tc-child1',
+      name: 'Read',
+      input: '{}',
+      timestamp: '2024-01-01T00:00:01Z',
+      parentToolCallId: 'tc-parent',
+    };
+    const childTc2 = {
+      id: 'tc-child2',
+      name: 'Write',
+      input: '{}',
+      timestamp: '2024-01-01T00:00:02Z',
+      parentToolCallId: 'tc-parent',
+    };
+    const messages = [makeMessage('m1', '', [parentTc, childTc1, childTc2])];
+
+    const result = buildGroupedRenderItems(messages);
+
+    // Find the Task tool call
+    let taskTc: any;
+    for (const item of result) {
+      if (item.type === 'toolcall' && item.tc.name === 'Task') taskTc = item.tc;
+      if (item.type === 'toolcall-run') {
+        for (const sub of (item as any).items) {
+          if (sub.type === 'toolcall' && sub.tc.name === 'Task') taskTc = sub.tc;
+        }
+      }
+    }
+    expect(taskTc).toBeDefined();
+    expect(taskTc._childToolCalls).toHaveLength(2);
+    expect(taskTc._childToolCalls[0].id).toBe('tc-child1');
+    expect(taskTc._childToolCalls[1].id).toBe('tc-child2');
+  });
+
+  test('does not attach _childToolCalls to non-Task tools', () => {
+    const parentTc = {
+      id: 'tc-parent',
+      name: 'Read',
+      input: '{}',
+      timestamp: '2024-01-01T00:00:00Z',
+    };
+    const messages = [makeMessage('m1', '', [parentTc])];
+
+    const result = buildGroupedRenderItems(messages);
+
+    let readTc: any;
+    for (const item of result) {
+      if (item.type === 'toolcall' && item.tc.name === 'Read') readTc = item.tc;
+      if (item.type === 'toolcall-run') {
+        for (const sub of (item as any).items) {
+          if (sub.type === 'toolcall' && sub.tc.name === 'Read') readTc = sub.tc;
+        }
+      }
+    }
+    expect(readTc).toBeDefined();
+    expect(readTc._childToolCalls).toBeUndefined();
+  });
+
+  test('child tool calls across messages are grouped under parent', () => {
+    const parentTc = {
+      id: 'tc-parent',
+      name: 'Task',
+      input: '{}',
+      timestamp: '2024-01-01T00:00:00Z',
+    };
+    const childTc = {
+      id: 'tc-child',
+      name: 'Bash',
+      input: '{}',
+      timestamp: '2024-01-01T00:00:01Z',
+      parentToolCallId: 'tc-parent',
+    };
+    // Parent in first message, child in second (different assistant message)
+    const messages = [makeMessage('m1', '', [parentTc]), makeMessage('m2', '', [childTc])];
+
+    const result = buildGroupedRenderItems(messages);
+
+    let taskTc: any;
+    for (const item of result) {
+      if (item.type === 'toolcall' && item.tc.name === 'Task') taskTc = item.tc;
+      if (item.type === 'toolcall-run') {
+        for (const sub of (item as any).items) {
+          if (sub.type === 'toolcall' && sub.tc.name === 'Task') taskTc = sub.tc;
+        }
+      }
+    }
+    expect(taskTc).toBeDefined();
+    expect(taskTc._childToolCalls).toHaveLength(1);
+    expect(taskTc._childToolCalls[0].id).toBe('tc-child');
+  });
+
   test('attaches plan text from Write to plan.md file for ExitPlanMode', () => {
     const writeTc = {
       id: 'tc-write',
