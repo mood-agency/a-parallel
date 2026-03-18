@@ -16,6 +16,7 @@ vi.mock('react-i18next', () => ({
       typeof fallbackOrOpts === 'string' ? fallbackOrOpts : key,
     i18n: { language: 'en' },
   }),
+  initReactI18next: { type: '3rdParty', init: () => {} },
 }));
 
 vi.mock('@/lib/api', async () => {
@@ -66,6 +67,7 @@ vi.mock('@/components/tool-cards/utils', () => ({
     </div>
   ),
   DIFF_VIEWER_STYLES: {},
+  getFileName: (filePath: string) => filePath.split('/').pop() ?? filePath,
 }));
 
 vi.mock('sonner', () => ({
@@ -162,9 +164,9 @@ describe('ReviewPane', () => {
       expect(screen.getByText('utils.ts')).toBeInTheDocument();
     });
 
-    // Status indicators: M for modified, A for added
-    expect(screen.getByText('M')).toBeInTheDocument();
-    expect(screen.getByText('A')).toBeInTheDocument();
+    // Status indicators: M for modified, A for added (may have invisible sizer spans)
+    expect(screen.getAllByText('M').length).toBeGreaterThanOrEqual(1);
+    expect(screen.getAllByText('A').length).toBeGreaterThanOrEqual(1);
   });
 
   test('shows commit controls when there are diffs', async () => {
