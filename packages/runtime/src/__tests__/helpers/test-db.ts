@@ -309,6 +309,7 @@ export function seedProject(
     id: overrides.id ?? 'test-project-1',
     name: overrides.name ?? 'Test Project',
     path: overrides.path ?? '/tmp/test-repo',
+    userId: overrides.userId ?? 'user-1',
     createdAt: overrides.createdAt ?? new Date().toISOString(),
   };
   db.insert(schema.projects).values(project).run();

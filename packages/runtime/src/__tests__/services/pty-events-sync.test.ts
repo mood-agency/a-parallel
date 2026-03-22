@@ -7,12 +7,13 @@
  * the server doesn't forward.
  */
 
-import { describe, test, expect } from 'bun:test';
 import { readFileSync } from 'fs';
 import { resolve } from 'path';
 
-// Paths relative to the monorepo root (import.meta.dir = __tests__/services/)
-const MONOREPO_ROOT = resolve(import.meta.dir, '../../../../..');
+import { describe, test, expect } from 'vitest';
+
+// Paths relative to the monorepo root (__tests__/services/)
+const MONOREPO_ROOT = resolve(import.meta.dirname ?? __dirname, '../../../../..');
 const SOCKETIO_PATH = resolve(MONOREPO_ROOT, 'packages/server/src/services/socketio.ts');
 const APP_PATH = resolve(MONOREPO_ROOT, 'packages/runtime/src/app.ts');
 
