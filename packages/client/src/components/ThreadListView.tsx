@@ -32,6 +32,7 @@ interface ThreadListViewProps {
   className?: string;
   autoFocusSearch?: boolean;
   hideSearch?: boolean;
+  hideBranch?: boolean;
   contentSnippets?: Map<string, string>;
   /** Expose the search keyboard handler so external inputs can drive arrow navigation */
   onSearchKeyDownRef?: React.MutableRefObject<((e: React.KeyboardEvent) => void) | null>;
@@ -58,6 +59,7 @@ export function ThreadListView({
   className,
   autoFocusSearch,
   hideSearch = false,
+  hideBranch = false,
   contentSnippets,
   onSearchKeyDownRef,
 }: ThreadListViewProps) {
@@ -235,16 +237,13 @@ export function ThreadListView({
                     )}
                   <div className="mt-0.5 flex items-center gap-2">
                     {renderExtraBadges?.(thread)}
-                    {(thread.branch || thread.baseBranch) && (
+                    {!hideBranch && (thread.branch || thread.baseBranch) && (
                       <BranchBadge
                         branch={(thread.branch || thread.baseBranch)!}
                         size="xs"
                         className="max-w-[150px]"
                       />
                     )}
-                    <span className="text-xs text-muted-foreground">
-                      {statusLabels[thread.status as ThreadStatus]}
-                    </span>
                   </div>
                 </div>
                 <span className="hidden flex-shrink-0 text-xs text-muted-foreground sm:inline">

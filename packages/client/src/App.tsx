@@ -303,18 +303,16 @@ export function App() {
       </Suspense>
 
       {/* Internal Monaco Editor Dialog (global, lazy-loaded) */}
-      {internalEditorOpen && (
-        <Suspense>
-          <MonacoEditorDialog
-            open={true}
-            onOpenChange={(open) => {
-              if (!open) useInternalEditorStore.getState().closeEditor();
-            }}
-            filePath={internalEditorFilePath || ''}
-            initialContent={internalEditorContent}
-          />
-        </Suspense>
-      )}
+      <Suspense>
+        <MonacoEditorDialog
+          open={internalEditorOpen}
+          onOpenChange={(open) => {
+            if (!open) useInternalEditorStore.getState().closeEditor();
+          }}
+          filePath={internalEditorFilePath || ''}
+          initialContent={internalEditorContent}
+        />
+      </Suspense>
     </SidebarProvider>
   );
 }

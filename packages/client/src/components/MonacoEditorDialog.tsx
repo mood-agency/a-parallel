@@ -1,5 +1,15 @@
 import { Editor, type BeforeMount } from '@monaco-editor/react';
-import { Loader2, Save, X, Maximize2, Minimize2, Eye, EyeOff, BookOpen, Code } from 'lucide-react';
+import {
+  Loader2,
+  Save,
+  Maximize2,
+  Minimize2,
+  Eye,
+  EyeOff,
+  BookOpen,
+  Code,
+  FileCode,
+} from 'lucide-react';
 import mermaid from 'mermaid';
 import { useTheme } from 'next-themes';
 import { useEffect, useRef, useState } from 'react';
@@ -9,9 +19,15 @@ import remarkGfm from 'remark-gfm';
 import { toast } from 'sonner';
 
 import { Button } from '@/components/ui/button';
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
 import { ScrollArea } from '@/components/ui/scroll-area';
-import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group';
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { api } from '@/lib/api';
 import { cn } from '@/lib/utils';
 
@@ -97,70 +113,87 @@ export function MonacoEditorDialog({
       <DialogContent
         className={cn(
           isFullscreen
-            ? 'max-w-[100vw] max-h-[100vh] w-[100vw] h-[100vh] p-0'
-            : 'max-w-5xl max-h-[85vh] h-[85vh] p-0',
-          '!duration-0',
+            ? 'max-w-[100vw] max-h-[100vh] w-[100vw] h-[100vh] flex flex-col gap-0 p-0'
+            : 'flex h-[85vh] w-[90vw] max-w-[90vw] flex-col gap-0 p-0',
           'overflow-hidden',
         )}
+        onOpenAutoFocus={(e) => e.preventDefault()}
       >
-        <DialogHeader className="overflow-hidden border-b border-border/50 px-6 pb-2 pt-4">
-          <DialogTitle
-            className="min-w-0 overflow-hidden text-ellipsis whitespace-nowrap font-mono text-sm"
-            style={{ direction: 'rtl', textAlign: 'left' }}
-          >
-            {filePath}
+        <DialogHeader className="flex-shrink-0 overflow-hidden border-b border-border px-4 py-3">
+          <DialogTitle className="flex min-w-0 items-center gap-2 overflow-hidden font-mono text-sm">
+            <FileCode className="h-4 w-4 flex-shrink-0" />
+            <span
+              className="min-w-0 overflow-hidden text-ellipsis whitespace-nowrap"
+              style={{ direction: 'rtl', textAlign: 'left' }}
+            >
+              {filePath}
+            </span>
           </DialogTitle>
-          <ToggleGroup
-            type="multiple"
-            size="sm"
-            value={[
-              ...(showPreview ? ['preview'] : []),
-              ...(showMinimap ? ['minimap'] : []),
-              ...(isFullscreen ? ['fullscreen'] : []),
-            ]}
-            onValueChange={(value: string[]) => {
-              if (isMarkdown) setShowPreview(value.includes('preview'));
-              setShowMinimap(value.includes('minimap'));
-              setIsFullscreen(value.includes('fullscreen'));
-            }}
-            className="flex-shrink-0 rounded-md border border-border bg-muted/30 p-0.5"
-          >
-            {/* Markdown preview toggle */}
-            {isMarkdown && (
-              <ToggleGroupItem
-                value="preview"
-                title={
-                  showPreview
-                    ? t('editor.showCode', 'Show code')
-                    : t('editor.showPreview', 'Show preview')
-                }
-                data-testid="editor-toggle-preview"
+          {/* Markdown preview toggle */}
+          {isMarkdown && (
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  variant="ghost"
+                  size="icon-xs"
+                  onClick={() => setShowPreview((prev) => !prev)}
+                  className="flex-shrink-0 text-muted-foreground"
+                  data-testid="editor-toggle-preview"
+                >
+                  {showPreview ? <Code className="h-4 w-4" /> : <BookOpen className="h-4 w-4" />}
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent side="bottom">
+                {showPreview
+                  ? t('editor.showCode', 'Show code')
+                  : t('editor.showPreview', 'Show preview')}
+              </TooltipContent>
+            </Tooltip>
+          )}
+          {/* Minimap toggle */}
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button
+                variant="ghost"
+                size="icon-xs"
+                onClick={() => setShowMinimap((prev) => !prev)}
+                className="flex-shrink-0 text-muted-foreground"
+                data-testid="editor-toggle-minimap"
               >
-                {showPreview ? <Code className="h-4 w-4" /> : <BookOpen className="h-4 w-4" />}
-              </ToggleGroupItem>
-            )}
-
-            {/* Minimap toggle */}
-            <ToggleGroupItem
-              value="minimap"
-              title={showMinimap ? t('editor.hideMinimap') : t('editor.showMinimap')}
-              data-testid="editor-toggle-minimap"
-            >
-              {showMinimap ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
-            </ToggleGroupItem>
-
-            {/* Fullscreen toggle */}
-            <ToggleGroupItem
-              value="fullscreen"
-              title={isFullscreen ? t('editor.exitFullscreen') : t('editor.fullscreen')}
-              data-testid="editor-toggle-fullscreen"
-            >
-              {isFullscreen ? <Minimize2 className="h-4 w-4" /> : <Maximize2 className="h-4 w-4" />}
-            </ToggleGroupItem>
-          </ToggleGroup>
+                {showMinimap ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent side="bottom">
+              {showMinimap ? t('editor.hideMinimap') : t('editor.showMinimap')}
+            </TooltipContent>
+          </Tooltip>
+          {/* Fullscreen toggle */}
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button
+                variant="ghost"
+                size="icon-xs"
+                onClick={() => setIsFullscreen((prev) => !prev)}
+                className="flex-shrink-0 text-muted-foreground"
+                data-testid="editor-toggle-fullscreen"
+              >
+                {isFullscreen ? (
+                  <Minimize2 className="h-4 w-4" />
+                ) : (
+                  <Maximize2 className="h-4 w-4" />
+                )}
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent side="bottom">
+              {isFullscreen ? t('editor.exitFullscreen') : t('editor.fullscreen')}
+            </TooltipContent>
+          </Tooltip>
+          <DialogDescription className="sr-only">
+            {t('editor.dialogDescription', `Editor for ${getFileName(filePath)}`)}
+          </DialogDescription>
         </DialogHeader>
 
-        <div className="flex-1 overflow-hidden">
+        <div className="min-h-0 flex-1 overflow-hidden">
           {showPreview && isMarkdown ? (
             <ScrollArea className="h-full">
               <div className="prose prose-sm max-w-none px-8 py-6">
@@ -189,17 +222,13 @@ export function MonacoEditorDialog({
           )}
         </div>
 
-        {/* Footer with save/cancel */}
-        <div className="flex items-center justify-between border-t border-border/50 px-6 py-3">
-          <div className="text-xs text-muted-foreground">
-            {isDirty && <span>{t('editor.modified', 'Modified')}</span>}
-          </div>
-          <div className="flex items-center gap-2">
-            <Button variant="outline" size="sm" onClick={handleClose}>
-              <X className="mr-1 h-3.5 w-3.5" />
-              {t('common.cancel', 'Cancel')}
-            </Button>
-            <Button size="sm" onClick={handleSave} disabled={!isDirty || saving}>
+        {/* Footer with save */}
+        {isDirty && (
+          <div className="flex items-center justify-between border-t border-border px-4 py-2">
+            <span className="text-xs text-muted-foreground">
+              {t('editor.modified', 'Modified')}
+            </span>
+            <Button size="sm" onClick={handleSave} disabled={saving} data-testid="editor-save">
               {saving ? (
                 <Loader2 className="mr-1 h-3.5 w-3.5 animate-spin" />
               ) : (
@@ -208,7 +237,7 @@ export function MonacoEditorDialog({
               {t('common.save', 'Save')}
             </Button>
           </div>
-        </div>
+        )}
       </DialogContent>
     </Dialog>
   );
@@ -285,6 +314,13 @@ const markdownPreviewComponents: Components = {
     return <pre className="overflow-auto rounded-md bg-muted/50 p-3 text-sm">{children}</pre>;
   },
 };
+
+/**
+ * Extract file name from path
+ */
+function getFileName(filePath: string): string {
+  return filePath.split(/[/\\]/).pop() || filePath;
+}
 
 /**
  * Extract file extension from path

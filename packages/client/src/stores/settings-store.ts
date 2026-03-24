@@ -62,6 +62,27 @@ const DEFAULT_TOOL_PERMISSIONS: Record<string, ToolPermission> = Object.fromEntr
   ALL_STANDARD_TOOLS.map((tool) => [tool, 'allow' as ToolPermission]),
 );
 
+export type FontSize = 'small' | 'default' | 'large';
+
+const FONT_SIZE_KEY = 'funny_font_size';
+const FONT_SIZE_VALUES: Record<FontSize, string> = {
+  small: '13px',
+  default: '14px',
+  large: '16px',
+};
+
+function getStoredFontSize(): FontSize {
+  try {
+    const stored = localStorage.getItem(FONT_SIZE_KEY);
+    if (stored && stored in FONT_SIZE_VALUES) return stored as FontSize;
+  } catch {}
+  return 'default';
+}
+
+function applyFontSize(size: FontSize) {
+  document.documentElement.style.fontSize = FONT_SIZE_VALUES[size];
+}
+
 interface SettingsState {
   defaultEditor: Editor;
   useInternalEditor: boolean;
@@ -69,11 +90,13 @@ interface SettingsState {
   availableShells: DetectedShell[];
   _shellsLoaded: boolean;
   toolPermissions: Record<string, ToolPermission>;
+  fontSize: FontSize;
   _initialized: boolean;
   initializeFromProfile: (profile: UserProfile) => void;
   setDefaultEditor: (editor: Editor) => void;
   setUseInternalEditor: (use: boolean) => void;
   setTerminalShell: (shell: TerminalShell) => void;
+  setFontSize: (size: FontSize) => void;
   fetchAvailableShells: () => Promise<void>;
   setToolPermission: (toolName: string, permission: ToolPermission) => void;
   resetToolPermissions: () => void;
@@ -109,6 +132,7 @@ export const useSettingsStore = create<SettingsState>()((set, get) => ({
   availableShells: [],
   _shellsLoaded: false,
   toolPermissions: { ...DEFAULT_TOOL_PERMISSIONS },
+  fontSize: getStoredFontSize(),
   _initialized: false,
 
   initializeFromProfile: (profile) => {
@@ -135,6 +159,13 @@ export const useSettingsStore = create<SettingsState>()((set, get) => ({
     set({ terminalShell: shell });
     syncToServer({ terminalShell: shell });
   },
+  setFontSize: (size) => {
+    set({ fontSize: size });
+    try {
+      localStorage.setItem(FONT_SIZE_KEY, size);
+    } catch {}
+    applyFontSize(size);
+  },
   fetchAvailableShells: async () => {
     if (get()._shellsLoaded) return;
     const result = await api.getAvailableShells();
@@ -154,5 +185,8 @@ export const useSettingsStore = create<SettingsState>()((set, get) => ({
     syncToServer({ toolPermissions });
   },
 }));
+
+// Apply stored font size on load
+applyFontSize(useSettingsStore.getState().fontSize);
 
 export { editorLabels, shellLabels };

@@ -383,7 +383,7 @@ export const PromptInputUI = memo(function PromptInputUI({
 
     const editorJSON = editorRef.current?.getJSON();
     const isEmpty = editorRef.current?.isEmpty() ?? true;
-    if (isEmpty && images.length === 0) {
+    if (isEmpty) {
       toast.warning(t('prompt.emptyPrompt', 'Please enter a prompt before sending'));
       return;
     }

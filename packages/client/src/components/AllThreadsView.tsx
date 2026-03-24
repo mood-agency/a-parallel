@@ -15,6 +15,7 @@ import { useState, useMemo, useEffect, useRef, startTransition } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useLocation, useNavigate, useSearchParams } from 'react-router-dom';
 
+import { BranchBadge } from '@/components/BranchBadge';
 import { KanbanView } from '@/components/KanbanView';
 import { ThreadListView } from '@/components/ThreadListView';
 import { normalize } from '@/components/ui/highlight-text';
@@ -759,6 +760,7 @@ export function AllThreadsView() {
                 `${total} ${t('allThreads.threads')}${search || hasActiveFilters ? ` ${t('allThreads.found')}` : ''}`
               }
               hideSearch={true}
+              hideBranch={true}
               contentSnippets={contentMatches}
               onSearchKeyDownRef={searchKeyDownRef}
               renderExtraBadges={(thread) => {
@@ -770,10 +772,18 @@ export function AllThreadsView() {
                       <ProjectChip
                         name={projectInfoById[thread.projectId].name}
                         color={projectInfoById[thread.projectId].color}
+                        size="sm"
+                      />
+                    )}
+                    {(thread.branch || thread.baseBranch) && (
+                      <BranchBadge
+                        branch={(thread.branch || thread.baseBranch)!}
+                        size="xs"
+                        className="max-w-[150px]"
                       />
                     )}
                     {!!thread.archived && (
-                      <span className="inline-flex items-center gap-0.5 rounded bg-status-warning/10 px-1.5 py-0.5 text-xs text-status-warning/80">
+                      <span className="inline-flex items-center gap-0.5 rounded bg-muted px-1 py-px text-[10px] font-medium leading-tight text-status-warning/80">
                         <Archive className="h-2.5 w-2.5" />
                         {t('allThreads.archived')}
                       </span>
@@ -781,14 +791,14 @@ export function AllThreadsView() {
                     {gitConf && (
                       <span
                         className={cn(
-                          'text-xs px-1.5 py-0.5 rounded bg-secondary',
+                          'rounded bg-muted px-1 py-px text-[10px] font-medium leading-tight text-muted-foreground',
                           gitConf.className,
                         )}
                       >
                         {t(gitConf.labelKey)}
                       </span>
                     )}
-                    <span className="rounded bg-secondary px-1.5 py-0.5 text-xs text-muted-foreground">
+                    <span className="rounded bg-muted px-1 py-px text-[10px] font-medium leading-tight text-muted-foreground">
                       {t(`thread.mode.${thread.mode}`)}
                     </span>
                   </>

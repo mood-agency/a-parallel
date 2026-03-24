@@ -29,6 +29,7 @@ export const PROVIDERS: ProviderConfig[] = [
   { value: 'codex', label: 'Codex' },
   { value: 'gemini', label: 'Gemini' },
   { value: 'deepagent', label: 'Deep Agent' },
+  { value: 'openswe', label: 'OpenSWE' },
 ];
 
 // ── Models per provider ────────────────────────────────────────
@@ -125,6 +126,14 @@ export const PROVIDER_MODELS: Record<string, ModelConfig[]> = {
       i18nKey: 'deepagentGemini3pro',
       fallback: 'Gemini 3 Pro',
       contextWindow: 1_000_000,
+    },
+  ],
+  openswe: [
+    {
+      value: 'openswe-default',
+      i18nKey: 'opensweDefault',
+      fallback: 'OpenSWE Default',
+      contextWindow: 200_000,
     },
   ],
 };

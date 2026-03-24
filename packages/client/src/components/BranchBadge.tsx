@@ -28,7 +28,15 @@ export function BranchBadge({ branch, size = 'sm', className }: BranchBadgeProps
 
   return (
     <span
-      className={cn('flex min-w-0 items-center gap-1 text-muted-foreground/60', className)}
+      className={cn(
+        'inline-flex min-w-0 items-center gap-0.5 rounded bg-muted font-medium text-muted-foreground',
+        size === 'xs'
+          ? 'text-[10px] leading-tight px-1 py-px'
+          : size === 'sm'
+            ? 'text-[10px] leading-tight px-1 py-px'
+            : 'text-xs px-1.5 py-0.5',
+        className,
+      )}
       title={branch}
       data-testid="branch-badge"
     >

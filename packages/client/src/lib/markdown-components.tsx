@@ -130,15 +130,17 @@ export const baseMarkdownComponents = {
     }
 
     return (
-      <pre className="group/codeblock relative my-2 overflow-x-auto rounded bg-muted p-2 font-mono">
-        {language && (
-          <div className="mb-1 select-none text-[10px] uppercase tracking-wider text-muted-foreground/60">
-            {language}
-          </div>
-        )}
-        {children}
+      <div className="group/codeblock relative my-2">
+        <pre className="overflow-x-auto rounded bg-muted p-2 font-mono">
+          {language && (
+            <div className="mb-1 select-none text-[10px] uppercase tracking-wider text-muted-foreground/60">
+              {language}
+            </div>
+          )}
+          {children}
+        </pre>
         <CopyButton text={text} />
-      </pre>
+      </div>
     );
   },
 };

@@ -46,6 +46,7 @@ import {
   useSettingsStore,
   editorLabels,
   type Editor,
+  type FontSize,
   type TerminalShell,
 } from '@/stores/settings-store';
 import { useUIStore } from '@/stores/ui-store';
@@ -175,9 +176,11 @@ export function GeneralSettingsView() {
     useInternalEditor,
     terminalShell,
     availableShells,
+    fontSize,
     setDefaultEditor,
     setUseInternalEditor,
     setTerminalShell,
+    setFontSize,
     fetchAvailableShells,
   } = useSettingsStore(
     useShallow((s) => ({
@@ -185,9 +188,11 @@ export function GeneralSettingsView() {
       useInternalEditor: s.useInternalEditor,
       terminalShell: s.terminalShell,
       availableShells: s.availableShells,
+      fontSize: s.fontSize,
       setDefaultEditor: s.setDefaultEditor,
       setUseInternalEditor: s.setUseInternalEditor,
       setTerminalShell: s.setTerminalShell,
+      setFontSize: s.setFontSize,
       fetchAvailableShells: s.fetchAvailableShells,
     })),
   );
@@ -265,6 +270,14 @@ export function GeneralSettingsView() {
       toast.success(t('settings.saved'), { id: 'settings-saved' });
     },
     [setTheme, t],
+  );
+
+  const handleFontSizeChange = useCallback(
+    (v: string) => {
+      setFontSize(v as FontSize);
+      toast.success(t('settings.saved'), { id: 'settings-saved' });
+    },
+    [setFontSize, t],
   );
 
   const handleLanguageChange = useCallback(
@@ -468,6 +481,22 @@ export function GeneralSettingsView() {
                   t={t}
                 />
               ))}
+            </div>
+
+            <h3 className="settings-section-header mt-6">{t('settings.fontSize')}</h3>
+            <div className="settings-card">
+              <SettingRow title={t('settings.fontSize')} description={t('settings.fontSizeDesc')}>
+                <Select value={fontSize} onValueChange={handleFontSizeChange}>
+                  <SelectTrigger className="w-[140px]" data-testid="preferences-font-size-select">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="small">{t('settings.fontSizeSmall')}</SelectItem>
+                    <SelectItem value="default">{t('settings.fontSizeDefault')}</SelectItem>
+                    <SelectItem value="large">{t('settings.fontSizeLarge')}</SelectItem>
+                  </SelectContent>
+                </Select>
+              </SettingRow>
             </div>
           </>
         )}
