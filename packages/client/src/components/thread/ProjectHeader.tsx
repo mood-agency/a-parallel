@@ -1,5 +1,6 @@
 import type { StartupCommand, Message, ToolCall, ThreadStage } from '@funny/shared';
 import {
+  GitBranch,
   GitCompare,
   Globe,
   Terminal,
@@ -61,6 +62,7 @@ import { api } from '@/lib/api';
 import { getEditorLabel } from '@/lib/editor-utils';
 import { stageConfig } from '@/lib/thread-utils';
 import { buildPath } from '@/lib/url';
+import { resolveThreadBranch } from '@/lib/utils';
 import { useGitStatusStore, useGitStatusForThread } from '@/stores/git-status-store';
 import { useProjectStore } from '@/stores/project-store';
 import { editorLabels, type Editor } from '@/stores/settings-store';
@@ -113,7 +115,7 @@ const MoreActionsMenu = memo(function MoreActionsMenu() {
       threadProjectId: s.activeThread?.projectId,
       threadTitle: s.activeThread?.title,
       threadMode: s.activeThread?.mode,
-      threadBranch: s.activeThread?.branch,
+      threadBranch: s.activeThread ? resolveThreadBranch(s.activeThread) : undefined,
       threadPinned: s.activeThread?.pinned,
       hasMessages: (s.activeThread?.messages?.length ?? 0) > 0,
     })),
@@ -125,6 +127,8 @@ const MoreActionsMenu = memo(function MoreActionsMenu() {
   const [copiedTools, copyTools] = useCopyToClipboard();
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [deleteLoading, setDeleteLoading] = useState(false);
+  const [convertOpen, setConvertOpen] = useState(false);
+  const [convertLoading, setConvertLoading] = useState(false);
   const isWorktree = threadMode === 'worktree' && !!threadBranch;
 
   const handleDeleteConfirm = useCallback(async () => {
@@ -154,6 +158,21 @@ const MoreActionsMenu = memo(function MoreActionsMenu() {
     },
     [copyText, copyTools],
   );
+
+  const handleConvertConfirm = useCallback(async () => {
+    const state = useThreadStore.getState();
+    const id = state.activeThread?.id;
+    if (!id) return;
+    setConvertLoading(true);
+    const result = await api.convertToWorktree(id);
+    setConvertLoading(false);
+    setConvertOpen(false);
+    if (result.isOk()) {
+      toast.success(t('toast.convertToWorktreeStarted', 'Converting to worktree...'));
+    } else {
+      toast.error(result.error.message);
+    }
+  }, [t]);
 
   return (
     <>
@@ -211,6 +230,24 @@ const MoreActionsMenu = memo(function MoreActionsMenu() {
             )}
             {t('thread.copyWithTools', 'Copy with tool calls')}
           </DropdownMenuItem>
+          {threadId && !isWorktree && (
+            <>
+              <DropdownMenuSeparator />
+              <DropdownMenuItem
+                data-testid="header-menu-convert-worktree"
+                onClick={() => setConvertOpen(true)}
+                disabled={convertLoading}
+                className="cursor-pointer"
+              >
+                {convertLoading ? (
+                  <Loader2 className="icon-base mr-2 animate-spin" />
+                ) : (
+                  <GitBranch className="icon-base mr-2" />
+                )}
+                {t('thread.convertToWorktree', 'Convert to Worktree')}
+              </DropdownMenuItem>
+            </>
+          )}
           {threadId && (
             <>
               <DropdownMenuSeparator />
@@ -260,6 +297,23 @@ const MoreActionsMenu = memo(function MoreActionsMenu() {
         loading={deleteLoading}
         onCancel={() => setDeleteOpen(false)}
         onConfirm={handleDeleteConfirm}
+      />
+      <ConfirmDialog
+        open={convertOpen}
+        onOpenChange={(open) => {
+          if (!open) setConvertOpen(false);
+        }}
+        title={t('dialog.convertToWorktreeTitle', 'Convert to Worktree')}
+        description={t(
+          'dialog.convertToWorktreeDesc',
+          'This will create a new branch and worktree for this thread. The agent will be stopped if running. You can continue the conversation in the isolated branch.',
+        )}
+        variant="default"
+        cancelLabel={t('common.cancel')}
+        confirmLabel={t('thread.convertToWorktree', 'Convert to Worktree')}
+        loading={convertLoading}
+        onCancel={() => setConvertOpen(false)}
+        onConfirm={handleConvertConfirm}
       />
     </>
   );

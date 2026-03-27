@@ -351,6 +351,11 @@ export const api = {
     }),
   stopThread: (threadId: string) =>
     request<{ ok: boolean }>(`/threads/${threadId}/stop`, { method: 'POST' }),
+  convertToWorktree: (threadId: string, baseBranch?: string) =>
+    request<{ ok: boolean }>(`/threads/${threadId}/convert-to-worktree`, {
+      method: 'POST',
+      body: JSON.stringify({ baseBranch }),
+    }),
   approveTool: (
     threadId: string,
     toolName: string,
@@ -532,6 +537,10 @@ export const api = {
     request<{ entries: Array<{ index: string; message: string; relativeDate: string }> }>(
       `/git/${threadId}/stash/list`,
     ),
+  stashShow: (threadId: string, stashIndex: string) =>
+    request<{ files: Array<{ path: string; additions: number; deletions: number }> }>(
+      `/git/${threadId}/stash/show/${stashIndex}`,
+    ),
   resetSoft: (threadId: string) =>
     request<{ ok: boolean; output?: string }>(`/git/${threadId}/reset-soft`, { method: 'POST' }),
 
@@ -595,6 +604,10 @@ export const api = {
   projectStashList: (projectId: string) =>
     request<{ entries: Array<{ index: string; message: string; relativeDate: string }> }>(
       `/git/project/${projectId}/stash/list`,
+    ),
+  projectStashShow: (projectId: string, stashIndex: string) =>
+    request<{ files: Array<{ path: string; additions: number; deletions: number }> }>(
+      `/git/project/${projectId}/stash/show/${stashIndex}`,
     ),
   projectResetSoft: (projectId: string) =>
     request<{ ok: boolean; output?: string }>(`/git/project/${projectId}/reset-soft`, {

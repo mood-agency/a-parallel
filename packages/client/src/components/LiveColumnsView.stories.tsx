@@ -41,6 +41,7 @@ function makeThread(overrides: Partial<Thread> = {}): Thread {
     source: 'web',
     purpose: 'implement',
     createdAt: new Date(Date.now() - 5 * 60_000).toISOString(),
+    updatedAt: new Date().toISOString(),
     ...overrides,
   };
 }

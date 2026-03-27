@@ -145,7 +145,10 @@ export class AgentRunner {
     this.orchestrator.on('agent:session-cleared', (threadId: string) => {
       void (async () => {
         log.warn('Clearing stale sessionId after resume failure', { namespace: 'agent', threadId });
-        await this.threadManager.updateThread(threadId, { sessionId: null });
+        await this.threadManager.updateThread(threadId, {
+          sessionId: null,
+          contextRecoveryReason: 'stale-session',
+        });
       })().catch((err) => {
         log.error('Unhandled error in agent:session-cleared handler', {
           namespace: 'agent',
@@ -472,18 +475,8 @@ export class AgentRunner {
       systemPrefixPreview: systemPrefix ? systemPrefix.slice(0, 80) : 'none',
     });
 
-    // When resuming a plan-mode thread, the orchestrator downgrades to autoEdit.
-    // Sync the DB and notify the client so the PromptInput dropdown updates.
-    // Exception: arc threads with explore/plan purpose should stay in plan mode.
-    const isArcPlanThread = thread?.arcId && (thread as any).purpose !== 'implement';
-    const isPlanResume = thread?.sessionId && permissionMode === 'plan' && !isArcPlanThread;
-    if (isPlanResume) {
-      await this.threadManager.updateThread(threadId, { permissionMode: 'autoEdit' });
-    }
-
     this.emitWSToUser(threadId, currentThread?.userId, 'agent:status', {
       status: 'running',
-      ...(isPlanResume ? { permissionMode: 'autoEdit' as PermissionMode } : {}),
     });
 
     // Start a trace span for the entire agent run

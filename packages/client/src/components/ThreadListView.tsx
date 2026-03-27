@@ -9,7 +9,7 @@ import { Input } from '@/components/ui/input';
 import { TooltipIconButton } from '@/components/ui/tooltip-icon-button';
 import { useMinuteTick } from '@/hooks/use-minute-tick';
 import { statusConfig, timeAgo, getStatusLabels } from '@/lib/thread-utils';
-import { cn } from '@/lib/utils';
+import { cn, resolveThreadBranch } from '@/lib/utils';
 
 interface ThreadListViewProps {
   threads: Thread[];
@@ -237,9 +237,9 @@ export function ThreadListView({
                     )}
                   <div className="mt-0.5 flex items-center gap-2">
                     {renderExtraBadges?.(thread)}
-                    {!hideBranch && (thread.branch || thread.baseBranch) && (
+                    {!hideBranch && (resolveThreadBranch(thread) || thread.baseBranch) && (
                       <BranchBadge
-                        branch={(thread.branch || thread.baseBranch)!}
+                        branch={(resolveThreadBranch(thread) || thread.baseBranch)!}
                         size="xs"
                         className="max-w-[150px]"
                       />

@@ -135,13 +135,13 @@ export function createThreadRepository(deps: ThreadRepositoryDeps) {
     }
 
     const condition = filters.length > 0 ? and(...filters) : undefined;
-    const completionTime = sql`COALESCE(${schema.threads.completedAt}, ${schema.threads.createdAt})`;
+    const activityTime = sql`COALESCE(${schema.threads.updatedAt}, ${schema.threads.completedAt}, ${schema.threads.createdAt})`;
     const threads = await dbAll(
       db
         .select()
         .from(schema.threads)
         .where(condition)
-        .orderBy(desc(schema.threads.pinned), desc(completionTime)),
+        .orderBy(desc(schema.threads.pinned), desc(activityTime)),
     );
 
     if (threads.length > 0) {
@@ -221,7 +221,7 @@ export function createThreadRepository(deps: ThreadRepositoryDeps) {
     await recordStageChange(data.id, null, initialStage);
   }
 
-  /** Update thread fields by ID */
+  /** Update thread fields by ID. Automatically bumps updatedAt. */
   async function updateThread(
     id: string,
     updates: Partial<{
@@ -229,6 +229,7 @@ export function createThreadRepository(deps: ThreadRepositoryDeps) {
       sessionId: string | null;
       cost: number;
       completedAt: string | null;
+      updatedAt: string;
       archived: number;
       pinned: number;
       stage: string;
@@ -273,7 +274,9 @@ export function createThreadRepository(deps: ThreadRepositoryDeps) {
       }
     }
 
-    await dbRun(db.update(schema.threads).set(updates).where(eq(schema.threads.id, id)));
+    // Always bump updatedAt on every thread update
+    const withTimestamp = { ...updates, updatedAt: new Date().toISOString() };
+    await dbRun(db.update(schema.threads).set(withTimestamp).where(eq(schema.threads.id, id)));
   }
 
   /** Delete a thread (cascade deletes messages + tool_calls) */

@@ -302,6 +302,7 @@ export interface Thread {
   /** Why context recovery is needed (e.g. model/provider changed mid-thread) */
   contextRecoveryReason?: string | null;
   createdAt: string;
+  updatedAt: string;
   completedAt?: string;
   /** Creator/agent that generated this thread (user ID, 'external', 'pipeline', 'automation', etc.) */
   createdBy?: string;

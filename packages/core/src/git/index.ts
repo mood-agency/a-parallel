@@ -53,6 +53,7 @@ export {
   stash,
   stashPop,
   stashList,
+  stashShow,
   resetSoft,
   cloneRepo,
   getUnpushedHashes,

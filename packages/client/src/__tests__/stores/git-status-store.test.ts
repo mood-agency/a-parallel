@@ -11,7 +11,7 @@ vi.mock('@/lib/api', () => ({
 }));
 
 import { api } from '@/lib/api';
-import { useGitStatusStore, _resetCooldowns } from '@/stores/git-status-store';
+import { useGitStatusStore, _resetCooldowns, branchKey } from '@/stores/git-status-store';
 
 const mockApi = vi.mocked(api);
 
@@ -366,6 +366,83 @@ describe('GitStatusStore', () => {
       useGitStatusStore.getState().clearForBranch('nonexistent');
 
       expect(useGitStatusStore.getState().statusByBranch).toEqual({});
+    });
+  });
+
+  // ── 6. branchKey ────────────────────────────────────────────
+  describe('branchKey', () => {
+    test('worktree thread (mode + worktreePath) gets unique key', () => {
+      const key = branchKey({
+        id: 't1',
+        projectId: 'p1',
+        mode: 'worktree',
+        branch: 'feature-x',
+        worktreePath: '/tmp/wt/feature-x-abc',
+      });
+      expect(key).toBe('wt:p1:feature-x:t1');
+    });
+
+    test('worktree thread (mode only, no worktreePath) gets unique key', () => {
+      const key = branchKey({
+        id: 't1',
+        projectId: 'p1',
+        mode: 'worktree',
+        branch: 'feature-x',
+      });
+      expect(key).toBe('wt:p1:feature-x:t1');
+    });
+
+    test('local thread with branch groups by project + branch', () => {
+      const key = branchKey({
+        id: 't2',
+        projectId: 'p1',
+        mode: 'local',
+        branch: 'feature-x',
+      });
+      expect(key).toBe('p1:feature-x');
+    });
+
+    test('worktree and local thread on same branch get different keys', () => {
+      const wtKey = branchKey({
+        id: 't1',
+        projectId: 'p1',
+        mode: 'worktree',
+        branch: 'feature-x',
+        worktreePath: '/tmp/wt/feature-x-abc',
+      });
+      const localKey = branchKey({
+        id: 't2',
+        projectId: 'p1',
+        mode: 'local',
+        branch: 'feature-x',
+      });
+      expect(wtKey).not.toBe(localKey);
+    });
+
+    test('two worktree threads on same branch get different keys', () => {
+      const wt1 = branchKey({
+        id: 't1',
+        projectId: 'p1',
+        mode: 'worktree',
+        branch: 'feature-x',
+        worktreePath: '/tmp/wt/feature-x-abc',
+      });
+      const wt2 = branchKey({
+        id: 't2',
+        projectId: 'p1',
+        mode: 'worktree',
+        branch: 'feature-x',
+        worktreePath: '/tmp/wt/feature-x-def',
+      });
+      expect(wt1).not.toBe(wt2);
+    });
+
+    test('local thread without branch groups by project only', () => {
+      const key = branchKey({
+        id: 't3',
+        projectId: 'p1',
+      });
+      expect(key).toBe('p1');
     });
   });
 });

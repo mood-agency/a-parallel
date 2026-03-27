@@ -16,7 +16,6 @@ const dlog = createDebugLogger('orch');
 import {
   resolveModelId,
   resolvePermissionMode,
-  resolveResumePermissionMode,
   getDefaultAllowedTools,
   getAskModeTools,
 } from '@funny/shared/models';
@@ -129,12 +128,7 @@ export class AgentOrchestrator extends EventEmitter {
 
     // Resolve model ID and permission mode via registry
     const resolvedModel = resolveModelId(provider, model);
-    const cliPermissionMode = resolvePermissionMode(provider, permissionMode);
-
-    // Provider-specific resume override (e.g., Claude's plan → acceptEdits)
-    const effectivePermissionMode = isResume
-      ? resolveResumePermissionMode(provider, cliPermissionMode)
-      : cliPermissionMode;
+    const effectivePermissionMode = resolvePermissionMode(provider, permissionMode);
 
     // Build shared process options
     // In ask mode, restrict to read-only tools regardless of caller-provided lists
@@ -324,11 +318,13 @@ export class AgentOrchestrator extends EventEmitter {
     proc: IAgentProcess,
     threadId: string,
     onStaleSession: () => void,
+    onImmediateError?: () => void,
   ): void {
     this.activeAgents.set(threadId, proc);
     this.resultReceived.delete(threadId);
 
     let gotMessage = false;
+    let immediateError = false;
 
     proc.on('message', (msg: CLIMessage) => {
       gotMessage = true;
@@ -340,13 +336,36 @@ export class AgentOrchestrator extends EventEmitter {
       });
       if (msg.type === 'result') {
         if (this.manuallyStopped.has(threadId)) return;
+
+        // Detect immediate session failure: the CLI started, but produced an
+        // error result with 0 turns — the session was recognised but the
+        // working directory (or some other env) changed so it crashed right
+        // away. Treat this the same as a stale session so we can retry fresh.
+        const r = msg as any;
+        if (
+          r.subtype === 'error_during_execution' &&
+          (r.num_turns === 0 || r.num_turns === undefined)
+        ) {
+          dlog.warn(
+            'Resume produced immediate error result (0 turns) — treating as stale session',
+            {
+              threadId,
+              subtype: r.subtype,
+              numTurns: r.num_turns,
+            },
+          );
+          immediateError = true;
+          // Do NOT mark resultReceived — let exit handler trigger recovery
+          return;
+        }
+
         this.resultReceived.add(threadId);
       }
       this.emit('agent:message', threadId, msg);
     });
 
     proc.on('error', (err: Error) => {
-      if (!gotMessage) {
+      if (!gotMessage || immediateError) {
         dlog.warn('Resume error before any message (stale session?)', {
           threadId,
           error: String(err).slice(0, 200),
@@ -367,6 +386,7 @@ export class AgentOrchestrator extends EventEmitter {
         threadId,
         code,
         gotMessage,
+        immediateError,
         hadResult: this.resultReceived.has(threadId),
       });
       // Only remove if THIS proc is still the active one — a newer process
@@ -382,11 +402,17 @@ export class AgentOrchestrator extends EventEmitter {
       }
 
       if (!gotMessage) {
-        dlog.warn('Stale session detected — retrying fresh WITHOUT conversation history', {
+        dlog.warn('Stale session detected — retrying fresh', { threadId, code });
+        onStaleSession();
+        return;
+      }
+
+      if (immediateError) {
+        dlog.warn('Immediate error during resume — failing with recovery flag', {
           threadId,
           code,
         });
-        onStaleSession();
+        (onImmediateError ?? onStaleSession)();
         return;
       }
 
@@ -447,7 +473,27 @@ export class AgentOrchestrator extends EventEmitter {
       }
     };
 
-    this.wireResumeHandlers(resumeProc, threadId, retryFresh);
+    // When the session produces an immediate error result (0 turns), the
+    // prompt doesn't contain the conversation history — retrying fresh
+    // immediately would lose context. Instead, clear the session and let
+    // the thread fail; the next user message will trigger context recovery
+    // via buildThreadContext which injects the full conversation.
+    const failWithRecovery = () => {
+      dlog.warn('Resume produced immediate error — failing with context recovery flag', {
+        threadId,
+        sessionId,
+      });
+      this.emit('agent:session-cleared', threadId);
+      this.emit(
+        'agent:error',
+        threadId,
+        new Error(
+          'Session resume failed (0 turns). Re-send your message to continue with full conversation context.',
+        ),
+      );
+    };
+
+    this.wireResumeHandlers(resumeProc, threadId, retryFresh, failWithRecovery);
 
     try {
       resumeProc.start();

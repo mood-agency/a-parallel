@@ -50,7 +50,7 @@ import { api } from '@/lib/api';
 import { stageConfig, statusConfig, timeAgo } from '@/lib/thread-utils';
 import { toastError } from '@/lib/toast-error';
 import { buildPath } from '@/lib/url';
-import { cn } from '@/lib/utils';
+import { cn, resolveThreadBranch } from '@/lib/utils';
 import { useAppStore } from '@/stores/app-store';
 import { useAuthStore } from '@/stores/auth-store';
 import { useGitStatusStore, branchKey as computeBranchKey } from '@/stores/git-status-store';
@@ -139,7 +139,7 @@ export const KanbanCard = memo(function KanbanCard({
   const isRunning = thread.status === 'running';
   const isBusy = isRunning || thread.status === 'setting_up';
 
-  const displayBranch = thread.branch || thread.baseBranch;
+  const displayBranch = resolveThreadBranch(thread) || thread.baseBranch;
   const [openDropdown, setOpenDropdown] = useState(false);
   const handleDropdownChange = useCallback((open: boolean) => setOpenDropdown(open), []);
 
@@ -659,7 +659,7 @@ export function KanbanView({
       threadId: thread.id,
       projectId: thread.projectId,
       title: thread.title,
-      isWorktree: thread.mode === 'worktree' && !!thread.branch,
+      isWorktree: thread.mode === 'worktree' && !!resolveThreadBranch(thread),
     });
   }, []);
 

@@ -1,6 +1,6 @@
 import * as DialogPrimitive from '@radix-ui/react-dialog';
 import { Loader2 } from 'lucide-react';
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import {
@@ -28,6 +28,8 @@ interface BrowseFile {
   type: 'file' | 'folder';
 }
 
+const DEBOUNCE_MS = 150;
+
 export function FileSearchDialog({ open, onOpenChange }: FileSearchDialogProps) {
   const { t } = useTranslation();
   const selectedProjectId = useProjectStore((s) => s.selectedProjectId);
@@ -35,69 +37,66 @@ export function FileSearchDialog({ open, onOpenChange }: FileSearchDialogProps) 
   const project = projects.find((p) => p.id === selectedProjectId);
 
   const [query, setQuery] = useState('');
-  const [allFiles, setAllFiles] = useState<BrowseFile[]>([]);
+  const [files, setFiles] = useState<BrowseFile[]>([]);
+  const [truncated, setTruncated] = useState(false);
   const [loading, setLoading] = useState(false);
+  const debounceRef = useRef<ReturnType<typeof setTimeout>>(null);
+  const requestIdRef = useRef(0);
 
-  // Fetch all files once when dialog opens
+  // Search files from server (debounced)
+  const searchFiles = useCallback(
+    async (searchQuery: string) => {
+      if (!project) return;
+
+      const requestId = ++requestIdRef.current;
+      setLoading(true);
+
+      const result = await api.browseFiles(project.path, searchQuery || undefined);
+
+      // Ignore stale responses
+      if (requestId !== requestIdRef.current) return;
+
+      if (result.isOk()) {
+        const normalized: BrowseFile[] = result.value.files.map((f) =>
+          typeof f === 'string' ? { path: f, type: 'file' as const } : f,
+        );
+        setFiles(normalized);
+        setTruncated(result.value.truncated);
+      }
+      setLoading(false);
+    },
+    [project],
+  );
+
+  // Fetch initial files when dialog opens
+  useEffect(() => {
+    if (!open || !project) return;
+    searchFiles('');
+    return () => {
+      requestIdRef.current++;
+    };
+  }, [open, project, searchFiles]);
+
+  // Debounced search on query change
   useEffect(() => {
     if (!open || !project) return;
 
-    let cancelled = false;
-    const fetchFiles = async () => {
-      setLoading(true);
-      const result = await api.browseFiles(project.path);
-      if (!cancelled && result.isOk()) {
-        const normalized: BrowseFile[] = result.value.files
-          .map((f) => (typeof f === 'string' ? { path: f, type: 'file' as const } : f))
-          .filter((f) => f.type === 'file');
-        setAllFiles(normalized);
-      }
-      if (!cancelled) setLoading(false);
-    };
+    if (debounceRef.current) clearTimeout(debounceRef.current);
+    debounceRef.current = setTimeout(() => {
+      searchFiles(query);
+    }, DEBOUNCE_MS);
 
-    fetchFiles();
     return () => {
-      cancelled = true;
+      if (debounceRef.current) clearTimeout(debounceRef.current);
     };
-  }, [open, project]);
-
-  // Filter and sort files client-side
-  const { files, truncated } = useMemo(() => {
-    if (!query) {
-      const isTruncated = allFiles.length > 200;
-      return { files: allFiles.slice(0, 200), truncated: isTruncated };
-    }
-
-    const lowerQuery = query.toLowerCase();
-    const scored: Array<{ file: BrowseFile; score: number }> = [];
-
-    for (const file of allFiles) {
-      const fileName = getFileName(file.path).toLowerCase();
-      const filePath = file.path.toLowerCase();
-
-      if (fileName.includes(lowerQuery)) {
-        // Exact substring match in filename — highest priority
-        // Bonus if it starts with the query
-        scored.push({ file, score: fileName.startsWith(lowerQuery) ? 0 : 1 });
-      } else if (fuzzyMatch(fileName, lowerQuery)) {
-        // Fuzzy match in filename
-        scored.push({ file, score: 2 });
-      } else if (filePath.includes(lowerQuery)) {
-        // Match in directory path only
-        scored.push({ file, score: 3 });
-      }
-    }
-
-    scored.sort((a, b) => a.score - b.score);
-    const isTruncated = scored.length > 200;
-    return { files: scored.slice(0, 200).map((s) => s.file), truncated: isTruncated };
-  }, [allFiles, query]);
+  }, [query, open, project, searchFiles]);
 
   // Reset state when dialog closes
   useEffect(() => {
     if (!open) {
       setQuery('');
-      setAllFiles([]);
+      setFiles([]);
+      setTruncated(false);
     }
   }, [open]);
 
@@ -165,7 +164,7 @@ export function FileSearchDialog({ open, onOpenChange }: FileSearchDialogProps) 
               )}
               {truncated && (
                 <div className="px-2 py-1.5 text-center text-xs text-muted-foreground">
-                  {t('fileSearch.truncated', 'Showing first 200 results — refine your search')}
+                  {t('fileSearch.truncated', 'Showing first 100 results — refine your search')}
                 </div>
               )}
             </CommandList>
@@ -178,13 +177,4 @@ export function FileSearchDialog({ open, onOpenChange }: FileSearchDialogProps) 
 
 function getFileName(filePath: string): string {
   return filePath.split(/[/\\]/).pop() || filePath;
-}
-
-/** Simple fuzzy match: all characters of the query appear in order within the text */
-function fuzzyMatch(text: string, query: string): boolean {
-  let qi = 0;
-  for (let ti = 0; ti < text.length && qi < query.length; ti++) {
-    if (text[ti] === query[qi]) qi++;
-  }
-  return qi === query.length;
 }

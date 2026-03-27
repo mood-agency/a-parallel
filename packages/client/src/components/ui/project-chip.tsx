@@ -38,6 +38,16 @@ function luminance(r: number, g: number, b: number): number {
   return 0.2126 * rs + 0.7152 * gs + 0.0722 * bs;
 }
 
+/** Darken a hex color by a factor (0 = unchanged, 1 = black). */
+export function darkenHex(hex: string, amount: number): string {
+  const [r, g, b] = hexToRgb(hex);
+  const f = 1 - amount;
+  const dr = Math.round(r * f);
+  const dg = Math.round(g * f);
+  const db = Math.round(b * f);
+  return `#${dr.toString(16).padStart(2, '0')}${dg.toString(16).padStart(2, '0')}${db.toString(16).padStart(2, '0')}`;
+}
+
 /** Return '#ffffff' or '#000000' for best contrast against the given background. */
 export function contrastText(bgHex: string): string {
   const [r, g, b] = hexToRgb(bgHex);

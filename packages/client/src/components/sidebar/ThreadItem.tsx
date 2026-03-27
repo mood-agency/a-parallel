@@ -4,14 +4,16 @@ import {
   Trash2,
   MoreVertical,
   FolderOpenDot,
+  Folder,
   Terminal,
   Square,
   Pin,
   PinOff,
   Bot,
   Pencil,
+  GitBranch,
 } from 'lucide-react';
-import { useState, memo, useCallback, useRef } from 'react';
+import { useState, memo, useCallback, useRef, useMemo, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { DiffStats } from '@/components/DiffStats';
@@ -23,13 +25,15 @@ import {
   DropdownMenuItem,
   DropdownMenuSeparator,
 } from '@/components/ui/dropdown-menu';
-import { ProjectChip } from '@/components/ui/project-chip';
+import type { PowerlineSegmentData } from '@/components/ui/powerline-bar';
+import { PowerlineBar } from '@/components/ui/powerline-bar';
+import { colorFromName, darkenHex } from '@/components/ui/project-chip';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { api } from '@/lib/api';
 import { threadsVisuallyEqual } from '@/lib/shallow-compare';
 import { statusConfig, timeAgo } from '@/lib/thread-utils';
 import { toastError } from '@/lib/toast-error';
-import { cn } from '@/lib/utils';
+import { cn, resolveThreadBranch } from '@/lib/utils';
 
 export interface ThreadItemProps {
   thread: Thread;
@@ -39,7 +43,7 @@ export interface ThreadItemProps {
   subtitle?: string;
   projectColor?: string;
   timeValue?: string;
-  onRename?: () => void;
+  onRename?: (newTitle: string) => void;
   onArchive?: () => void;
   onPin?: () => void;
   onDelete?: () => void;
@@ -82,6 +86,31 @@ export const ThreadItem = memo(function ThreadItem({
   const [openDropdown, setOpenDropdown] = useState(false);
   const handleDropdownChange = useCallback((open: boolean) => setOpenDropdown(open), []);
 
+  // Inline rename state
+  const [isRenaming, setIsRenaming] = useState(false);
+  const [renameValue, setRenameValue] = useState('');
+  const renameInputRef = useRef<HTMLInputElement>(null);
+
+  const startRename = useCallback(() => {
+    setRenameValue(thread.title);
+    setIsRenaming(true);
+  }, [thread.title]);
+
+  const commitRename = useCallback(() => {
+    const trimmed = renameValue.trim();
+    if (trimmed && trimmed !== thread.title && onRename) {
+      onRename(trimmed);
+    }
+    setIsRenaming(false);
+  }, [renameValue, thread.title, onRename]);
+
+  useEffect(() => {
+    if (isRenaming && renameInputRef.current) {
+      renameInputRef.current.focus();
+      renameInputRef.current.select();
+    }
+  }, [isRenaming]);
+
   // Thread status config
   const threadStatusCfg = statusConfig[thread.status as ThreadStatus] ?? statusConfig.pending;
   const StatusIcon = threadStatusCfg.icon;
@@ -108,8 +137,62 @@ export const ThreadItem = memo(function ThreadItem({
   const hasSnippet = !!thread.lastAssistantMessage;
   const showLaunching = isBusy && !hasSnippet;
   const isBacklog = !hasSnippet && !isBusy && (!thread.stage || thread.stage === 'backlog');
-  const hasMetadataRow = !!subtitle || hasDiffStats;
+  const hasMetadataRow = hasDiffStats;
   const hasSnippetRow = hasSnippet || showLaunching || isBacklog;
+
+  // Powerline segments: project → baseBranch → worktree branch (for worktrees)
+  //                      project → branch (for local threads)
+  const isWorktree = thread.mode === 'worktree';
+  const effectiveBranch = resolveThreadBranch(thread);
+  const branchName =
+    isWorktree && thread.baseBranch ? thread.baseBranch : effectiveBranch || thread.baseBranch;
+  const resolvedProjectColor = projectColor || (subtitle ? colorFromName(subtitle) : '#52525b');
+  const worktreeBranchLabel = isWorktree ? (effectiveBranch ?? '') : '';
+  const branchColor = darkenHex(resolvedProjectColor, 0.12);
+  const dirColor = darkenHex(resolvedProjectColor, 0.22);
+  const powerlineSegments = useMemo<PowerlineSegmentData[]>(() => {
+    const segments: PowerlineSegmentData[] = [];
+    if (subtitle) {
+      segments.push({
+        key: 'project',
+        icon: Folder,
+        label: subtitle,
+        color: resolvedProjectColor,
+        textColor: '#000000',
+        tooltip: projectPath,
+      });
+    }
+    if (branchName) {
+      segments.push({
+        key: 'branch',
+        icon: GitBranch,
+        label: branchName,
+        color: subtitle ? branchColor : resolvedProjectColor,
+        textColor: '#000000',
+        tooltip: branchName,
+      });
+    }
+    if (isWorktree && worktreeBranchLabel) {
+      segments.push({
+        key: 'worktree-branch',
+        icon: GitBranch,
+        label: worktreeBranchLabel,
+        color: subtitle ? dirColor : branchColor,
+        textColor: '#000000',
+        tooltip: worktreeBranchLabel,
+      });
+    }
+    return segments;
+  }, [
+    subtitle,
+    resolvedProjectColor,
+    projectPath,
+    branchName,
+    branchColor,
+    isWorktree,
+    worktreeBranchLabel,
+    dirColor,
+  ]);
 
   return (
     <div
@@ -165,7 +248,23 @@ export const ThreadItem = memo(function ThreadItem({
               </span>
             )}
           </div>
-          <span className="truncate text-sm leading-tight">{thread.title}</span>
+          {isRenaming ? (
+            <input
+              ref={renameInputRef}
+              data-testid={`thread-rename-input-${thread.id}`}
+              value={renameValue}
+              onChange={(e) => setRenameValue(e.target.value)}
+              onBlur={commitRename}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') commitRename();
+                if (e.key === 'Escape') setIsRenaming(false);
+              }}
+              onClick={(e) => e.stopPropagation()}
+              className="min-w-0 flex-1 truncate rounded border border-border bg-background px-1 text-sm leading-tight text-foreground outline-none focus:ring-1 focus:ring-ring"
+            />
+          ) : (
+            <span className="truncate text-sm leading-tight">{thread.title}</span>
+          )}
           {/* External creator icon */}
           {thread.createdBy && thread.createdBy !== 'user' && (
             <Tooltip>
@@ -196,15 +295,15 @@ export const ThreadItem = memo(function ThreadItem({
           )}
         </div>
 
-        {/* Row 2: Project chip + Git status + Snippet + Time */}
-        {(hasMetadataRow || hasSnippetRow) && (
+        {/* Row 2: Powerline (project → branch) + Git status + Snippet + Time */}
+        {(hasMetadataRow || hasSnippetRow || powerlineSegments.length > 0) && (
           <div className="flex min-w-0 items-center gap-1.5 pl-5">
-            {subtitle && (
-              <ProjectChip
-                name={subtitle}
-                color={projectColor}
+            {powerlineSegments.length > 0 && (
+              <PowerlineBar
+                segments={powerlineSegments}
                 size="sm"
-                className="flex-shrink-0"
+                className="min-w-0 flex-shrink"
+                data-testid={`thread-powerline-${thread.id}`}
               />
             )}
             {hasDiffStats && (
@@ -292,7 +391,7 @@ export const ThreadItem = memo(function ThreadItem({
                     data-testid={`thread-rename-${thread.id}`}
                     onClick={(e) => {
                       e.stopPropagation();
-                      onRename();
+                      startRename();
                     }}
                   >
                     <Pencil className="icon-sm" />

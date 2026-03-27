@@ -21,7 +21,7 @@ import {
 } from '@/lib/grid-storage';
 import { statusConfig } from '@/lib/thread-utils';
 import { toastError } from '@/lib/toast-error';
-import { cn } from '@/lib/utils';
+import { cn, resolveThreadBranch } from '@/lib/utils';
 import { useAppStore } from '@/stores/app-store';
 import { useProjectStore } from '@/stores/project-store';
 import { useSettingsStore, deriveToolLists } from '@/stores/settings-store';
@@ -269,7 +269,7 @@ const ThreadColumn = memo(function ThreadColumn({
             </TooltipIconButton>
           )}
         </div>
-        {(projectName || thread.branch || thread.baseBranch) && (
+        {(projectName || resolveThreadBranch(thread) || thread.baseBranch) && (
           <div className="mt-1 min-w-0 overflow-hidden">
             <PowerlineBar
               data-testid={`grid-column-powerline-${threadId}`}
@@ -285,12 +285,12 @@ const ThreadColumn = memo(function ThreadColumn({
                       } satisfies PowerlineSegmentData,
                     ]
                   : []),
-                ...(thread.branch || thread.baseBranch
+                ...(resolveThreadBranch(thread) || thread.baseBranch
                   ? [
                       {
                         key: 'branch',
                         icon: GitBranch,
-                        label: (thread.branch || thread.baseBranch)!,
+                        label: (resolveThreadBranch(thread) || thread.baseBranch)!,
                         color: '#C3A6E0',
                       } satisfies PowerlineSegmentData,
                     ]

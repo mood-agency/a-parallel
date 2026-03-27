@@ -250,6 +250,11 @@ function dispatchEvent(type: string, threadId: string, data: any): void {
           store2.refreshActiveThread();
         }
       }
+      if (data.permissionMode && store2.activeThread?.id === threadId) {
+        useThreadStore.setState({
+          activeThread: { ...store2.activeThread, permissionMode: data.permissionMode },
+        });
+      }
       break;
     }
     case 'git:status': {

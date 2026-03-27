@@ -307,7 +307,9 @@ async function createThreadOnRunner(c: any, runnerPath: string) {
         title: body.title || threadData.title,
         model: body.model,
         mode: body.mode,
-        branch: body.branch,
+        // Use runtime response data — the runtime generates the worktree
+        // branch name, so body.branch is typically undefined for new threads.
+        branch: threadData.branch ?? body.branch,
       });
 
       runnerResolver.cacheThreadRunner(threadId, resolved.runnerId, resolved.httpUrl);
@@ -315,12 +317,15 @@ async function createThreadOnRunner(c: any, runnerPath: string) {
 
     return c.json(threadData, 201);
   } catch (err) {
+    const message = (err as Error).message ?? String(err);
+    const stack = (err as Error).stack;
     log.error('Failed to create thread on runner', {
       namespace: 'threads',
-      error: (err as Error).message,
+      error: message,
+      stack,
       path: runnerPath,
     });
-    return c.json({ error: 'Runner unreachable' }, 502);
+    return c.json({ error: `Thread creation failed: ${message}` }, 502);
   }
 }
 
@@ -340,6 +345,9 @@ threadRoutes.post('/:id/stop', proxyToRunner);
 
 // POST /api/threads/:id/approve-tool — approve a tool call
 threadRoutes.post('/:id/approve-tool', proxyToRunner);
+
+// POST /api/threads/:id/convert-to-worktree — convert local thread to worktree
+threadRoutes.post('/:id/convert-to-worktree', proxyToRunner);
 
 // PATCH /api/threads/:id/tool-calls/:toolCallId — update tool call output
 threadRoutes.patch('/:id/tool-calls/:toolCallId', proxyToRunner);

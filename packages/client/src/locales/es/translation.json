@@ -641,7 +641,9 @@
     "unpushedChanges": "Commits sin push",
     "unpushedChangesDesc": "El hilo \"{{title}}\" tiene commits que aún no se han enviado a origin. ¿Estás seguro de que quieres marcarlo como Completado?",
     "dirtyChanges": "Cambios sin commitear",
-    "dirtyChangesDesc": "El hilo \"{{title}}\" tiene cambios sin commitear. ¿Estás seguro de que quieres marcarlo como Completado?"
+    "dirtyChangesDesc": "El hilo \"{{title}}\" tiene cambios sin commitear. ¿Estás seguro de que quieres marcarlo como Completado?",
+    "convertToWorktreeTitle": "Convertir a Worktree",
+    "convertToWorktreeDesc": "Esto creará una nueva rama y worktree para este hilo. El agente se detendrá si está en ejecución. Puedes continuar la conversación en la rama aislada."
   },
   "toast": {
     "threadArchived": "Hilo archivado exitosamente",
@@ -651,7 +653,8 @@
     "projectDeleted": "Proyecto \"{{name}}\" eliminado",
     "worktreeDeleted": "Worktree \"{{branch}}\" eliminado",
     "worktreeDeleteFailed": "Error al eliminar worktree: {{message}}",
-    "threadMoved": "\"{{title}}\" movido de {{from}} a {{to}}"
+    "threadMoved": "\"{{title}}\" movido de {{from}} a {{to}}",
+    "convertToWorktreeStarted": "Convirtiendo a worktree..."
   },
   "confirm": {
     "notGitRepo": "\"{{path}}\" no es un repositorio git.\n\n¿Quieres inicializarlo con git init?",

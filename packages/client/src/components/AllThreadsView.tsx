@@ -28,7 +28,7 @@ import { TooltipIconButton } from '@/components/ui/tooltip-icon-button';
 import { api } from '@/lib/api';
 import { gitSyncStateConfig, getStatusLabels } from '@/lib/thread-utils';
 import { buildPath } from '@/lib/url';
-import { cn } from '@/lib/utils';
+import { cn, resolveThreadBranch } from '@/lib/utils';
 import { useGitStatusStore, branchKey as computeBranchKey } from '@/stores/git-status-store';
 import { useProjectStore } from '@/stores/project-store';
 import { useThreadStore } from '@/stores/thread-store';
@@ -137,13 +137,17 @@ export function AllThreadsView() {
     return searchParams.get('project') || null;
   });
 
-  // Build search params from current filter state (preserves status param if present)
+  // Build search params from current filter state (preserves status/sort params if present)
   const buildSearchParams = (overrides?: { project?: string | null }) => {
     const params: Record<string, string> = {};
     const proj = overrides?.project !== undefined ? overrides.project : projectFilter;
     if (proj) params.project = proj;
     const statusParam = searchParams.get('status');
     if (statusParam) params.status = statusParam;
+    const sortParam = searchParams.get('sort');
+    if (sortParam) params.sort = sortParam;
+    const dirParam = searchParams.get('dir');
+    if (dirParam) params.dir = dirParam;
     return params;
   };
 
@@ -160,6 +164,16 @@ export function AllThreadsView() {
     if (paramStatus) {
       const statuses = paramStatus.split(',').filter(Boolean);
       setStatusFilter(new Set(statuses));
+    }
+
+    // Sync sort params from URL
+    const paramSort = searchParams.get('sort');
+    if (paramSort === 'created' || paramSort === 'updated') {
+      setSortField(paramSort);
+    }
+    const paramDir = searchParams.get('dir');
+    if (paramDir === 'asc' || paramDir === 'desc') {
+      setSortDir(paramDir);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps -- intentionally syncs URL → state only when searchParams changes; adding projectFilter would loop
   }, [searchParams]);
@@ -192,8 +206,16 @@ export function AllThreadsView() {
   const [gitFilter, setGitFilter] = useState<Set<string>>(new Set());
   const [modeFilter, setModeFilter] = useState<Set<string>>(new Set());
   const [showArchived, setShowArchived] = useState(false);
-  const [sortField, setSortField] = useState<SortField>('updated');
-  const [sortDir, setSortDir] = useState<SortDir>('desc');
+  const [sortField, setSortField] = useState<SortField>(() => {
+    const paramSort = searchParams.get('sort');
+    if (paramSort === 'created' || paramSort === 'updated') return paramSort;
+    return 'updated';
+  });
+  const [sortDir, setSortDir] = useState<SortDir>(() => {
+    const paramDir = searchParams.get('dir');
+    if (paramDir === 'asc' || paramDir === 'desc') return paramDir;
+    return 'desc';
+  });
 
   // Auto-focus search input on mount (e.g. when navigating via Ctrl+F)
   useEffect(() => {
@@ -317,8 +339,10 @@ export function AllThreadsView() {
 
     // Sort by selected field and direction
     result = [...result].sort((a, b) => {
-      const dateA = sortField === 'updated' ? (a.completedAt ?? a.createdAt) : a.createdAt;
-      const dateB = sortField === 'updated' ? (b.completedAt ?? b.createdAt) : b.createdAt;
+      const dateA =
+        sortField === 'updated' ? (a.updatedAt ?? a.completedAt ?? a.createdAt) : a.createdAt;
+      const dateB =
+        sortField === 'updated' ? (b.updatedAt ?? b.completedAt ?? b.createdAt) : b.createdAt;
       const diff = new Date(dateA).getTime() - new Date(dateB).getTime();
       return sortDir === 'desc' ? -diff : diff;
     });
@@ -748,7 +772,7 @@ export function AllThreadsView() {
                 const gs = statusByBranch[computeBranchKey(thread)];
                 const gitConf = gs ? gitSyncStateConfig[gs.state] : null;
                 const pInfo = projectInfoById[thread.projectId];
-                const displayBranch = thread.branch || thread.baseBranch;
+                const displayBranch = resolveThreadBranch(thread) || thread.baseBranch;
                 const powerlineSegments: PowerlineSegmentData[] = [];
                 if (!projectFilter && pInfo) {
                   powerlineSegments.push({

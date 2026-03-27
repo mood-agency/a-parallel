@@ -366,6 +366,7 @@ async function onAccepted(event: IngestEvent): Promise<string | undefined> {
     cost: 0,
     createdBy,
     createdAt: timestamp,
+    updatedAt: timestamp,
   });
 
   const state: ExternalThreadState = { threadId, projectId, userId, lastEventAt: Date.now() };

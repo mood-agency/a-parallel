@@ -14,6 +14,7 @@ import { api } from '@/lib/api';
 import { createClientLogger } from '@/lib/client-logger';
 import { getUnifiedModelOptions } from '@/lib/providers';
 import { toastError } from '@/lib/toast-error';
+import { resolveThreadBranch } from '@/lib/utils';
 import { useDraftStore } from '@/stores/draft-store';
 import { useProjectStore } from '@/stores/project-store';
 import { useThreadStore } from '@/stores/thread-store';
@@ -130,7 +131,9 @@ export const PromptInput = memo(function PromptInput({
   const activeThreadWorktreePath = useThreadStore((s) => s.activeThread?.worktreePath);
   const activeThreadProvider = useThreadStore((s) => s.activeThread?.provider);
   const activeThreadModel = useThreadStore((s) => s.activeThread?.model);
-  const activeThreadBranch = useThreadStore((s) => s.activeThread?.branch);
+  const activeThreadBranch = useThreadStore((s) =>
+    s.activeThread ? resolveThreadBranch(s.activeThread) : undefined,
+  );
   const activeThreadBaseBranch = useThreadStore((s) => s.activeThread?.baseBranch);
   const activeThreadArcId = useThreadStore((s) => s.activeThread?.arcId);
   const activeThreadPurpose = useThreadStore((s) => s.activeThread?.purpose);
@@ -330,7 +333,7 @@ export const PromptInput = memo(function PromptInput({
           setNewThreadRemoteBranches(data.remoteBranches ?? []);
           setNewThreadDefaultBranch(data.defaultBranch);
           setGitCurrentBranch(data.currentBranch);
-          if (!createWorktree && data.currentBranch && data.branches.includes(data.currentBranch)) {
+          if (data.currentBranch && data.branches.includes(data.currentBranch)) {
             setSelectedBranch(data.currentBranch);
           } else if (projectDefaultBranch && data.branches.includes(projectDefaultBranch)) {
             setSelectedBranch(projectDefaultBranch);
@@ -346,7 +349,7 @@ export const PromptInput = memo(function PromptInput({
         setNewThreadBranchesLoading(false);
       })();
     }
-  }, [isNewThread, effectiveProjectId, projectDefaultBranch, createWorktree]);
+  }, [isNewThread, effectiveProjectId, projectDefaultBranch]);
 
   // Fetch remote URL
   const projectPath = useMemo(

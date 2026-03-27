@@ -77,6 +77,7 @@ export async function triggerAutomationRun(automation: {
     cost: 0,
     archived: 0,
     createdAt: now,
+    updatedAt: now,
   });
 
   // Create the automation run record

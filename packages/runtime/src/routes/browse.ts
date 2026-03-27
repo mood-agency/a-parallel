@@ -357,6 +357,23 @@ async function resolveGitFiles(cwd: string, prefix = ''): Promise<string[]> {
   return resolved;
 }
 
+/** Simple fuzzy match: all characters of the query appear in order within the text */
+function fuzzyMatch(text: string, query: string): boolean {
+  let qi = 0;
+  for (let ti = 0; ti < text.length && qi < query.length; ti++) {
+    if (text[ti] === query[qi]) qi++;
+  }
+  return qi === query.length;
+}
+
+/** Extract the file name from a path */
+function getFileName(filePath: string): string {
+  const idx = filePath.lastIndexOf('/');
+  return idx === -1 ? filePath : filePath.slice(idx + 1);
+}
+
+const FILE_SEARCH_LIMIT = 100;
+
 // List files and folders in a git repository (respects .gitignore)
 app.get('/files', async (c) => {
   const dirPathOrRes = checkRequired(c.req.query('path'), 'path query parameter');
@@ -376,32 +393,48 @@ app.get('/files', async (c) => {
       return c.json({ files: [], truncated: false });
     }
 
-    // Extract unique directories from file paths
-    const dirSet = new Set<string>();
-    for (const file of allFiles) {
-      const parts = file.split('/');
-      for (let i = 1; i < parts.length; i++) {
-        dirSet.add(parts.slice(0, i).join('/'));
+    type BrowseItem = { path: string; type: 'file' | 'folder' };
+
+    if (!query) {
+      // No query — return first N files (no folders needed for search dialog)
+      const files: BrowseItem[] = allFiles.slice(0, FILE_SEARCH_LIMIT).map((f) => ({
+        path: f,
+        type: 'file' as const,
+      }));
+      return c.json({ files, truncated: allFiles.length > FILE_SEARCH_LIMIT });
+    }
+
+    // Server-side scored search
+    const lowerQuery = query.toLowerCase();
+    const scored: Array<{ item: BrowseItem; score: number }> = [];
+
+    for (const filePath of allFiles) {
+      const fileName = getFileName(filePath).toLowerCase();
+      const lowerPath = filePath.toLowerCase();
+
+      let score = -1;
+      if (fileName.startsWith(lowerQuery)) {
+        score = 0; // Filename starts with query — best match
+      } else if (fileName.includes(lowerQuery)) {
+        score = 1; // Exact substring in filename
+      } else if (fuzzyMatch(fileName, lowerQuery)) {
+        score = 2; // Fuzzy match in filename
+      } else if (lowerPath.includes(lowerQuery)) {
+        score = 3; // Match in directory path
+      } else if (fuzzyMatch(lowerPath, lowerQuery)) {
+        score = 4; // Fuzzy match in full path
+      }
+
+      if (score >= 0) {
+        scored.push({ item: { path: filePath, type: 'file' as const }, score });
       }
     }
 
-    // Build combined list: folders first, then files
-    type BrowseItem = { path: string; type: 'file' | 'folder' };
-    let folders: BrowseItem[] = Array.from(dirSet)
-      .sort()
-      .map((d) => ({ path: d, type: 'folder' as const }));
-    let files: BrowseItem[] = allFiles.map((f) => ({ path: f, type: 'file' as const }));
+    scored.sort((a, b) => a.score - b.score);
+    const truncated = scored.length > FILE_SEARCH_LIMIT;
+    const files = scored.slice(0, FILE_SEARCH_LIMIT).map((s) => s.item);
 
-    if (query) {
-      const lowerQuery = query.toLowerCase();
-      folders = folders.filter((f) => f.path.toLowerCase().includes(lowerQuery));
-      files = files.filter((f) => f.path.toLowerCase().includes(lowerQuery));
-    }
-
-    const items = [...folders, ...files];
-    const truncated = items.length > 200;
-
-    return c.json({ files: items.slice(0, 200), truncated });
+    return c.json({ files, truncated });
   } catch (error: any) {
     return c.json({ files: [], truncated: false, error: error.message });
   }

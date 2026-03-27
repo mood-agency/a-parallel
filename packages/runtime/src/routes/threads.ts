@@ -28,6 +28,7 @@ import {
   approveToolCall,
   cancelQueuedMessage,
   updateQueuedMessage as updateQueuedMessageService,
+  convertToWorktree,
   ThreadServiceError,
 } from '../services/thread-service.js';
 import type { HonoEnv } from '../types/hono-env.js';
@@ -157,6 +158,24 @@ threadRoutes.post('/:id/stop', async (c) => {
 
   try {
     await stopThread(id);
+    return c.json({ ok: true });
+  } catch (error) {
+    return handleServiceError(c, error);
+  }
+});
+
+// POST /api/threads/:id/convert-to-worktree
+threadRoutes.post('/:id/convert-to-worktree', async (c) => {
+  const id = c.req.param('id');
+  const userId = c.get('userId') as string;
+  const orgId = c.get('organizationId') ?? undefined;
+  const threadResult = await requireThread(id, userId, orgId);
+  if (threadResult.isErr()) return resultToResponse(c, threadResult);
+
+  const body = await c.req.json().catch(() => ({}));
+
+  try {
+    await convertToWorktree(id, userId, body.baseBranch);
     return c.json({ ok: true });
   } catch (error) {
     return handleServiceError(c, error);

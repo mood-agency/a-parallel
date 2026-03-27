@@ -10,7 +10,7 @@ import {
   MicOff,
   Loader2,
 } from 'lucide-react';
-import { useState, useRef, useEffect, useCallback } from 'react';
+import { useState, useRef, useEffect, useCallback, memo } from 'react';
 import { useTranslation } from 'react-i18next';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
@@ -29,7 +29,7 @@ import { useCurrentProjectPath } from './utils';
 
 const cardLog = createClientLogger('ExitPlanMode');
 
-export function ExitPlanModeCard({
+export const ExitPlanModeCard = memo(function ExitPlanModeCard({
   plan,
   onRespond,
   output,
@@ -39,11 +39,6 @@ export function ExitPlanModeCard({
   output?: string;
 }) {
   const { t } = useTranslation();
-  cardLog.info('render', {
-    hasOnRespond: String(!!onRespond),
-    hasOutput: String(!!output),
-    hasPlan: String(!!plan),
-  });
   const [copied, setCopied] = useState(false);
   const alreadyAnswered = !!output;
 
@@ -291,4 +286,4 @@ export function ExitPlanModeCard({
       )}
     </div>
   );
-}
+});

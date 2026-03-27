@@ -11,6 +11,7 @@ import type { HandlerServiceContext } from '../services/handlers/types.js';
 export function computeBranchKey(thread: {
   id: string;
   projectId: string;
+  mode?: string | null;
   branch?: string | null;
   worktreePath?: string | null;
   baseBranch?: string | null;
@@ -19,7 +20,13 @@ export function computeBranchKey(thread: {
   // Merged threads (worktree cleaned up, mergedAt set): unique per thread
   if (!thread.branch && !thread.worktreePath && thread.baseBranch && thread.mergedAt)
     return `tid:${thread.id}`;
-  // Threads with a branch (worktree or local): group by project + branch
+  // Worktree threads: always unique per thread — each worktree has its own
+  // working directory so even threads on the same branch have independent state.
+  // Use `mode` as the primary signal (worktreePath may be null if the worktree
+  // was cleaned up but the thread hasn't been archived yet).
+  if ((thread.mode === 'worktree' || thread.worktreePath) && thread.branch)
+    return `wt:${thread.projectId}:${thread.branch}:${thread.id}`;
+  // Local threads with a branch: group by project + branch (they share the project cwd)
   if (thread.branch) return `${thread.projectId}:${thread.branch}`;
   // Local threads without a branch: group by project
   return thread.projectId;

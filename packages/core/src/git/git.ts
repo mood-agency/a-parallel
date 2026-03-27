@@ -1692,6 +1692,36 @@ export function stashList(cwd: string): ResultAsync<StashEntry[], DomainError> {
   );
 }
 
+/**
+ * Show files changed in a specific stash entry.
+ */
+export function stashShow(
+  cwd: string,
+  stashRef = 'stash@{0}',
+): ResultAsync<Array<{ path: string; additions: number; deletions: number }>, DomainError> {
+  return ResultAsync.fromPromise(
+    (async () => {
+      const result = await gitRead(['stash', 'show', '--numstat', stashRef], {
+        cwd,
+        reject: false,
+      });
+      if (result.exitCode !== 0 || !result.stdout.trim()) return [];
+      return result.stdout
+        .trim()
+        .split('\n')
+        .map((line) => {
+          const [add, del, ...rest] = line.split('\t');
+          return {
+            path: rest.join('\t'),
+            additions: parseInt(add, 10) || 0,
+            deletions: parseInt(del, 10) || 0,
+          };
+        });
+    })(),
+    (error) => internal(String(error)),
+  );
+}
+
 // ─── Reset Soft ──────────────────────────────────────────
 
 /**

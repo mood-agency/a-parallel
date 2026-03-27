@@ -46,6 +46,7 @@ function makeThread(overrides: Partial<Thread> = {}): Thread {
     source: 'web',
     purpose: 'implement',
     createdAt: new Date(Date.now() - 57 * 60_000).toISOString(),
+    updatedAt: new Date(Date.now() - 57 * 60_000).toISOString(),
     completedAt: new Date(Date.now() - 55 * 60_000).toISOString(),
     lastAssistantMessage:
       "Now I have the 'DiffStats' component. Let me check how other stories handle that…",

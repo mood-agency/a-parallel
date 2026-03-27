@@ -48,6 +48,8 @@ interface ProjectThreadItemProps {
   thread: Thread;
   projectId: string;
   projectPath: string;
+  projectName: string;
+  projectColor?: string;
   isSelected: boolean;
   gitStatus?: import('@funny/shared').GitStatusInfo;
   onSelectThread: (projectId: string, threadId: string) => void;
@@ -61,6 +63,8 @@ const ProjectThreadItem: FC<ProjectThreadItemProps> = memo(function ProjectThrea
   thread,
   projectId,
   projectPath,
+  projectName,
+  projectColor,
   isSelected,
   gitStatus,
   onSelectThread,
@@ -74,8 +78,8 @@ const ProjectThreadItem: FC<ProjectThreadItemProps> = memo(function ProjectThrea
     [onSelectThread, projectId, thread.id],
   );
   const handleRename = useCallback(
-    () => onRenameThread(projectId, thread.id, thread.title),
-    [onRenameThread, projectId, thread.id, thread.title],
+    (newTitle: string) => onRenameThread(projectId, thread.id, newTitle),
+    [onRenameThread, projectId, thread.id],
   );
   const handleArchive = useCallback(
     () => onArchiveThread(projectId, thread.id, thread.title),
@@ -96,6 +100,7 @@ const ProjectThreadItem: FC<ProjectThreadItemProps> = memo(function ProjectThrea
     <ThreadItem
       thread={thread}
       projectPath={projectPath}
+      projectColor={projectColor}
       isSelected={isSelected}
       onSelect={handleSelect}
       onRename={handleRename}
@@ -480,6 +485,8 @@ export const ProjectItem = memo(function ProjectItem({
               thread={th}
               projectId={project.id}
               projectPath={project.path}
+              projectName={project.name}
+              projectColor={project.color}
               isSelected={selectedThreadId === th.id}
               gitStatus={gitStatusForThreads[th.id]}
               onSelectThread={onSelectThread}

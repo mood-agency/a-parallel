@@ -168,6 +168,7 @@ export async function createIdleThread(params: CreateIdleThreadParams) {
     purpose: params.purpose || 'implement',
     cost: 0,
     createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
   };
 
   await tm.createThread(thread);
@@ -281,6 +282,7 @@ export async function createAndStartThread(params: CreateAndStartThreadParams) {
       purpose: params.purpose || 'implement',
       cost: 0,
       createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
     };
 
     await tm.createThread(thread);
@@ -449,6 +451,7 @@ export async function createAndStartThread(params: CreateAndStartThreadParams) {
     purpose: params.purpose || 'implement',
     cost: 0,
     createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
   };
 
   await tm.createThread(thread);
@@ -610,7 +613,7 @@ export async function sendMessage(params: SendMessageParams): Promise<SendMessag
     thread.provider ||
     DEFAULT_PROVIDER) as AgentProvider;
   const effectiveModel = (params.model || thread.model || DEFAULT_MODEL) as AgentModel;
-  const effectivePermission = (params.permissionMode ||
+  let effectivePermission = (params.permissionMode ||
     thread.permissionMode ||
     'autoEdit') as PermissionMode;
 
@@ -683,6 +686,20 @@ export async function sendMessage(params: SendMessageParams): Promise<SendMessag
         pendingToolCallName: pendingTC.name,
       });
       await tm.updateToolCallOutput(pendingTC.id, params.content);
+
+      // When the user accepts a plan (ExitPlanMode), switch from plan-only mode
+      // to autoEdit so the agent can actually execute. Without this, the agent
+      // restarts in plan mode and immediately calls ExitPlanMode again — an
+      // infinite loop.
+      if (pendingTC.name === 'ExitPlanMode' && effectivePermission === 'plan') {
+        effectivePermission = 'autoEdit';
+        await tm.updateThread(params.threadId, { permissionMode: 'autoEdit' });
+        emitThreadUpdated(thread.userId, params.threadId, { permissionMode: 'autoEdit' });
+        log.info('sendMessage: upgrading permissionMode from plan to autoEdit after ExitPlanMode', {
+          namespace: 'thread-service',
+          threadId: params.threadId,
+        });
+      }
     }
   }
 
@@ -1256,6 +1273,119 @@ export async function updateQueuedMessage(
   }
 
   return { queuedCount: qCount, queuedMessage };
+}
+
+// ── Convert Local Thread to Worktree ────────────────────────
+
+export async function convertToWorktree(
+  threadId: string,
+  userId: string,
+  baseBranch?: string,
+): Promise<void> {
+  const thread = await tm.getThread(threadId);
+  if (!thread) throw new ThreadServiceError('Thread not found', 404);
+  if (thread.mode !== 'local') {
+    throw new ThreadServiceError('Thread is already in worktree mode', 400);
+  }
+  if (thread.worktreePath) {
+    throw new ThreadServiceError('Thread already has a worktree', 400);
+  }
+
+  const project = await getServices().projects.getProject(thread.projectId);
+  if (!project) throw new ThreadServiceError('Project not found', 404);
+
+  const pathResult = await getServices().projects.resolveProjectPath(thread.projectId, userId);
+  if (pathResult.isErr()) throw new ThreadServiceError(pathResult.error.message, 400);
+  const projectPath = pathResult.value;
+
+  // Stop the agent if running
+  if (isAgentRunning(threadId)) {
+    try {
+      await stopAgent(threadId);
+    } catch (err) {
+      log.warn('Failed to stop agent during convert-to-worktree', {
+        namespace: 'thread-service',
+        threadId,
+        error: String(err),
+      });
+    }
+  }
+
+  // Detect current branch for baseBranch
+  const currentBranchResult = await getCurrentBranch(projectPath);
+  const resolvedBaseBranch =
+    baseBranch?.trim() || (currentBranchResult.isOk() ? currentBranchResult.value : undefined);
+
+  // Generate branch name using the same pattern as createAndStartThread
+  const slug = slugifyTitle(thread.title || 'thread');
+  const projectSlug = slugifyTitle(project.name);
+  const branchName = `${projectSlug}/${slug}-${threadId.slice(0, 6)}`;
+
+  // Set status to setting_up
+  await tm.updateThread(threadId, { status: 'setting_up' });
+  emitThreadUpdated(userId, threadId, { status: 'setting_up' });
+
+  const emitSetupProgress = createSetupProgressEmitter(userId, threadId);
+
+  // Background: create worktree, run post-create commands, update thread
+  void (async () => {
+    try {
+      const wtResult = await createWorktree(
+        projectPath,
+        branchName,
+        resolvedBaseBranch,
+        emitSetupProgress,
+      );
+      if (wtResult.isErr()) {
+        await tm.updateThread(threadId, { status: 'failed' });
+        emitThreadUpdated(userId, threadId, { status: 'failed' });
+        return;
+      }
+      const wtPath = wtResult.value;
+
+      try {
+        const setup = await setupWorktree(projectPath, wtPath, emitSetupProgress);
+        if (setup.postCreateErrors.length) {
+          log.warn('Worktree postCreate errors during convert', {
+            threadId,
+            errors: setup.postCreateErrors,
+          });
+        }
+      } catch (err) {
+        log.warn('Failed to setup worktree during convert', { threadId, error: String(err) });
+      }
+
+      // Update thread: convert to worktree mode
+      // Clear sessionId and flag context recovery so the next message
+      // rebuilds the full conversation history (the old session was in
+      // the project dir and is no longer valid in the worktree).
+      await tm.updateThread(threadId, {
+        mode: 'worktree',
+        branch: branchName,
+        baseBranch: resolvedBaseBranch,
+        worktreePath: wtPath,
+        status: 'pending',
+        sessionId: null,
+        contextRecoveryReason: 'worktree-convert',
+      });
+      wsBroker.emitToUser(userId, {
+        type: 'worktree:setup_complete',
+        threadId,
+        data: { branch: branchName, worktreePath: wtPath },
+      } as WSEvent);
+      emitThreadUpdated(userId, threadId, {
+        mode: 'worktree',
+        branch: branchName,
+        baseBranch: resolvedBaseBranch,
+        worktreePath: wtPath,
+        status: 'pending',
+      });
+    } catch (err) {
+      log.error('Background convert-to-worktree failed', { threadId, error: String(err) });
+      await tm.updateThread(threadId, { status: 'failed' });
+      emitThreadUpdated(userId, threadId, { status: 'failed' });
+    }
+  })();
 }
 
 // ── Comment Operations ──────────────────────────────────────────

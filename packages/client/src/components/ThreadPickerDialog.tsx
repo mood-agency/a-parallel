@@ -15,7 +15,7 @@ import { HighlightText } from '@/components/ui/highlight-text';
 import { PowerlineBar, type PowerlineSegmentData } from '@/components/ui/powerline-bar';
 import { colorFromName } from '@/components/ui/project-chip';
 import { statusConfig } from '@/lib/thread-utils';
-import { cn } from '@/lib/utils';
+import { cn, resolveThreadBranch } from '@/lib/utils';
 import { useProjectStore } from '@/stores/project-store';
 import { useThreadStore } from '@/stores/thread-store';
 
@@ -120,7 +120,7 @@ function ThreadPickerDialogContent({
                 <CommandItem
                   key={thread.id}
                   data-testid={`thread-picker-item-${thread.id}`}
-                  value={`${project.name} ${thread.title} ${thread.branch ?? ''}`}
+                  value={`${project.name} ${thread.title} ${resolveThreadBranch(thread) ?? ''}`}
                   onSelect={() => {
                     onSelect(thread.id);
                     onOpenChange(false);
@@ -142,12 +142,12 @@ function ThreadPickerDialogContent({
                           label: project.name,
                           color: project.color || colorFromName(project.name),
                         } satisfies PowerlineSegmentData,
-                        ...(thread.branch || thread.baseBranch
+                        ...(resolveThreadBranch(thread) || thread.baseBranch
                           ? [
                               {
                                 key: 'branch',
                                 icon: GitBranch,
-                                label: (thread.branch || thread.baseBranch)!,
+                                label: (resolveThreadBranch(thread) || thread.baseBranch)!,
                                 color: '#C3A6E0',
                               } satisfies PowerlineSegmentData,
                             ]

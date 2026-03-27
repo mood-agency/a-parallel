@@ -32,6 +32,7 @@ import {
   stash,
   stashPop,
   stashList,
+  stashShow,
   resetSoft,
   fetchRemote,
   git,
@@ -391,6 +392,18 @@ gitRoutes.get('/project/:projectId/stash/list', async (c) => {
   const result = await stashList(cwdResult.value);
   if (result.isErr()) return resultToResponse(c, result);
   return c.json({ entries: result.value });
+});
+
+// GET /api/git/project/:projectId/stash/show/:stashIndex
+gitRoutes.get('/project/:projectId/stash/show/:stashIndex', async (c) => {
+  const userId = c.get('userId') as string;
+  const orgId = c.get('organizationId');
+  const cwdResult = await requireProjectCwd(c.req.param('projectId'), userId, orgId);
+  if (cwdResult.isErr()) return resultToResponse(c, cwdResult);
+  const stashRef = `stash@{${c.req.param('stashIndex')}}`;
+  const result = await stashShow(cwdResult.value, stashRef);
+  if (result.isErr()) return resultToResponse(c, result);
+  return c.json({ files: result.value });
 });
 
 // POST /api/git/project/:projectId/stage
@@ -1382,6 +1395,18 @@ gitRoutes.get('/:threadId/stash/list', async (c) => {
   const result = await stashList(cwdResult.value);
   if (result.isErr()) return resultToResponse(c, result);
   return c.json({ entries: result.value });
+});
+
+// GET /api/git/:threadId/stash/show/:stashIndex
+gitRoutes.get('/:threadId/stash/show/:stashIndex', async (c) => {
+  const userId = c.get('userId') as string;
+  const orgId = c.get('organizationId');
+  const cwdResult = await requireThreadCwd(c.req.param('threadId'), userId, orgId);
+  if (cwdResult.isErr()) return resultToResponse(c, cwdResult);
+  const stashRef = `stash@{${c.req.param('stashIndex')}}`;
+  const result = await stashShow(cwdResult.value, stashRef);
+  if (result.isErr()) return resultToResponse(c, result);
+  return c.json({ files: result.value });
 });
 
 // POST /api/git/:threadId/reset-soft

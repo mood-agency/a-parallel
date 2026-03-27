@@ -15,6 +15,7 @@ import { useStableNavigate } from '@/hooks/use-stable-navigate';
 import { threadsVisuallyEqual } from '@/lib/shallow-compare';
 import { timeAgo } from '@/lib/thread-utils';
 import { buildPath } from '@/lib/url';
+import { resolveThreadBranch } from '@/lib/utils';
 import { useGitStatusStore, branchKey as computeBranchKey } from '@/stores/git-status-store';
 import { useProjectStore } from '@/stores/project-store';
 import { useThreadStore } from '@/stores/thread-store';
@@ -90,13 +91,10 @@ export function ThreadList({ onRenameThread, onArchiveThread, onDeleteThread }: 
       }
     }
 
-    // Sort: running/waiting first, then by date descending
+    // Sort by most recent activity descending (no sticky status priority)
     result.sort((a, b) => {
-      const aRunning = RUNNING_STATUSES.has(a.status) ? 1 : 0;
-      const bRunning = RUNNING_STATUSES.has(b.status) ? 1 : 0;
-      if (aRunning !== bRunning) return bRunning - aRunning;
-      const dateA = a.completedAt ?? a.createdAt;
-      const dateB = b.completedAt ?? b.createdAt;
+      const dateA = a.updatedAt ?? a.completedAt ?? a.createdAt;
+      const dateB = b.updatedAt ?? b.completedAt ?? b.createdAt;
       return new Date(dateB).getTime() - new Date(dateA).getTime();
     });
 
@@ -180,8 +178,8 @@ export function ThreadList({ onRenameThread, onArchiveThread, onDeleteThread }: 
   );
 
   const handleRename = useCallback(
-    (thread: EnrichedThread) => {
-      onRenameThread(thread.id, thread.projectId, thread.title);
+    (thread: EnrichedThread, newTitle: string) => {
+      onRenameThread(thread.id, thread.projectId, newTitle);
     },
     [onRenameThread],
   );
@@ -192,7 +190,9 @@ export function ThreadList({ onRenameThread, onArchiveThread, onDeleteThread }: 
         thread.id,
         thread.projectId,
         thread.title,
-        thread.mode === 'worktree' && !!thread.branch && thread.provider !== 'external',
+        thread.mode === 'worktree' &&
+          !!resolveThreadBranch(thread) &&
+          thread.provider !== 'external',
       );
     },
     [onArchiveThread],
@@ -204,7 +204,9 @@ export function ThreadList({ onRenameThread, onArchiveThread, onDeleteThread }: 
         thread.id,
         thread.projectId,
         thread.title,
-        thread.mode === 'worktree' && !!thread.branch && thread.provider !== 'external',
+        thread.mode === 'worktree' &&
+          !!resolveThreadBranch(thread) &&
+          thread.provider !== 'external',
       );
     },
     [onDeleteThread],
@@ -234,9 +236,7 @@ export function ThreadList({ onRenameThread, onArchiveThread, onDeleteThread }: 
         />
       ))}
       {totalCount > 5 && (
-        <ViewAllButton
-          onClick={() => navigate(buildPath('/list?status=completed,failed,stopped,interrupted'))}
-        />
+        <ViewAllButton onClick={() => navigate(buildPath('/list?sort=updated'))} />
       )}
     </div>
   );
@@ -259,7 +259,7 @@ const ThreadListItem = memo(function ThreadListItem({
   isRunning: boolean;
   gitStatus?: GitStatusInfo;
   onSelect: (threadId: string, projectId: string) => void;
-  onRename: (thread: EnrichedThread) => void;
+  onRename: (thread: EnrichedThread, newTitle: string) => void;
   onArchive: (thread: EnrichedThread) => void;
   onDelete: (thread: EnrichedThread) => void;
 }) {
@@ -273,7 +273,10 @@ const ThreadListItem = memo(function ThreadListItem({
     () => onSelect(thread.id, thread.projectId),
     [onSelect, thread.id, thread.projectId],
   );
-  const handleRename = useCallback(() => onRename(threadRef.current), [onRename, threadRef]);
+  const handleRename = useCallback(
+    (newTitle: string) => onRename(threadRef.current, newTitle),
+    [onRename, threadRef],
+  );
   const handleArchive = useCallback(() => onArchive(threadRef.current), [onArchive, threadRef]);
   const handleDelete = useCallback(() => onDelete(threadRef.current), [onDelete, threadRef]);
 

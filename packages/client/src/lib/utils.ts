@@ -24,3 +24,27 @@ export const ICON_SIZE = {
 } as const;
 
 export type IconSize = keyof typeof ICON_SIZE;
+
+/**
+ * Derive the git branch name from a worktree path.
+ * Worktree folder: `<projectSlug>-<titleSlug>-<id6>` (hyphens)
+ * Git branch:      `<projectSlug>/<titleSlug>-<id6>` (first hyphen → slash)
+ */
+export function deriveBranchFromWorktreePath(worktreePath: string): string {
+  const folder = worktreePath.split('/').pop() ?? '';
+  const idx = folder.indexOf('-');
+  return idx >= 0 ? `${folder.substring(0, idx)}/${folder.substring(idx + 1)}` : folder;
+}
+
+/**
+ * Resolve the effective branch for a thread.
+ * Falls back to deriving from worktreePath when branch is missing.
+ */
+export function resolveThreadBranch(thread: {
+  branch?: string | null;
+  worktreePath?: string | null;
+}): string | undefined {
+  if (thread.branch) return thread.branch;
+  if (thread.worktreePath) return deriveBranchFromWorktreePath(thread.worktreePath);
+  return undefined;
+}

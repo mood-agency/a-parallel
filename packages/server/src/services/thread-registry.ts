@@ -55,6 +55,7 @@ export async function registerThread(entry: {
       mode: entry.mode ?? null,
       branch: entry.branch ?? null,
       createdAt: now,
+      updatedAt: now,
     })
     .onConflictDoUpdate({
       target: [threads.id],
@@ -63,7 +64,11 @@ export async function registerThread(entry: {
         title: entry.title ?? null,
         model: entry.model ?? null,
         mode: entry.mode ?? null,
-        branch: entry.branch ?? null,
+        // Only overwrite branch if we have a value — the runtime's
+        // data:create_thread may have already set the correct branch
+        // before this upsert runs.
+        ...(entry.branch ? { branch: entry.branch } : {}),
+        updatedAt: now,
       },
     });
 

@@ -633,7 +633,9 @@
     "unpushedChanges": "Commits não enviados",
     "unpushedChangesDesc": "A thread \"{{title}}\" possui commits que ainda não foram enviados para origin. Tem certeza de que deseja marcá-la como Concluída?",
     "dirtyChanges": "Alterações não commitadas",
-    "dirtyChangesDesc": "A thread \"{{title}}\" possui alterações não commitadas. Tem certeza de que deseja marcá-la como Concluída?"
+    "dirtyChangesDesc": "A thread \"{{title}}\" possui alterações não commitadas. Tem certeza de que deseja marcá-la como Concluída?",
+    "convertToWorktreeTitle": "Converter para Worktree",
+    "convertToWorktreeDesc": "Isso criará uma nova branch e worktree para esta thread. O agente será parado se estiver em execução. Você pode continuar a conversa na branch isolada."
   },
   "toast": {
     "threadArchived": "Thread arquivada com sucesso",
@@ -641,7 +643,8 @@
     "threadCreated": "Thread \"{{title}}\" criada",
     "projectRenamed": "Projeto renomeado para \"{{name}}\"",
     "projectDeleted": "Projeto \"{{name}}\" excluído",
-    "threadMoved": "\"{{title}}\" movido de {{from}} para {{to}}"
+    "threadMoved": "\"{{title}}\" movido de {{from}} para {{to}}",
+    "convertToWorktreeStarted": "Convertendo para worktree..."
   },
   "confirm": {
     "notGitRepo": "\"{{path}}\" não é um repositório git.\n\nDeseja inicializá-lo com git init?",

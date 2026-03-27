@@ -65,7 +65,7 @@ import { api } from '@/lib/api';
 import { openFileInExternalEditor, getEditorLabel } from '@/lib/editor-utils';
 import { FileExtensionIcon } from '@/lib/file-icons';
 import { toastError } from '@/lib/toast-error';
-import { cn } from '@/lib/utils';
+import { cn, resolveThreadBranch } from '@/lib/utils';
 import { useCommitProgressStore } from '@/stores/commit-progress-store';
 import { useDraftStore } from '@/stores/draft-store';
 import { useGitStatusStore, useGitStatusForThread } from '@/stores/git-status-store';
@@ -228,7 +228,24 @@ export function ReviewPane() {
 
   const isWorktree = useThreadStore((s) => s.activeThread?.mode === 'worktree');
   const baseBranch = useThreadStore((s) => s.activeThread?.baseBranch);
-  const threadBranch = useThreadStore((s) => s.activeThread?.branch);
+  const threadBranch = useThreadStore((s) =>
+    s.activeThread ? resolveThreadBranch(s.activeThread) : undefined,
+  );
+  const projectBranch = useProjectStore((s) =>
+    projectModeId ? s.branchByProject[projectModeId] : undefined,
+  );
+  const currentBranch = threadBranch || projectBranch;
+
+  // Filter stash entries to only show those from the current branch
+  const filteredStashEntries = useMemo(() => {
+    if (!currentBranch) return stashEntries;
+    return stashEntries.filter((e) => {
+      // Stash messages have format: "On <branch>: <message>" or "WIP on <branch>: <message>"
+      const match = e.message.match(/^(?:WIP )?[Oo]n ([^:]+):/);
+      return match ? match[1] === currentBranch : true;
+    });
+  }, [stashEntries, currentBranch]);
+
   const _hasWorktreePath = useThreadStore((s) => !!s.activeThread?.worktreePath);
   const isAgentRunning = useThreadStore((s) => s.activeThread?.status === 'running');
   const gitStatus = useGitStatusForThread(effectiveThreadId);
@@ -1008,21 +1025,43 @@ export function ReviewPane() {
     // eslint-disable-next-line react-hooks/exhaustive-deps -- refreshStashList is a non-memoized function; only trigger on context/visibility change
   }, [gitContextKey, reviewPaneOpen]);
 
-  // ── Persist active sub-tab (changes / history) ──
+  // ── Persist active sub-tab (changes / history / stash) ──
   const REVIEW_SUB_TAB_KEY = 'review_sub_tab';
-  const [reviewSubTab, setReviewSubTabRaw] = useState<'changes' | 'history'>(() => {
+  const [reviewSubTab, setReviewSubTabRaw] = useState<'changes' | 'history' | 'stash'>(() => {
     try {
       const stored = localStorage.getItem(REVIEW_SUB_TAB_KEY);
-      if (stored === 'changes' || stored === 'history') return stored;
+      if (stored === 'changes' || stored === 'history' || stored === 'stash') return stored;
     } catch {}
     return 'changes';
   });
-  const setReviewSubTab = useCallback((tab: 'changes' | 'history') => {
+  const setReviewSubTab = useCallback((tab: 'changes' | 'history' | 'stash') => {
     try {
       localStorage.setItem(REVIEW_SUB_TAB_KEY, tab);
     } catch {}
     setReviewSubTabRaw(tab);
   }, []);
+
+  // ── Stash tab: expanded stash entry to show its files ──
+  const [expandedStashIndex, setExpandedStashIndex] = useState<string | null>(null);
+  const [stashFiles, setStashFiles] = useState<
+    Array<{ path: string; additions: number; deletions: number }>
+  >([]);
+  const [stashFilesLoading, setStashFilesLoading] = useState(false);
+
+  const loadStashFiles = useCallback(
+    async (index: string) => {
+      if (!hasGitContext) return;
+      setStashFilesLoading(true);
+      const result = effectiveThreadId
+        ? await api.stashShow(effectiveThreadId, index)
+        : await api.projectStashShow(projectModeId!, index);
+      if (result.isOk()) {
+        setStashFiles(result.value.files);
+      }
+      setStashFilesLoading(false);
+    },
+    [hasGitContext, effectiveThreadId, projectModeId],
+  );
 
   // When a thread is active, commits are delegated to the agent, so allow even if agent is running
   const canCommit =
@@ -1034,7 +1073,7 @@ export function ReviewPane() {
   return (
     <Tabs
       value={reviewSubTab}
-      onValueChange={(v) => setReviewSubTab(v as 'changes' | 'history')}
+      onValueChange={(v) => setReviewSubTab(v as 'changes' | 'history' | 'stash')}
       className="flex h-full flex-col text-xs"
       style={{ contain: 'strict' }}
     >
@@ -1054,6 +1093,18 @@ export function ReviewPane() {
             data-testid="review-tab-history"
           >
             {t('review.history', 'History')}
+          </TabsTrigger>
+          <TabsTrigger
+            value="stash"
+            className="h-6 px-2.5 text-[11px] font-medium data-[state=active]:bg-background data-[state=active]:shadow-sm"
+            data-testid="review-tab-stash"
+          >
+            {t('review.stash', 'Stash')}
+            {filteredStashEntries.length > 0 && (
+              <span className="ml-1 inline-flex h-4 min-w-4 items-center justify-center rounded-full bg-blue-500 px-1 text-[10px] font-medium text-white">
+                {filteredStashEntries.length}
+              </span>
+            )}
           </TabsTrigger>
         </TabsList>
         <Tooltip>
@@ -1148,10 +1199,13 @@ export function ReviewPane() {
                     size="icon-sm"
                     onClick={handlePushOnly}
                     disabled={pushInProgress || unpushedCommitCount === 0}
-                    className="text-muted-foreground"
+                    className="relative text-muted-foreground"
                     data-testid="review-push-toolbar"
                   >
                     <Upload className={cn('icon-base', pushInProgress && 'animate-pulse')} />
+                    {unpushedCommitCount > 0 && (
+                      <span className="absolute -right-0.5 -top-0.5 h-2 w-2 rounded-full bg-blue-500" />
+                    )}
                   </Button>
                 </TooltipTrigger>
                 <TooltipContent side="top">
@@ -1184,6 +1238,33 @@ export function ReviewPane() {
                   </TooltipContent>
                 </Tooltip>
               )}
+              {filteredStashEntries.length > 0 && (
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Button
+                      variant="ghost"
+                      size="icon-sm"
+                      onClick={handleStashPop}
+                      disabled={stashPopInProgress || !!isAgentRunning}
+                      className="relative text-muted-foreground"
+                      data-testid="review-pop-stash"
+                    >
+                      <ArchiveRestore
+                        className={cn('icon-base', stashPopInProgress && 'animate-pulse')}
+                      />
+                      <span className="absolute -right-0.5 -top-0.5 h-2 w-2 rounded-full bg-blue-500" />
+                    </Button>
+                  </TooltipTrigger>
+                  <TooltipContent side="top">
+                    {isAgentRunning
+                      ? t('review.agentRunningTooltip')
+                      : t('review.stashedChanges', {
+                          count: filteredStashEntries.length,
+                          defaultValue: `${filteredStashEntries.length} stash(es) saved`,
+                        })}
+                  </TooltipContent>
+                </Tooltip>
+              )}
               {summaries.length > 0 && (
                 <Tooltip>
                   <TooltipTrigger asChild>
@@ -1208,74 +1289,64 @@ export function ReviewPane() {
             </div>
 
             {/* File search */}
-            {(summaries.length > 0 || loading) && (
+            {summaries.length > 0 && (
               <div className="border-b border-sidebar-border px-2 py-2">
-                {loading && summaries.length === 0 ? (
-                  <div className="h-7 w-full animate-pulse rounded bg-sidebar-accent/20" />
-                ) : summaries.length > 0 ? (
-                  <div className="relative">
-                    <Search className="icon-sm pointer-events-none absolute left-2 top-1/2 -translate-y-1/2 text-muted-foreground" />
-                    <Input
-                      type="text"
-                      placeholder={t('review.searchFiles', 'Filter files\u2026')}
-                      aria-label={t('review.searchFiles', 'Filter files')}
-                      data-testid="review-file-filter"
-                      value={fileSearch}
-                      onChange={(e) => setFileSearch(e.target.value)}
-                      className="h-7 pl-7 pr-7 text-xs md:text-xs"
-                    />
-                    {fileSearch && (
-                      <Button
-                        variant="ghost"
-                        size="icon-xs"
-                        onClick={() => setFileSearch('')}
-                        aria-label={t('review.clearSearch', 'Clear search')}
-                        data-testid="review-file-filter-clear"
-                        className="absolute right-1 top-1/2 -translate-y-1/2 text-muted-foreground"
-                      >
-                        <X className="icon-xs" />
-                      </Button>
-                    )}
-                  </div>
-                ) : null}
+                <div className="relative">
+                  <Search className="icon-sm pointer-events-none absolute left-2 top-1/2 -translate-y-1/2 text-muted-foreground" />
+                  <Input
+                    type="text"
+                    placeholder={t('review.searchFiles', 'Filter files\u2026')}
+                    aria-label={t('review.searchFiles', 'Filter files')}
+                    data-testid="review-file-filter"
+                    value={fileSearch}
+                    onChange={(e) => setFileSearch(e.target.value)}
+                    className="h-7 pl-7 pr-7 text-xs md:text-xs"
+                  />
+                  {fileSearch && (
+                    <Button
+                      variant="ghost"
+                      size="icon-xs"
+                      onClick={() => setFileSearch('')}
+                      aria-label={t('review.clearSearch', 'Clear search')}
+                      data-testid="review-file-filter-clear"
+                      className="absolute right-1 top-1/2 -translate-y-1/2 text-muted-foreground"
+                    >
+                      <X className="icon-xs" />
+                    </Button>
+                  )}
+                </div>
               </div>
             )}
 
             {/* Select all / count */}
-            {(summaries.length > 0 || loading) && (
+            {summaries.length > 0 && (
               <div className="flex h-8 items-center gap-1.5 border-b border-sidebar-border py-1.5 pl-2 pr-4">
-                {loading && summaries.length === 0 ? (
-                  <div className="h-3 w-24 animate-pulse rounded bg-sidebar-accent/20" />
-                ) : summaries.length > 0 ? (
-                  <>
-                    <button
-                      role="checkbox"
-                      aria-checked={
-                        checkedCount === totalCount && totalCount > 0
-                          ? true
-                          : checkedCount > 0
-                            ? 'mixed'
-                            : false
-                      }
-                      aria-label={t('review.selectAll', 'Select all files')}
-                      data-testid="review-select-all"
-                      onClick={toggleAll}
-                      className={cn(
-                        'flex items-center justify-center h-3.5 w-3.5 rounded border transition-colors flex-shrink-0',
-                        checkedCount === totalCount && totalCount > 0
-                          ? 'bg-primary border-primary text-primary-foreground'
-                          : checkedCount > 0
-                            ? 'bg-primary/50 border-primary text-primary-foreground'
-                            : 'border-muted-foreground/40',
-                      )}
-                    >
-                      {checkedCount > 0 && <Check className="icon-2xs" />}
-                    </button>
-                    <span className="text-xs text-muted-foreground">
-                      {checkedCount}/{totalCount} {t('review.selected', 'selected')}
-                    </span>
-                  </>
-                ) : null}
+                <button
+                  role="checkbox"
+                  aria-checked={
+                    checkedCount === totalCount && totalCount > 0
+                      ? true
+                      : checkedCount > 0
+                        ? 'mixed'
+                        : false
+                  }
+                  aria-label={t('review.selectAll', 'Select all files')}
+                  data-testid="review-select-all"
+                  onClick={toggleAll}
+                  className={cn(
+                    'flex items-center justify-center h-3.5 w-3.5 rounded border transition-colors flex-shrink-0',
+                    checkedCount === totalCount && totalCount > 0
+                      ? 'bg-primary border-primary text-primary-foreground'
+                      : checkedCount > 0
+                        ? 'bg-primary/50 border-primary text-primary-foreground'
+                        : 'border-muted-foreground/40',
+                  )}
+                >
+                  {checkedCount > 0 && <Check className="icon-2xs" />}
+                </button>
+                <span className="text-xs text-muted-foreground">
+                  {checkedCount}/{totalCount} {t('review.selected', 'selected')}
+                </span>
               </div>
             )}
 
@@ -1826,43 +1897,6 @@ export function ReviewPane() {
               </div>
             )}
 
-            {/* Stash pop — shown when no dirty files but there are stashed changes */}
-            {summaries.length === 0 && !loading && stashEntries.length > 0 && (
-              <div className="flex-shrink-0 space-y-3 border-t border-sidebar-border p-3">
-                <div className="flex items-center gap-2 text-xs text-muted-foreground">
-                  <ArchiveRestore className="icon-sm" />
-                  <span>
-                    {t('review.stashedChanges', {
-                      count: stashEntries.length,
-                      defaultValue: `${stashEntries.length} stash(es) saved`,
-                    })}
-                  </span>
-                </div>
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <Button
-                      className="w-full"
-                      size="sm"
-                      variant="outline"
-                      onClick={handleStashPop}
-                      disabled={stashPopInProgress || !!isAgentRunning}
-                      data-testid="review-pop-stash"
-                    >
-                      {stashPopInProgress ? (
-                        <Loader2 className="icon-sm mr-1.5 animate-spin" />
-                      ) : (
-                        <ArchiveRestore className="icon-sm mr-1.5" />
-                      )}
-                      {t('review.popStash', 'Pop stash')}
-                    </Button>
-                  </TooltipTrigger>
-                  {isAgentRunning && (
-                    <TooltipContent side="top">{t('review.agentRunningTooltip')}</TooltipContent>
-                  )}
-                </Tooltip>
-              </div>
-            )}
-
             {/* Standalone merge / create PR buttons — shown when no dirty files but worktree has unmerged commits */}
             {showMergeOnly && (
               <div className="flex-shrink-0 space-y-3 border-t border-sidebar-border p-3">
@@ -1999,6 +2033,153 @@ export function ReviewPane() {
         forceMount
       >
         <CommitHistoryTab visible={reviewSubTab === 'history'} />
+      </TabsContent>
+
+      {/* Stash tab */}
+      <TabsContent
+        value="stash"
+        className="flex min-h-0 flex-1 data-[state=inactive]:hidden"
+        forceMount
+      >
+        <div className="flex min-h-0 flex-1 flex-col overflow-auto">
+          {filteredStashEntries.length === 0 ? (
+            <div className="flex min-h-0 flex-1 flex-col items-center justify-center gap-2 p-4 text-muted-foreground">
+              <Archive className="h-8 w-8 opacity-40" />
+              <p className="text-xs">
+                {currentBranch
+                  ? t('review.noStashesOnBranch', {
+                      branch: currentBranch,
+                      defaultValue: `No stashed changes on ${currentBranch}`,
+                    })
+                  : t('review.noStashes', 'No stashed changes')}
+              </p>
+              {stashEntries.length > 0 && (
+                <p className="text-[10px] opacity-60">
+                  {t('review.stashesOnOtherBranches', {
+                    count: stashEntries.length,
+                    defaultValue: `${stashEntries.length} stash(es) on other branches`,
+                  })}
+                </p>
+              )}
+            </div>
+          ) : (
+            <div className="flex flex-col divide-y divide-sidebar-border">
+              {filteredStashEntries.map((entry) => {
+                const idx = entry.index.replace('stash@{', '').replace('}', '');
+                const isExpanded = expandedStashIndex === idx;
+                return (
+                  <div key={entry.index} className="flex flex-col">
+                    <div
+                      role="button"
+                      tabIndex={0}
+                      className={cn(
+                        'flex w-full cursor-pointer items-center gap-2 px-3 py-2 text-left text-xs hover:bg-sidebar-accent/50 transition-colors',
+                        isExpanded && 'bg-sidebar-accent/30',
+                      )}
+                      onClick={() => {
+                        if (isExpanded) {
+                          setExpandedStashIndex(null);
+                          setStashFiles([]);
+                        } else {
+                          setExpandedStashIndex(idx);
+                          loadStashFiles(idx);
+                        }
+                      }}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter' || e.key === ' ') {
+                          e.preventDefault();
+                          if (isExpanded) {
+                            setExpandedStashIndex(null);
+                            setStashFiles([]);
+                          } else {
+                            setExpandedStashIndex(idx);
+                            loadStashFiles(idx);
+                          }
+                        }
+                      }}
+                      data-testid={`stash-entry-${idx}`}
+                    >
+                      <ChevronRight
+                        className={cn(
+                          'h-3 w-3 shrink-0 transition-transform',
+                          isExpanded && 'rotate-90',
+                        )}
+                      />
+                      <div className="flex min-w-0 flex-1 flex-col">
+                        <span className="truncate font-medium">{entry.message}</span>
+                        <span className="text-[10px] text-muted-foreground">
+                          {entry.relativeDate}
+                        </span>
+                      </div>
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <Button
+                            variant="ghost"
+                            size="icon-sm"
+                            className="shrink-0 text-muted-foreground"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleStashPop();
+                            }}
+                            disabled={stashPopInProgress || !!isAgentRunning || idx !== '0'}
+                            data-testid={`stash-pop-${idx}`}
+                          >
+                            {stashPopInProgress && idx === '0' ? (
+                              <Loader2 className="icon-sm animate-spin" />
+                            ) : (
+                              <ArchiveRestore className="icon-sm" />
+                            )}
+                          </Button>
+                        </TooltipTrigger>
+                        <TooltipContent side="left">
+                          {idx === '0'
+                            ? t('review.popStash', 'Pop stash')
+                            : t('review.popStashOnlyLatest', 'Only the latest stash can be popped')}
+                        </TooltipContent>
+                      </Tooltip>
+                    </div>
+                    {isExpanded && (
+                      <div className="border-t border-sidebar-border/50 bg-sidebar-accent/20">
+                        {stashFilesLoading ? (
+                          <div className="flex items-center gap-2 px-6 py-2 text-xs text-muted-foreground">
+                            <Loader2 className="h-3 w-3 animate-spin" />
+                            {t('review.loading', 'Loading...')}
+                          </div>
+                        ) : stashFiles.length === 0 ? (
+                          <div className="px-6 py-2 text-xs text-muted-foreground">
+                            {t('review.noFiles', 'No files')}
+                          </div>
+                        ) : (
+                          stashFiles.map((file) => (
+                            <div
+                              key={file.path}
+                              className="flex items-center gap-2 px-6 py-1 text-xs"
+                              data-testid={`stash-file-${file.path}`}
+                            >
+                              <FileExtensionIcon
+                                filePath={file.path}
+                                className="h-3.5 w-3.5 shrink-0"
+                              />
+                              <span className="min-w-0 flex-1 truncate text-foreground/80">
+                                {file.path}
+                              </span>
+                              <span className="shrink-0 tabular-nums text-green-500">
+                                +{file.additions}
+                              </span>
+                              <span className="shrink-0 tabular-nums text-red-500">
+                                -{file.deletions}
+                              </span>
+                            </div>
+                          ))
+                        )}
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
       </TabsContent>
 
       {/* Confirmation dialog for destructive actions */}

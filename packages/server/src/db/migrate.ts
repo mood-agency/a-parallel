@@ -831,6 +831,60 @@ const migrations: Migration[] = [
       await ctx().addColumn('threads', 'context_recovery_reason', 'TEXT');
     },
   },
+  {
+    name: '034_threads_updated_at',
+    async up() {
+      await ctx().addColumn('threads', 'updated_at', 'TEXT NOT NULL', "''");
+      // Backfill existing rows: use completed_at if available, otherwise created_at
+      await ctx().exec(
+        sql.raw(
+          `UPDATE threads SET updated_at = COALESCE(completed_at, created_at) WHERE updated_at = ''`,
+        ),
+      );
+    },
+  },
+  {
+    name: '035_backfill_worktree_branch',
+    async up() {
+      // Fix threads where mode='worktree' and worktree_path is set but branch is NULL.
+      // The worktree folder name uses hyphens: <projectSlug>-<titleSlug>-<threadId6>
+      // The git branch uses a slash:            <projectSlug>/<titleSlug>-<threadId6>
+      // Derive the branch by extracting the folder name and replacing the first '-' with '/'.
+      const dialect = ctx().dialect;
+      if (dialect === 'sqlite') {
+        await ctx().exec(
+          sql.raw(`
+            UPDATE threads
+            SET branch = (
+              SELECT
+                SUBSTR(folder, 1, INSTR(folder, '-') - 1) || '/' || SUBSTR(folder, INSTR(folder, '-') + 1)
+              FROM (
+                SELECT SUBSTR(worktree_path, LENGTH(RTRIM(worktree_path, REPLACE(worktree_path, '/', ''))) + 1) AS folder
+              )
+            )
+            WHERE mode = 'worktree'
+              AND worktree_path IS NOT NULL
+              AND worktree_path != ''
+              AND (branch IS NULL OR branch = '')
+          `),
+        );
+      } else {
+        await ctx().exec(
+          sql.raw(`
+            UPDATE threads
+            SET branch = REGEXP_REPLACE(
+              SPLIT_PART(RTRIM(worktree_path, '/'), '/', -1),
+              '-', '/', 1
+            )
+            WHERE mode = 'worktree'
+              AND worktree_path IS NOT NULL
+              AND worktree_path != ''
+              AND (branch IS NULL OR branch = '')
+          `),
+        );
+      }
+    },
+  },
 ];
 
 export async function autoMigrate() {

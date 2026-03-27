@@ -161,7 +161,7 @@ export function MonacoEditorDialog({
         className={cn(
           isFullscreen
             ? 'max-w-[100vw] max-h-[100vh] w-[100vw] h-[100vh] flex flex-col gap-0 p-0'
-            : 'flex h-[85vh] w-[90vw] max-w-[90vw] flex-col gap-0 p-0',
+            : 'flex h-[85vh] w-[90vw] max-w-[850px] flex-col gap-0 p-0',
           'overflow-hidden',
         )}
         onOpenAutoFocus={(e) => e.preventDefault()}
@@ -182,7 +182,7 @@ export function MonacoEditorDialog({
               <TooltipTrigger asChild>
                 <Button
                   variant="ghost"
-                  size="icon-xs"
+                  size="icon-sm"
                   onClick={() => setShowPreview((prev) => !prev)}
                   className="flex-shrink-0 text-muted-foreground"
                   data-testid="editor-toggle-preview"
@@ -206,7 +206,7 @@ export function MonacoEditorDialog({
             <TooltipTrigger asChild>
               <Button
                 variant="ghost"
-                size="icon-xs"
+                size="icon-sm"
                 onClick={() => setShowMinimap((prev) => !prev)}
                 className="flex-shrink-0 text-muted-foreground"
                 data-testid="editor-toggle-minimap"
@@ -223,7 +223,7 @@ export function MonacoEditorDialog({
             <TooltipTrigger asChild>
               <Button
                 variant="ghost"
-                size="icon-xs"
+                size="icon-sm"
                 onClick={() => setIsFullscreen((prev) => !prev)}
                 className="flex-shrink-0 text-muted-foreground"
                 data-testid="editor-toggle-fullscreen"
