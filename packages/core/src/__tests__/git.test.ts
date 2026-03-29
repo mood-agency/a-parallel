@@ -483,9 +483,12 @@ describe('git operations', () => {
       const emptyRepo = resolve(TMP, 'empty-log-repo');
       mkdirSync(emptyRepo, { recursive: true });
       executeSync('git', ['init'], { cwd: emptyRepo });
-      // Repo with no commits — git log fails
+      // Repo with no commits — returns empty array
       const result = await getLog(emptyRepo);
-      expect(result.isErr()).toBe(true);
+      expect(result.isOk()).toBe(true);
+      if (result.isOk()) {
+        expect(result.value).toEqual([]);
+      }
     });
   });
 
