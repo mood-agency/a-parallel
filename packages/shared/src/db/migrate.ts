@@ -81,7 +81,9 @@ function createPgMigrationContext(db: any): MigrationContext {
   async function queryOne<T>(
     query: ReturnType<typeof sql> | ReturnType<typeof sql.raw>,
   ): Promise<T | undefined> {
-    const rows = await db.execute(query);
+    const result = await db.execute(query);
+    // db.execute() returns pg QueryResult — rows are in .rows
+    const rows = result?.rows ?? result;
     return rows?.[0] as T | undefined;
   }
 
