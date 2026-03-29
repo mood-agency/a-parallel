@@ -49,7 +49,8 @@ await initBetterAuth();
 authInstance = auth;
 setAuthInstance(authInstance);
 
-log.info('Server initialized — DB mode: sqlite', { namespace: 'server' });
+const { dbDialect } = await import('./db/index.js');
+log.info(`Server initialized — DB mode: ${dbDialect}`, { namespace: 'server' });
 
 // On restart, purge all runners and their project assignments.
 // No runner has an active WebSocket connection at this point, so all
