@@ -73,6 +73,7 @@ export function createTestDb() {
       merged_at TEXT,
       context_recovery_reason TEXT,
       created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL DEFAULT '',
       completed_at TEXT
     )
   `);
@@ -288,6 +289,7 @@ export function seedThread(
     mode: overrides.mode ?? 'local',
     status: overrides.status ?? 'pending',
     createdAt: overrides.createdAt ?? new Date().toISOString(),
+    updatedAt: overrides.updatedAt ?? new Date().toISOString(),
   };
   db.insert(schema.threads).values(thread).run();
   return thread;
