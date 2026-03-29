@@ -235,6 +235,12 @@ export async function initBetterAuth(): Promise<void> {
       }
     }
   } catch (err: any) {
-    log.error('Failed to create default admin account', { namespace: 'auth', error: err });
+    log.error('Failed to create default admin account', {
+      namespace: 'auth',
+      error: err?.message ?? err,
+      stack: err?.stack,
+      code: err?.code,
+      detail: err?.detail,
+    });
   }
 }
