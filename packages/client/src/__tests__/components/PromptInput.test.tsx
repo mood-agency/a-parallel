@@ -74,12 +74,14 @@ vi.mock('@/components/prompt-editor/PromptEditor', () => {
             text = content.content[0].content[0].text;
           }
           setValue(text);
+          valueRef.current = text;
           mockEditorContent = text;
         },
         getText: () => valueRef.current,
         focus: () => {},
         clear: () => {
           setValue('');
+          valueRef.current = '';
           mockEditorContent = '';
         },
         isEmpty: () => !valueRef.current,
@@ -100,6 +102,7 @@ vi.mock('@/components/prompt-editor/PromptEditor', () => {
           value={value}
           onChange={(e: any) => {
             setValue(e.target.value);
+            valueRef.current = e.target.value;
             mockEditorContent = e.target.value;
             props.onChange?.();
           }}
@@ -121,7 +124,7 @@ vi.mock('@/components/prompt-editor/PromptEditor', () => {
 vi.mock('@/components/prompt-editor/serialize', () => ({
   serializeEditorContent: (json: any) => {
     const text = json?.content?.[0]?.content?.[0]?.text ?? '';
-    return { text, fileReferences: [], slashCommand: undefined };
+    return { text, fileReferences: [], symbolReferences: [], slashCommand: undefined };
   },
 }));
 
@@ -150,7 +153,7 @@ beforeEach(() => {
 // ── Tests ───────────────────────────────────────────────────────
 
 describe('PromptInput', () => {
-  test('Enter key triggers onSubmit with prompt text', () => {
+  test('Enter key triggers onSubmit with prompt text', async () => {
     const onSubmit = vi.fn();
     renderWithProviders(<PromptInput onSubmit={onSubmit} />);
 
@@ -158,7 +161,7 @@ describe('PromptInput', () => {
     fireEvent.change(textarea, { target: { value: 'Hello agent' } });
     fireEvent.keyDown(textarea, { key: 'Enter', shiftKey: false });
 
-    expect(onSubmit).toHaveBeenCalledTimes(1);
+    await waitFor(() => expect(onSubmit).toHaveBeenCalledTimes(1));
     expect(onSubmit).toHaveBeenCalledWith(
       'Hello agent',
       expect.objectContaining({ model: 'opus', mode: 'autoEdit' }),
