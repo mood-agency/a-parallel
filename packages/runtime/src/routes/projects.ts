@@ -129,8 +129,12 @@ projectRoutes.post('/:id/checkout', async (c) => {
   const projectResult = await requireProject(c.req.param('id'));
   if (projectResult.isErr()) return resultToResponse(c, projectResult);
 
-  const body = await c.req.json<{ branch: string; strategy?: 'stash' | 'carry' }>();
-  const { branch, strategy = 'carry' } = body;
+  const body = await c.req.json<{
+    branch: string;
+    strategy?: 'stash' | 'carry';
+    create?: boolean;
+  }>();
+  const { branch, strategy = 'carry', create = false } = body;
   if (!branch) return c.json({ error: 'Missing required field: branch' }, 400);
 
   const project = projectResult.value;
@@ -150,8 +154,9 @@ projectRoutes.post('/:id/checkout', async (c) => {
     }
   }
 
-  // Checkout the target branch
-  const checkoutResult = await git(['checkout', branch], project.path);
+  // Checkout the target branch (use -b to create if requested)
+  const checkoutArgs = create ? ['checkout', '-b', branch] : ['checkout', branch];
+  const checkoutResult = await git(checkoutArgs, project.path);
   if (checkoutResult.isErr()) {
     // If we stashed and checkout failed, try to restore the stash
     if (strategy === 'stash') {

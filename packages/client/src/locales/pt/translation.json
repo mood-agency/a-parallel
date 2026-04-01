@@ -667,7 +667,10 @@
     "unpushedCommitsWarning": "Esta worktree tem {{count}} commit(s) não enviado(s). Eles serão perdidos se não forem enviados primeiro.",
     "dirtyFilesWarning": "Esta worktree tem {{count}} arquivo(s) não commitado(s).",
     "noUnpushedCommits": "Todos os commits foram enviados ou mergeados.",
-    "deleteBranchOption": "Também excluir a branch local \"{{branch}}\""
+    "deleteBranchOption": "Também excluir a branch local \"{{branch}}\"",
+    "createBranchTitle": "Criar Branch",
+    "createBranchPlaceholder": "nome-nova-branch",
+    "createBranchDesc": "Criar uma nova branch para esta thread. A thread mudará para a nova branch."
   },
   "toast": {
     "threadArchived": "Thread arquivada com sucesso",

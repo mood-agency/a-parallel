@@ -7,6 +7,12 @@ interface DiffStatsProps {
   linesAdded: number;
   linesDeleted: number;
   dirtyFileCount?: number;
+  /**
+   * Variant distinguishes the source of the stats:
+   * - "local" (default): workspace diff (uncommitted changes)
+   * - "pr": remote PR diff from GitHub
+   */
+  variant?: 'local' | 'pr';
   /** "sm" for sidebar/kanban, "xs" for compact, "xxs" for kanban cards */
   size?: 'sm' | 'xs' | 'xxs';
   /** Show tooltips on hover (default: true for sm, false for xs) */
@@ -16,12 +22,16 @@ interface DiffStatsProps {
 
 /**
  * Compact git diff stats chip: +N -N · X
- * Used in sidebar thread items, kanban cards, and project header.
+ * Used in sidebar thread items, kanban cards, review pane, and PR summary.
+ *
+ * `variant="local"` — workspace diff stats (dirty files)
+ * `variant="pr"` — PR diff stats from GitHub (changed files)
  */
 export function DiffStats({
   linesAdded,
   linesDeleted,
   dirtyFileCount,
+  variant = 'local',
   size = 'sm',
   tooltips,
   className,
@@ -35,11 +45,35 @@ export function DiffStats({
 
   const textSize = size === 'xxs' ? 'text-[10px]' : size === 'xs' ? 'text-xs' : 'text-sm';
 
+  const addedTooltip =
+    variant === 'pr'
+      ? t('gitStats.prLinesAdded', {
+          count: linesAdded,
+          defaultValue: '{{count}} lines added in PR',
+        })
+      : t('gitStats.linesAdded', { count: linesAdded });
+
+  const deletedTooltip =
+    variant === 'pr'
+      ? t('gitStats.prLinesDeleted', {
+          count: linesDeleted,
+          defaultValue: '{{count}} lines deleted in PR',
+        })
+      : t('gitStats.linesDeleted', { count: linesDeleted });
+
+  const fileTooltip =
+    variant === 'pr'
+      ? t('gitStats.prChangedFiles', {
+          count: dirtyFileCount,
+          defaultValue: '{{count}} changed files in PR',
+        })
+      : t('gitStats.dirtyFiles', { count: dirtyFileCount });
+
   const added = (
     <Stat
       value={`+${linesAdded}`}
       colorClass="text-diff-added"
-      tooltip={showTooltips ? t('gitStats.linesAdded', { count: linesAdded }) : undefined}
+      tooltip={showTooltips ? addedTooltip : undefined}
     />
   );
 
@@ -47,7 +81,7 @@ export function DiffStats({
     <Stat
       value={`-${linesDeleted}`}
       colorClass="text-diff-removed"
-      tooltip={showTooltips ? t('gitStats.linesDeleted', { count: linesDeleted }) : undefined}
+      tooltip={showTooltips ? deletedTooltip : undefined}
     />
   );
 
@@ -59,7 +93,7 @@ export function DiffStats({
         <Stat
           value={`· ${dirtyFileCount}`}
           colorClass="text-muted-foreground"
-          tooltip={showTooltips ? t('gitStats.dirtyFiles', { count: dirtyFileCount }) : undefined}
+          tooltip={showTooltips ? fileTooltip : undefined}
         />
       )}
     </span>

@@ -3,7 +3,7 @@ import { ChevronRight, Terminal } from 'lucide-react';
 import { useState, useMemo, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
 
-import { useShiki } from '@/hooks/use-shiki';
+import { ensureLanguage, highlightCode } from '@/hooks/use-highlight';
 import { cn } from '@/lib/utils';
 
 export function BashCard({
@@ -27,14 +27,15 @@ export function BashCard({
     () => (output ? ansiConverter.toHtml(output) : null),
     [ansiConverter, output],
   );
-  const { highlight } = useShiki();
   const [highlightedCommand, setHighlightedCommand] = useState<string | null>(null);
 
   useEffect(() => {
     if (expanded && command) {
-      highlight(command, 'bash').then(setHighlightedCommand);
+      ensureLanguage('bash').then(() => {
+        setHighlightedCommand(highlightCode(command, 'bash'));
+      });
     }
-  }, [expanded, command, highlight]);
+  }, [expanded, command]);
 
   return (
     <div className="max-w-full overflow-hidden rounded-lg border border-border text-sm">
@@ -69,7 +70,7 @@ export function BashCard({
             <div className="overflow-x-auto rounded border border-border/40 bg-background/80 px-2.5 py-1.5 font-mono text-xs">
               {highlightedCommand ? (
                 <div
-                  className="whitespace-pre-wrap break-all leading-relaxed [&_.shiki]:!bg-transparent [&_code]:!p-0 [&_pre]:!m-0"
+                  className="hljs whitespace-pre-wrap break-all leading-relaxed"
                   dangerouslySetInnerHTML={{ __html: highlightedCommand }}
                 />
               ) : (

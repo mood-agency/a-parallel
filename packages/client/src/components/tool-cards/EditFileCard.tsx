@@ -1,10 +1,10 @@
 import { ChevronRight, FilePen, Maximize2 } from 'lucide-react';
-import { type ReactElement, useState, useMemo, useCallback, Suspense } from 'react';
+import { useState, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { Button } from '@/components/ui/button';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
-import { useDiffHighlight } from '@/hooks/use-diff-highlight';
+import { VirtualDiff } from '@/components/VirtualDiff';
 import { cn } from '@/lib/utils';
 import { useSettingsStore } from '@/stores/settings-store';
 
@@ -13,11 +13,62 @@ import {
   toEditorUri,
   openFileInEditor,
   getEditorLabel,
-  ReactDiffViewer,
-  DIFF_VIEWER_STYLES,
   useCurrentProjectPath,
   makeRelativePath,
 } from './utils';
+
+/**
+ * Compute a minimal unified diff from old/new strings for inline display.
+ */
+function computeUnifiedDiff(oldValue: string, newValue: string): string {
+  const oldLines = oldValue.split('\n');
+  const newLines = newValue.split('\n');
+  const lines: string[] = [];
+
+  lines.push('--- a/file');
+  lines.push('+++ b/file');
+
+  let prefixLen = 0;
+  while (
+    prefixLen < oldLines.length &&
+    prefixLen < newLines.length &&
+    oldLines[prefixLen] === newLines[prefixLen]
+  ) {
+    prefixLen++;
+  }
+
+  let suffixLen = 0;
+  while (
+    suffixLen < oldLines.length - prefixLen &&
+    suffixLen < newLines.length - prefixLen &&
+    oldLines[oldLines.length - 1 - suffixLen] === newLines[newLines.length - 1 - suffixLen]
+  ) {
+    suffixLen++;
+  }
+
+  const oldChanged = oldLines.slice(prefixLen, oldLines.length - suffixLen);
+  const newChanged = newLines.slice(prefixLen, newLines.length - suffixLen);
+
+  const ctxBefore = Math.min(prefixLen, 3);
+  const ctxAfter = Math.min(suffixLen, 3);
+  const hunkOldStart = prefixLen - ctxBefore + 1;
+  const hunkNewStart = prefixLen - ctxBefore + 1;
+  const hunkOldLen = ctxBefore + oldChanged.length + ctxAfter;
+  const hunkNewLen = ctxBefore + newChanged.length + ctxAfter;
+
+  lines.push(`@@ -${hunkOldStart},${hunkOldLen} +${hunkNewStart},${hunkNewLen} @@`);
+
+  for (let i = prefixLen - ctxBefore; i < prefixLen; i++) {
+    lines.push(` ${oldLines[i]}`);
+  }
+  for (const l of oldChanged) lines.push(`-${l}`);
+  for (const l of newChanged) lines.push(`+${l}`);
+  for (let i = oldLines.length - suffixLen; i < oldLines.length - suffixLen + ctxAfter; i++) {
+    lines.push(` ${oldLines[i]}`);
+  }
+
+  return lines.join('\n');
+}
 
 export function EditFileCard({
   parsed,
@@ -41,21 +92,10 @@ export function EditFileCard({
     return filePath && oldString != null && newString != null && oldString !== newString;
   }, [filePath, oldString, newString]);
 
-  const { renderContent } = useDiffHighlight(oldString || '', newString || '', filePath || '');
-
-  const codeFoldMessageRenderer = useCallback(
-    (
-      totalFoldedLines: number,
-      leftStartLineNumber: number,
-      rightStartLineNumber: number,
-    ): ReactElement => (
-      <span className="font-mono text-[10px] text-muted-foreground">
-        @@ -{leftStartLineNumber - totalFoldedLines},{totalFoldedLines} +
-        {rightStartLineNumber - totalFoldedLines},{totalFoldedLines} @@
-      </span>
-    ),
-    [],
-  );
+  const unifiedDiff = useMemo(() => {
+    if (!hasDiff) return '';
+    return computeUnifiedDiff(oldString || '', newString || '');
+  }, [hasDiff, oldString, newString]);
 
   return (
     <div className="w-full min-w-0 overflow-hidden rounded-lg border border-border text-sm">
@@ -131,25 +171,15 @@ export function EditFileCard({
         )}
       </div>
       {expanded && hasDiff && (
-        <div className="max-h-[50vh] overflow-y-auto border-t border-border/40">
-          <div className="text-xs [&_.diff-container]:font-mono [&_.diff-container]:text-sm">
-            <Suspense
-              fallback={<div className="p-2 text-xs text-muted-foreground">Loading diff...</div>}
-            >
-              <ReactDiffViewer
-                oldValue={oldString || ''}
-                newValue={newString || ''}
-                splitView={false}
-                useDarkTheme={true}
-                hideLineNumbers={false}
-                showDiffOnly={true}
-                extraLinesSurroundingDiff={3}
-                styles={DIFF_VIEWER_STYLES}
-                renderContent={renderContent}
-                codeFoldMessageRenderer={codeFoldMessageRenderer}
-              />
-            </Suspense>
-          </div>
+        <div className="max-h-[50vh] overflow-hidden border-t border-border/40">
+          <VirtualDiff
+            unifiedDiff={unifiedDiff}
+            splitView={false}
+            filePath={filePath}
+            codeFolding={true}
+            className="h-full max-h-[50vh]"
+            data-testid="edit-file-inline-diff"
+          />
         </div>
       )}
       <ExpandedDiffDialog

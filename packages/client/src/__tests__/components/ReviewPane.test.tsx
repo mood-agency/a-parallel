@@ -58,15 +58,8 @@ vi.mock('@/lib/api', async () => {
   };
 });
 
-// Mock the lazy-loaded diff viewer to avoid import issues
+// Mock utils — only getFileName is needed now (ReactDiffViewer was removed)
 vi.mock('@/components/tool-cards/utils', () => ({
-  ReactDiffViewer: ({ oldValue, newValue }: any) => (
-    <div data-testid="diff-viewer">
-      <pre>{oldValue}</pre>
-      <pre>{newValue}</pre>
-    </div>
-  ),
-  DIFF_VIEWER_STYLES: {},
   getFileName: (filePath: string) => filePath.split('/').pop() ?? filePath,
 }));
 

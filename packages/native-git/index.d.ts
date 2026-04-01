@@ -52,6 +52,12 @@ export declare function getLog(
 
 export declare function getRemoteUrl(cwd: string): Promise<string | null>;
 
+export declare function getFullContextFileDiff(
+  cwd: string,
+  filePath: string,
+  staged: boolean,
+): Promise<string>;
+
 export declare function getSingleFileDiff(
   cwd: string,
   filePath: string,

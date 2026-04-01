@@ -73,6 +73,7 @@ fn format_unified_diff(
   new_path: &str,
   is_new_file: bool,
   is_deleted: bool,
+  context_lines: u32,
 ) -> String {
   if changes.is_empty() {
     return String::new();
@@ -98,7 +99,7 @@ fn format_unified_diff(
   let old_total = old_lines.len() as u32;
   let new_total = new_lines.len() as u32;
 
-  // Group changes into hunks (merge changes within CONTEXT_LINES * 2 of each other)
+  // Group changes into hunks (merge changes within context_lines * 2 of each other)
   let mut hunks: Vec<Vec<usize>> = Vec::new();
   for (i, _) in changes.iter().enumerate() {
     if hunks.is_empty() {
@@ -110,7 +111,7 @@ fn format_unified_diff(
       let curr_change = &changes[i];
       let gap_old = curr_change.0.start.saturating_sub(prev_change.0.end);
       let gap_new = curr_change.1.start.saturating_sub(prev_change.1.end);
-      if gap_old <= CONTEXT_LINES * 2 || gap_new <= CONTEXT_LINES * 2 {
+      if gap_old <= context_lines * 2 || gap_new <= context_lines * 2 {
         hunks.last_mut().unwrap().push(i);
       } else {
         hunks.push(vec![i]);
@@ -123,10 +124,10 @@ fn format_unified_diff(
     let first = &changes[hunk_indices[0]];
     let last = &changes[*hunk_indices.last().unwrap()];
 
-    let ctx_before = CONTEXT_LINES.min(first.0.start).min(first.1.start);
+    let ctx_before = context_lines.min(first.0.start).min(first.1.start);
     let old_start = first.0.start - ctx_before;
     let new_start = first.1.start - ctx_before;
-    let ctx_after = CONTEXT_LINES
+    let ctx_after = context_lines
       .min(old_total.saturating_sub(last.0.end))
       .min(new_total.saturating_sub(last.1.end));
     let old_end = last.0.end + ctx_after;
@@ -205,6 +206,18 @@ fn compute_and_format(
   is_new: bool,
   is_deleted: bool,
 ) -> String {
+  compute_and_format_with_context(old, new, path, is_new, is_deleted, CONTEXT_LINES)
+}
+
+/// Compute diff with configurable context lines. Use u32::MAX for full-file context.
+fn compute_and_format_with_context(
+  old: &[u8],
+  new: &[u8],
+  path: &str,
+  is_new: bool,
+  is_deleted: bool,
+  context_lines: u32,
+) -> String {
   if is_binary(old) || is_binary(new) {
     return format!(
       "diff --git a/{f} b/{f}\nBinary files differ\n",
@@ -220,7 +233,7 @@ fn compute_and_format(
   let changes =
     gix::diff::blob::diff(gix::diff::blob::Algorithm::Histogram, &input, collector);
 
-  format_unified_diff(&old_lines, &new_lines, &changes, path, path, is_new, is_deleted)
+  format_unified_diff(&old_lines, &new_lines, &changes, path, path, is_new, is_deleted, context_lines)
 }
 
 #[napi]
@@ -229,11 +242,30 @@ pub async fn get_single_file_diff(
   file_path: String,
   staged: bool,
 ) -> napi::Result<String> {
-  with_repo(&cwd, |repo| {
-    let worktree_path = PathBuf::from(&cwd);
+  diff_file_with_context(&cwd, &file_path, staged, CONTEXT_LINES)
+}
+
+/// Full-context diff (equivalent to git diff -U99999). Shows all lines of the file.
+#[napi]
+pub async fn get_full_context_file_diff(
+  cwd: String,
+  file_path: String,
+  staged: bool,
+) -> napi::Result<String> {
+  diff_file_with_context(&cwd, &file_path, staged, u32::MAX)
+}
+
+fn diff_file_with_context(
+  cwd: &str,
+  file_path: &str,
+  staged: bool,
+  context_lines: u32,
+) -> napi::Result<String> {
+  with_repo(cwd, |repo| {
+    let worktree_path = PathBuf::from(cwd);
 
     if staged {
-      return diff_staged_file(repo, &file_path);
+      return diff_staged_file_ctx(repo, file_path, context_lines);
     }
 
     // Check if file is tracked via index
@@ -247,14 +279,18 @@ pub async fn get_single_file_diff(
       .any(|entry| entry.path(&index).to_str_lossy() == file_path);
 
     if !is_tracked {
-      return diff_untracked_file(&worktree_path, &file_path);
+      return diff_untracked_file_ctx(&worktree_path, file_path, context_lines);
     }
 
-    diff_unstaged_file(repo, &worktree_path, &file_path, &index)
+    diff_unstaged_file_ctx(repo, &worktree_path, file_path, &index, context_lines)
   })
 }
 
 fn diff_staged_file(repo: &gix::Repository, file_path: &str) -> napi::Result<String> {
+  diff_staged_file_ctx(repo, file_path, CONTEXT_LINES)
+}
+
+fn diff_staged_file_ctx(repo: &gix::Repository, file_path: &str, context_lines: u32) -> napi::Result<String> {
   // Get blob from HEAD tree
   let old_data: Option<Vec<u8>> = (|| {
     let head = repo.head_commit().ok()?;
@@ -280,12 +316,13 @@ fn diff_staged_file(repo: &gix::Repository, file_path: &str) -> napi::Result<Str
     return Ok(String::new());
   }
 
-  Ok(compute_and_format(
+  Ok(compute_and_format_with_context(
     old,
     new,
     file_path,
     old_data.is_none(),
     new_data.is_none(),
+    context_lines,
   ))
 }
 
@@ -294,6 +331,16 @@ fn diff_unstaged_file(
   worktree_path: &PathBuf,
   file_path: &str,
   index: &gix::index::File,
+) -> napi::Result<String> {
+  diff_unstaged_file_ctx(repo, worktree_path, file_path, index, CONTEXT_LINES)
+}
+
+fn diff_unstaged_file_ctx(
+  repo: &gix::Repository,
+  worktree_path: &PathBuf,
+  file_path: &str,
+  index: &gix::index::File,
+  context_lines: u32,
 ) -> napi::Result<String> {
   // Get blob from index
   let old_data: Option<Vec<u8>> = index
@@ -321,16 +368,21 @@ fn diff_unstaged_file(
     return Ok(String::new());
   }
 
-  Ok(compute_and_format(
+  Ok(compute_and_format_with_context(
     old,
     new,
     file_path,
     false,
     new_data.is_none(),
+    context_lines,
   ))
 }
 
 fn diff_untracked_file(worktree_path: &PathBuf, file_path: &str) -> napi::Result<String> {
+  diff_untracked_file_ctx(worktree_path, file_path, CONTEXT_LINES)
+}
+
+fn diff_untracked_file_ctx(worktree_path: &PathBuf, file_path: &str, context_lines: u32) -> napi::Result<String> {
   let disk_path = worktree_path.join(file_path);
 
   // Size guard
@@ -347,7 +399,7 @@ fn diff_untracked_file(worktree_path: &PathBuf, file_path: &str) -> napi::Result
     return Ok(String::new());
   }
 
-  Ok(compute_and_format(b"", &data, file_path, true, false))
+  Ok(compute_and_format_with_context(b"", &data, file_path, true, false, context_lines))
 }
 
 #[napi]

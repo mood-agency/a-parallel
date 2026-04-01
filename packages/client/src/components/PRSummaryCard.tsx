@@ -16,6 +16,8 @@ import {
 } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 
+import { DiffStats } from '@/components/DiffStats';
+import { PRBadge } from '@/components/PRBadge';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
@@ -210,17 +212,25 @@ export function PRSummaryCard({
       className="border-b border-sidebar-border bg-muted/30 px-3 py-2 text-xs"
       data-testid="pr-summary-card"
     >
-      {/* Header row */}
+      {/* Header row: DiffStats → PRBadge → StateBadge (consistent with sidebar order) */}
       <div className="flex items-center gap-2">
-        <a
-          href={detail?.html_url ?? prUrl}
-          target="_blank"
-          rel="noopener noreferrer"
-          className="font-mono font-semibold text-primary hover:underline"
+        {detail && (
+          <DiffStats
+            linesAdded={detail.additions}
+            linesDeleted={detail.deletions}
+            dirtyFileCount={detail.changed_files}
+            variant="pr"
+            size="xxs"
+            tooltips
+          />
+        )}
+        <PRBadge
+          prNumber={prNumber}
+          prState={detail?.merged ? 'MERGED' : detail?.state === 'closed' ? 'CLOSED' : prState}
+          prUrl={detail?.html_url ?? prUrl}
+          size="xxs"
           data-testid="pr-summary-number"
-        >
-          #{prNumber}
-        </a>
+        />
         {detail ? (
           <PRStateBadge state={detail.state} draft={detail.draft} merged={detail.merged} />
         ) : (
@@ -229,13 +239,6 @@ export function PRSummaryCard({
             draft={false}
             merged={prState === 'MERGED'}
           />
-        )}
-        {detail && (
-          <span className="flex items-center gap-1 font-mono text-[10px]">
-            <span className="text-diff-added">+{detail.additions}</span>
-            <span className="text-diff-removed">-{detail.deletions}</span>
-            <span className="text-muted-foreground">· {detail.changed_files} files</span>
-          </span>
         )}
         <div className="flex-1" />
         {rateLimited && (

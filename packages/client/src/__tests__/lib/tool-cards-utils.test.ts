@@ -7,10 +7,10 @@ import {
   getQuestions,
   getSummary,
   getToolLabel,
-  extToShikiLang,
   getFileExtension,
   getFileName,
 } from '@/components/tool-cards/utils';
+import { extToHljsLang } from '@/hooks/use-highlight';
 import { toEditorUri, toEditorUriWithLine } from '@/lib/editor-utils';
 
 const t = (key: string) => key;
@@ -228,27 +228,27 @@ describe('toEditorUriWithLine', () => {
   });
 });
 
-describe('extToShikiLang', () => {
+describe('extToHljsLang', () => {
   test('maps known extensions to languages', () => {
-    expect(extToShikiLang('ts')).toBe('typescript');
-    expect(extToShikiLang('tsx')).toBe('tsx');
-    expect(extToShikiLang('js')).toBe('javascript');
-    expect(extToShikiLang('py')).toBe('python');
-    expect(extToShikiLang('rs')).toBe('rust');
-    expect(extToShikiLang('go')).toBe('go');
-    expect(extToShikiLang('css')).toBe('css');
-    expect(extToShikiLang('json')).toBe('json');
-    expect(extToShikiLang('md')).toBe('markdown');
-    expect(extToShikiLang('sh')).toBe('bash');
+    expect(extToHljsLang('ts')).toBe('typescript');
+    expect(extToHljsLang('tsx')).toBe('typescript');
+    expect(extToHljsLang('js')).toBe('javascript');
+    expect(extToHljsLang('py')).toBe('python');
+    expect(extToHljsLang('rs')).toBe('rust');
+    expect(extToHljsLang('go')).toBe('go');
+    expect(extToHljsLang('css')).toBe('css');
+    expect(extToHljsLang('json')).toBe('json');
+    expect(extToHljsLang('md')).toBe('markdown');
+    expect(extToHljsLang('sh')).toBe('bash');
   });
 
   test('is case-insensitive', () => {
-    expect(extToShikiLang('TS')).toBe('typescript');
-    expect(extToShikiLang('PY')).toBe('python');
+    expect(extToHljsLang('TS')).toBe('typescript');
+    expect(extToHljsLang('PY')).toBe('python');
   });
 
-  test('returns "text" for unknown extensions', () => {
-    expect(extToShikiLang('xyz')).toBe('text');
+  test('returns "plaintext" for unknown extensions', () => {
+    expect(extToHljsLang('xyz')).toBe('plaintext');
   });
 });
 

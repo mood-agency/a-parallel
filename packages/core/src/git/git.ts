@@ -1175,11 +1175,24 @@ export interface GitStatusSummary {
 
 // ─── Result cache for expensive git queries ────────────────
 const STATUS_CACHE_TTL = 1_000; // 1 second
+const STATUS_CACHE_MAX_ENTRIES = 1_000;
 
 const statusCache = new Map<string, { data: GitStatusSummary; ts: number }>();
 
 function statusCacheKey(cwd: string, baseBranch?: string, projectCwd?: string): string {
   return `${cwd}|${baseBranch ?? ''}|${projectCwd ?? ''}`;
+}
+
+/** Evict oldest entries when the cache exceeds the max size. Map iteration order is insertion order. */
+function evictStatusCacheIfNeeded(): void {
+  if (statusCache.size <= STATUS_CACHE_MAX_ENTRIES) return;
+  const toRemove = statusCache.size - STATUS_CACHE_MAX_ENTRIES;
+  let removed = 0;
+  for (const key of statusCache.keys()) {
+    if (removed >= toRemove) break;
+    statusCache.delete(key);
+    removed++;
+  }
 }
 
 /** Invalidate status cache for a specific worktree path, or all entries. */
@@ -1278,6 +1291,7 @@ export function getStatusSummary(
         .getStatusSummary(worktreeCwd, baseBranch ?? null, projectCwd ?? null)
         .then((result) => {
           statusCache.set(cacheKey, { data: result, ts: Date.now() });
+          evictStatusCacheIfNeeded();
           return result;
         }),
       (error) => processError(String(error), 1, ''),
@@ -1403,6 +1417,7 @@ export function getStatusSummary(
           linesDeleted,
         };
         statusCache.set(cacheKey, { data: result, ts: Date.now() });
+        evictStatusCacheIfNeeded();
         return result;
       }
 
@@ -1524,6 +1539,7 @@ export function getStatusSummary(
         linesDeleted,
       };
       statusCache.set(cacheKey, { data: result, ts: Date.now() });
+      evictStatusCacheIfNeeded();
       return result;
     })(),
     (error) => processError(String(error), 1, ''),

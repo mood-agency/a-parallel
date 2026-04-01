@@ -68,6 +68,7 @@ export interface NativeGitModule {
   getRemoteUrl(cwd: string): Promise<string | null>;
   listBranchesDetailed(cwd: string): Promise<NativeBranchDetailedInfo[]>;
   getSingleFileDiff(cwd: string, filePath: string, staged: boolean): Promise<string>;
+  getFullContextFileDiff(cwd: string, filePath: string, staged: boolean): Promise<string>;
   getCommitFileDiff(cwd: string, hash: string, filePath: string): Promise<string>;
   getCommitFiles(cwd: string, hash: string): Promise<NativeCommitFileEntry[]>;
   getUnpushedHashes(cwd: string): Promise<string[]>;

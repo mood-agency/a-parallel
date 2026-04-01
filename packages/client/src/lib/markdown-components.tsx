@@ -3,7 +3,7 @@ import { lazy, Suspense, useState, useEffect } from 'react';
 import remarkGfm from 'remark-gfm';
 
 import { useCopyToClipboard } from '@/hooks/use-copy-to-clipboard';
-import { useShiki } from '@/hooks/use-shiki';
+import { ensureLanguage, highlightCode } from '@/hooks/use-highlight';
 
 import { cn } from './utils';
 
@@ -65,24 +65,25 @@ function extractText(node: any): string {
 }
 
 function HighlightedCode({ code, language }: { code: string; language: string }) {
-  const { highlight, ready } = useShiki();
   const [html, setHtml] = useState<string | null>(null);
 
   useEffect(() => {
-    if (!ready || !code) return;
+    if (!code) return;
     let cancelled = false;
-    highlight(code, language).then((result) => {
-      if (!cancelled) setHtml(result);
+    ensureLanguage(language).then(() => {
+      if (!cancelled) {
+        setHtml(highlightCode(code, language));
+      }
     });
     return () => {
       cancelled = true;
     };
-  }, [code, language, ready, highlight]);
+  }, [code, language]);
 
   if (html) {
     return (
       <code
-        className="block overflow-x-auto font-mono text-xs [&_.shiki]:m-0 [&_.shiki]:!bg-transparent [&_.shiki]:p-0 [&_.shiki_code_.line]:leading-relaxed"
+        className="hljs block overflow-x-auto font-mono text-xs leading-relaxed"
         dangerouslySetInnerHTML={{ __html: html }}
       />
     );

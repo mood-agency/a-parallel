@@ -495,7 +495,7 @@ export function ReviewPane() {
   // Fetch full-context diff for the "Show full file" toggle
   const requestFullDiff = async (
     path: string,
-  ): Promise<{ oldValue: string; newValue: string } | null> => {
+  ): Promise<{ oldValue: string; newValue: string; rawDiff?: string } | null> => {
     if (!hasGitContext) return null;
     const summary = summaries.find((s) => s.path === path);
     if (!summary) return null;
@@ -507,6 +507,7 @@ export function ReviewPane() {
       return {
         oldValue: parseDiffOld(result.value.diff),
         newValue: parseDiffNew(result.value.diff),
+        rawDiff: result.value.diff,
       };
     }
     return null;
@@ -907,7 +908,7 @@ export function ReviewPane() {
   };
 
   const handleCopyPath = (path: string, relative: boolean) => {
-    const text = relative ? path : `/${path}`;
+    const text = relative ? path : basePath ? `${basePath}/${path}` : path;
     navigator.clipboard.writeText(text);
     toast.success(t('review.pathCopied'));
   };

@@ -2,10 +2,8 @@ import type { FileDiffSummary, PRReviewThread } from '@funny/shared';
 import { Columns2, FileCode, FileText, Loader2, MessageSquare, Rows2, X } from 'lucide-react';
 import {
   type ComponentType,
-  Suspense,
   useState,
   useCallback,
-  useRef,
   useEffect,
   useMemo,
   useTransition,
@@ -19,15 +17,82 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
-import { ScrollArea } from '@/components/ui/scroll-area';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
-import { useDiffHighlight } from '@/hooks/use-diff-highlight';
 import { FileExtensionIcon } from '@/lib/file-icons';
 import { cn } from '@/lib/utils';
 
 import { DiffCommentThread } from '../DiffCommentThread';
 import { FileTree } from '../FileTree';
-import { ReactDiffViewer, DIFF_VIEWER_STYLES, getFileName } from './utils';
+import { VirtualDiff } from '../VirtualDiff';
+import { getFileName } from './utils';
+
+/* ── Helpers ── */
+
+/**
+ * Compute a minimal unified diff from old/new strings.
+ * Used when we only have tool call old_string/new_string (no raw git diff).
+ */
+function computeUnifiedDiff(oldValue: string, newValue: string): string {
+  const oldLines = oldValue.split('\n');
+  const newLines = newValue.split('\n');
+  const lines: string[] = [];
+
+  lines.push(`--- a/file`);
+  lines.push(`+++ b/file`);
+
+  // Simple diff: show all removals then all additions
+  // For a more accurate diff, we'd use an LCS algorithm, but this is sufficient
+  // for the inline edit card use case where changes are small and localized.
+  // We use a basic approach: find common prefix/suffix, diff the middle.
+  let prefixLen = 0;
+  while (
+    prefixLen < oldLines.length &&
+    prefixLen < newLines.length &&
+    oldLines[prefixLen] === newLines[prefixLen]
+  ) {
+    prefixLen++;
+  }
+
+  let suffixLen = 0;
+  while (
+    suffixLen < oldLines.length - prefixLen &&
+    suffixLen < newLines.length - prefixLen &&
+    oldLines[oldLines.length - 1 - suffixLen] === newLines[newLines.length - 1 - suffixLen]
+  ) {
+    suffixLen++;
+  }
+
+  const oldChanged = oldLines.slice(prefixLen, oldLines.length - suffixLen);
+  const newChanged = newLines.slice(prefixLen, newLines.length - suffixLen);
+
+  // Context lines before change
+  const ctxBefore = Math.min(prefixLen, 3);
+  const ctxAfter = Math.min(suffixLen, 3);
+
+  const hunkOldStart = prefixLen - ctxBefore + 1;
+  const hunkNewStart = prefixLen - ctxBefore + 1;
+  const hunkOldLen = ctxBefore + oldChanged.length + ctxAfter;
+  const hunkNewLen = ctxBefore + newChanged.length + ctxAfter;
+
+  lines.push(`@@ -${hunkOldStart},${hunkOldLen} +${hunkNewStart},${hunkNewLen} @@`);
+
+  // Context before
+  for (let i = prefixLen - ctxBefore; i < prefixLen; i++) {
+    lines.push(` ${oldLines[i]}`);
+  }
+
+  // Removals
+  for (const l of oldChanged) lines.push(`-${l}`);
+  // Additions
+  for (const l of newChanged) lines.push(`+${l}`);
+
+  // Context after
+  for (let i = oldLines.length - suffixLen; i < oldLines.length - suffixLen + ctxAfter; i++) {
+    lines.push(` ${oldLines[i]}`);
+  }
+
+  return lines.join('\n');
+}
 
 /* ── Props ── */
 
@@ -37,157 +102,50 @@ interface ExpandedDiffDialogProps {
   filePath: string;
   oldValue: string;
   newValue: string;
-  /** Optional icon override (defaults to FileCode) */
   icon?: ComponentType<{ className?: string }>;
-  /** When true, shows a loading spinner instead of the diff */
   loading?: boolean;
-  /** Screen-reader description override */
   description?: string;
-  /** List of all files in the review pane for sidebar navigation */
   files?: FileDiffSummary[];
-  /** Callback when a file is selected from the sidebar */
   onFileSelect?: (filePath: string) => void;
-  /** Cache of loaded diffs keyed by file path */
   diffCache?: Map<string, string>;
-  /** File path currently being loaded */
   loadingDiffPath?: string | null;
-  /** Checked files set (from ReviewPane) */
   checkedFiles?: Set<string>;
-  /** Toggle a file's checked state */
   onToggleFile?: (path: string) => void;
-  /** Revert a file */
   onRevertFile?: (path: string) => void;
-  /** Add a pattern to .gitignore */
   onIgnore?: (pattern: string) => void;
-  /** Base path for constructing absolute file paths (for open-in-editor) */
   basePath?: string;
-  /** PR review threads for inline comments */
   prReviewThreads?: PRReviewThread[];
-  /** Fetch full-context diff for a file (returns {oldValue, newValue}) */
-  onRequestFullDiff?: (filePath: string) => Promise<{ oldValue: string; newValue: string } | null>;
+  onRequestFullDiff?: (
+    filePath: string,
+  ) => Promise<{ oldValue: string; newValue: string; rawDiff?: string } | null>;
 }
 
-/* ── Diff content (extracted to avoid re-highlighting on sidebar interactions) ── */
-
-/* Stable ID counter for scoping CSS to each DiffContent instance */
-let diffScopeCounter = 0;
-
-/**
- * Returns the max natural width (scrollWidth) of the direct child element
- * across all td.left or td.right cells.  The child is the <div>/<ins>/<del>
- * that wraps the line content.
- */
-function getMaxChildWidth(container: HTMLElement, side: 'left' | 'right'): number {
-  let max = 0;
-  for (const td of container.querySelectorAll<HTMLElement>(`td.${side}`)) {
-    const child = td.firstElementChild as HTMLElement | null;
-    if (child && child.scrollWidth > max) max = child.scrollWidth;
-  }
-  return max;
-}
-
-/**
- * Hook that powers horizontal scroll for split-view diffs.
- *
- * Strategy: the diff table uses table-layout:fixed with equal-width content
- * columns.  Each content <td> has overflow:hidden.  The content <div> inside
- * each <td> is rendered with white-space:pre and width:max-content, so it may
- * be wider than the cell.
- *
- * We translate every content child via `transform: translateX(-Npx)` to
- * simulate scrolling — this works perfectly with overflow:hidden and avoids
- * per-row scrollbars.  Two proxy scrollbar divs (one per pane) at the bottom
- * drive the offset.  Both panes are always synced.
- */
-function useSplitDiffProxy(
-  containerRef: React.RefObject<HTMLDivElement | null>,
-  proxyRef: React.RefObject<HTMLDivElement | null>,
-  splitView: boolean,
-) {
-  useEffect(() => {
-    if (!splitView || !containerRef.current || !proxyRef.current) return;
-    const container = containerRef.current;
-    const proxy = proxyRef.current;
-
-    const translateAll = (offset: number) => {
-      const tx = `translateX(${-offset}px)`;
-      for (const td of container.querySelectorAll<HTMLElement>('td.left, td.right')) {
-        const child = td.firstElementChild as HTMLElement | null;
-        if (child) child.style.transform = tx;
-      }
-    };
-
-    const onProxyScroll = () => {
-      translateAll(proxy.scrollLeft);
-    };
-
-    const updateSizer = () => {
-      const leftW = getMaxChildWidth(container, 'left');
-      const rightW = getMaxChildWidth(container, 'right');
-      const maxW = Math.max(leftW, rightW);
-
-      const sizer = proxy.firstElementChild as HTMLElement | null;
-      if (sizer) sizer.style.width = `${maxW}px`;
-    };
-
-    proxy.addEventListener('scroll', onProxyScroll);
-
-    // Run once + re-measure when DOM changes (lazy render, fold/unfold)
-    updateSizer();
-    const mo = new MutationObserver(updateSizer);
-    mo.observe(container, { childList: true, subtree: true });
-
-    const ro = new ResizeObserver(updateSizer);
-    ro.observe(container);
-
-    return () => {
-      mo.disconnect();
-      ro.disconnect();
-      proxy.removeEventListener('scroll', onProxyScroll);
-      // Reset transforms
-      for (const td of container.querySelectorAll<HTMLElement>('td.left, td.right')) {
-        const child = td.firstElementChild as HTMLElement | null;
-        if (child) child.style.transform = '';
-      }
-    };
-  }, [splitView, containerRef, proxyRef]);
-}
+/* ── Diff content ── */
 
 function DiffContent({
-  oldValue,
-  newValue,
   filePath,
   splitView,
-  showFullFile,
   loading,
+  rawDiff,
+  oldValue,
+  newValue,
+  showFullFile,
 }: {
-  oldValue: string;
-  newValue: string;
   filePath: string;
   splitView: boolean;
-  showFullFile: boolean;
   loading: boolean;
+  rawDiff?: string;
+  oldValue: string;
+  newValue: string;
+  /** When true, disable code folding so the entire file is visible */
+  showFullFile?: boolean;
 }) {
-  const { renderContent } = useDiffHighlight(oldValue, newValue, filePath);
-  const containerRef = useRef<HTMLDivElement>(null);
-  const proxyRef = useRef<HTMLDivElement>(null);
-  const [scopeId] = useState(() => `diff-scope-${++diffScopeCounter}`);
-
-  useSplitDiffProxy(containerRef, proxyRef, splitView);
-
-  const codeFoldMessageRenderer = useCallback(
-    (totalFoldedLines: number, leftStartLineNumber: number, rightStartLineNumber: number) => (
-      <span
-        className="font-mono text-xs text-muted-foreground transition-colors hover:text-foreground"
-        data-testid="diff-fold-message"
-      >
-        @@ -{leftStartLineNumber - totalFoldedLines},{totalFoldedLines} +
-        {rightStartLineNumber - totalFoldedLines},{totalFoldedLines} @@ — {totalFoldedLines} lines
-        hidden
-      </span>
-    ),
-    [],
-  );
+  // Compute unified diff from old/new if rawDiff is not provided
+  const unifiedDiff = useMemo(() => {
+    if (rawDiff) return rawDiff;
+    if (!oldValue && !newValue) return '';
+    return computeUnifiedDiff(oldValue, newValue);
+  }, [rawDiff, oldValue, newValue]);
 
   if (loading) {
     return (
@@ -198,116 +156,20 @@ function DiffContent({
     );
   }
 
-  if (!oldValue && !newValue) {
+  if (!unifiedDiff) {
     return <p className="p-4 text-xs text-muted-foreground">No diff available</p>;
   }
 
   return (
-    <div ref={containerRef} data-diff-scope={scopeId} className="relative">
-      {/* Scoped CSS: equal columns, clip content, no-wrap + code fold visibility */}
-      <style>{`
-        ${
-          splitView
-            ? `
-        [data-diff-scope="${scopeId}"] table {
-          table-layout: fixed !important;
-          width: 100% !important;
-        }
-        [data-diff-scope="${scopeId}"] colgroup col:nth-child(3),
-        [data-diff-scope="${scopeId}"] colgroup col:nth-child(6) {
-          width: calc(50% - 78px) !important;
-        }
-        [data-diff-scope="${scopeId}"] td.left,
-        [data-diff-scope="${scopeId}"] td.right {
-          overflow: hidden !important;
-          max-width: 0 !important;
-        }
-        [data-diff-scope="${scopeId}"] td.left > *,
-        [data-diff-scope="${scopeId}"] td.right > * {
-          white-space: pre !important;
-          line-break: auto !important;
-          width: max-content !important;
-          will-change: transform;
-        }
-        `
-            : ''
-        }
-        /* Summary bar (expand/collapse all button) */
-        [data-diff-scope="${scopeId}"] div[class*="sticky-header"] {
-          position: sticky;
-          top: 0;
-          z-index: 3;
-        }
-        [data-diff-scope="${scopeId}"] div[class*="summary"] {
-          background: hsl(var(--muted)) !important;
-          color: hsl(var(--muted-foreground));
-          border-bottom: 1px solid hsl(var(--border) / 0.5);
-        }
-        [data-diff-scope="${scopeId}"] button[class*="all-expand-button"] {
-          cursor: pointer;
-          pointer-events: auto;
-          fill: hsl(var(--muted-foreground));
-        }
-        [data-diff-scope="${scopeId}"] button[class*="all-expand-button"]:hover {
-          fill: hsl(var(--foreground));
-        }
-        /* Ensure code fold rows are visible and clickable */
-        [data-diff-scope="${scopeId}"] tr[class*="code-fold"] {
-          position: relative;
-          z-index: 1;
-          cursor: pointer;
-        }
-        [data-diff-scope="${scopeId}"] tr[class*="code-fold"] td {
-          background: hsl(var(--muted)) !important;
-          border-top: 1px solid hsl(var(--border) / 0.5);
-          border-bottom: 1px solid hsl(var(--border) / 0.5);
-        }
-        [data-diff-scope="${scopeId}"] tr[class*="code-fold"] button[class*="code-fold-expand-button"] {
-          cursor: pointer;
-          pointer-events: auto;
-          background: transparent !important;
-          color: hsl(var(--muted-foreground));
-        }
-        [data-diff-scope="${scopeId}"] tr[class*="code-fold"]:hover td {
-          background: hsl(var(--accent)) !important;
-        }
-      `}</style>
-      <Suspense fallback={<div className="p-4 text-xs text-muted-foreground">Loading diff…</div>}>
-        <ReactDiffViewer
-          key={`${splitView ? 'split' : 'unified'}-${showFullFile ? 'full' : 'diff'}`}
-          oldValue={oldValue}
-          newValue={newValue}
-          splitView={splitView}
-          useDarkTheme={true}
-          hideLineNumbers={false}
-          showDiffOnly={!showFullFile}
-          extraLinesSurroundingDiff={3}
-          styles={DIFF_VIEWER_STYLES}
-          renderContent={renderContent}
-          codeFoldMessageRenderer={showFullFile ? undefined : codeFoldMessageRenderer}
-        />
-      </Suspense>
-      {/* Single proxy scrollbar at the bottom — drives both panes */}
-      {splitView && (
-        <div className="sticky bottom-0 z-10 flex" style={{ pointerEvents: 'none' }}>
-          <div style={{ width: '78px', flexShrink: 0 }} />
-          <div
-            ref={proxyRef}
-            className="overflow-x-auto overflow-y-hidden"
-            style={{
-              flex: 1,
-              height: '14px',
-              pointerEvents: 'auto',
-              background: 'hsl(var(--background))',
-              borderTop: '1px solid hsl(var(--border))',
-            }}
-            data-testid="diff-scroll-proxy"
-          >
-            <div style={{ height: '1px' }} />
-          </div>
-        </div>
-      )}
-    </div>
+    <VirtualDiff
+      unifiedDiff={unifiedDiff}
+      splitView={splitView}
+      filePath={filePath}
+      codeFolding={!showFullFile}
+      showMinimap={!!showFullFile}
+      className="h-full"
+      data-testid="expanded-diff-viewer"
+    />
   );
 }
 
@@ -324,6 +186,7 @@ export function ExpandedDiffDialog({
   description,
   files,
   onFileSelect,
+  diffCache,
   checkedFiles,
   onToggleFile,
   onRevertFile,
@@ -336,7 +199,7 @@ export function ExpandedDiffDialog({
   const [showFullFile, setShowFullFile] = useState(false);
   const [isPending, startTransition] = useTransition();
   const [fullDiffCache, setFullDiffCache] = useState<
-    Map<string, { oldValue: string; newValue: string }>
+    Map<string, { oldValue: string; newValue: string; rawDiff?: string }>
   >(new Map());
   const [loadingFullDiff, setLoadingFullDiff] = useState(false);
 
@@ -348,17 +211,14 @@ export function ExpandedDiffDialog({
 
   const toggleFullFile = useCallback(async () => {
     if (showFullFile) {
-      // Switching back to changes-only — no fetch needed
       startTransition(() => setShowFullFile(false));
       return;
     }
-    // Switching to full file — fetch if needed
     if (fullDiffCache.has(filePath)) {
       startTransition(() => setShowFullFile(true));
       return;
     }
     if (!onRequestFullDiff) {
-      // No callback provided, just toggle (will show same data)
       startTransition(() => setShowFullFile(true));
       return;
     }
@@ -373,18 +233,15 @@ export function ExpandedDiffDialog({
 
   // ── Multi-tab state ──
   const [openTabs, setOpenTabs] = useState<string[]>([filePath]);
-  const activeTab = filePath; // Active tab is always driven by parent's filePath prop
+  const activeTab = filePath;
 
-  // Sync tabs: when filePath changes (parent selected a file), ensure it's in the tab list
   useEffect(() => {
     setOpenTabs((prev) => (prev.includes(filePath) ? prev : [...prev, filePath]));
-    // Reset full-file view when switching files (unless we have it cached)
     if (showFullFile && !fullDiffCache.has(filePath)) {
       setShowFullFile(false);
     }
-  }, [filePath]); // eslint-disable-line react-hooks/exhaustive-deps -- intentional: only reset on file switch
+  }, [filePath]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Reset tabs when dialog closes
   useEffect(() => {
     if (!open) setOpenTabs([]);
   }, [open]);
@@ -402,11 +259,9 @@ export function ExpandedDiffDialog({
       setOpenTabs((prev) => {
         const next = prev.filter((p) => p !== path);
         if (next.length === 0) {
-          // Closing last tab closes dialog
           onOpenChange(false);
           return prev;
         }
-        // If closing the active tab, switch to adjacent
         if (path === filePath) {
           const idx = prev.indexOf(path);
           const newActive = next[Math.min(idx, next.length - 1)];
@@ -418,7 +273,6 @@ export function ExpandedDiffDialog({
     [filePath, onFileSelect, onOpenChange],
   );
 
-  // Filter review threads for the current file
   const fileThreads = useMemo(
     () => (prReviewThreads ?? []).filter((t) => t.path === filePath),
     [prReviewThreads, filePath],
@@ -429,12 +283,21 @@ export function ExpandedDiffDialog({
 
   const handleFileClick = useCallback(
     (path: string) => {
-      // Add to tabs if not already there, then switch
       setOpenTabs((prev) => (prev.includes(path) ? prev : [...prev, path]));
       onFileSelect?.(path);
     },
     [onFileSelect],
   );
+
+  // Determine which raw diff / old/new values to pass
+  const effectiveRawDiff =
+    showFullFile && fullDiffCache.has(filePath)
+      ? fullDiffCache.get(filePath)!.rawDiff
+      : diffCache?.get(filePath);
+  const effectiveOldValue =
+    showFullFile && fullDiffCache.has(filePath) ? fullDiffCache.get(filePath)!.oldValue : oldValue;
+  const effectiveNewValue =
+    showFullFile && fullDiffCache.has(filePath) ? fullDiffCache.get(filePath)!.newValue : newValue;
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -504,7 +367,7 @@ export function ExpandedDiffDialog({
           </DialogDescription>
         </DialogHeader>
 
-        {/* Multi-tab bar — shown when multiple files are open */}
+        {/* Multi-tab bar */}
         {hasMultipleTabs && (
           <div
             className="flex items-center overflow-x-auto border-b border-border bg-muted/30"
@@ -537,7 +400,7 @@ export function ExpandedDiffDialog({
         )}
 
         <div className="flex min-h-0 flex-1">
-          {/* File tree sidebar — shared FileTree component */}
+          {/* File tree sidebar */}
           {hasFileSidebar && (
             <div className="flex w-80 flex-shrink-0 flex-col border-r border-border">
               <div className="border-b border-border px-3 py-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
@@ -564,24 +427,19 @@ export function ExpandedDiffDialog({
           )}
 
           {/* Diff content + review threads */}
-          <ScrollArea className="min-h-0 flex-1">
-            <DiffContent
-              oldValue={
-                showFullFile && fullDiffCache.has(filePath)
-                  ? fullDiffCache.get(filePath)!.oldValue
-                  : oldValue
-              }
-              newValue={
-                showFullFile && fullDiffCache.has(filePath)
-                  ? fullDiffCache.get(filePath)!.newValue
-                  : newValue
-              }
-              filePath={filePath}
-              splitView={splitView}
-              showFullFile={showFullFile}
-              loading={loading || loadingFullDiff}
-            />
-            {/* Inline PR review threads for this file */}
+          <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
+            <div className="min-h-0 flex-1 overflow-auto">
+              <DiffContent
+                filePath={filePath}
+                splitView={splitView}
+                loading={loading || loadingFullDiff}
+                rawDiff={effectiveRawDiff}
+                oldValue={effectiveOldValue}
+                newValue={effectiveNewValue}
+                showFullFile={showFullFile}
+              />
+            </div>
+            {/* Inline PR review threads */}
             {fileThreads.length > 0 && (
               <div
                 className="border-t border-border bg-muted/20 px-4 py-3"
@@ -602,7 +460,7 @@ export function ExpandedDiffDialog({
                 </div>
               </div>
             )}
-          </ScrollArea>
+          </div>
         </div>
       </DialogContent>
     </Dialog>

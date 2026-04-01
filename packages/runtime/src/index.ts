@@ -24,6 +24,10 @@ import { createRuntimeApp } from './app.js';
 import { log } from './lib/logger.js';
 import { shutdownManager, ShutdownPhase } from './services/shutdown-manager.js';
 
+// Strip CLAUDECODE early so the Agent SDK never detects a "nested session",
+// even if the runner was started from inside a Claude Code terminal.
+delete process.env.CLAUDECODE;
+
 // Validate required env vars
 if (!process.env.TEAM_SERVER_URL) {
   console.error(

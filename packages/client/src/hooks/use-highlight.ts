@@ -1,0 +1,220 @@
+import hljs from 'highlight.js/lib/core';
+
+/**
+ * Skip syntax highlighting for content exceeding this many lines.
+ * highlight.js is sync and fast, but we still avoid pathological inputs.
+ */
+export const HIGHLIGHT_MAX_LINES = 50_000;
+
+/* ── Language registry ── */
+
+/**
+ * Map file extensions to highlight.js language names.
+ * Languages are registered lazily on first use.
+ */
+const EXT_TO_HLJS_LANG: Record<string, string> = {
+  ts: 'typescript',
+  tsx: 'typescript',
+  js: 'javascript',
+  jsx: 'javascript',
+  mjs: 'javascript',
+  cjs: 'javascript',
+  py: 'python',
+  rb: 'ruby',
+  rs: 'rust',
+  go: 'go',
+  java: 'java',
+  kt: 'kotlin',
+  swift: 'swift',
+  c: 'c',
+  cpp: 'cpp',
+  h: 'c',
+  hpp: 'cpp',
+  cs: 'csharp',
+  md: 'markdown',
+  mdx: 'markdown',
+  json: 'json',
+  yaml: 'yaml',
+  yml: 'yaml',
+  toml: 'ini',
+  xml: 'xml',
+  html: 'xml',
+  css: 'css',
+  scss: 'scss',
+  less: 'less',
+  sql: 'sql',
+  sh: 'bash',
+  bash: 'bash',
+  zsh: 'bash',
+  ps1: 'powershell',
+  dockerfile: 'dockerfile',
+  makefile: 'makefile',
+  lua: 'lua',
+  php: 'php',
+  vue: 'xml',
+  svelte: 'xml',
+  graphql: 'graphql',
+  gql: 'graphql',
+  proto: 'protobuf',
+  ini: 'ini',
+  env: 'ini',
+  tf: 'ini',
+  zig: 'plaintext',
+  ex: 'elixir',
+  exs: 'elixir',
+  erl: 'erlang',
+  hs: 'haskell',
+  dart: 'dart',
+  r: 'r',
+  scala: 'scala',
+  clj: 'clojure',
+};
+
+/**
+ * Map hljs language name → dynamic import.
+ * We only import what we need, avoiding the full 2MB+ hljs bundle.
+ */
+const LANG_IMPORTS: Record<string, () => Promise<{ default: unknown }>> = {
+  typescript: () => import('highlight.js/lib/languages/typescript'),
+  javascript: () => import('highlight.js/lib/languages/javascript'),
+  python: () => import('highlight.js/lib/languages/python'),
+  ruby: () => import('highlight.js/lib/languages/ruby'),
+  rust: () => import('highlight.js/lib/languages/rust'),
+  go: () => import('highlight.js/lib/languages/go'),
+  java: () => import('highlight.js/lib/languages/java'),
+  kotlin: () => import('highlight.js/lib/languages/kotlin'),
+  swift: () => import('highlight.js/lib/languages/swift'),
+  c: () => import('highlight.js/lib/languages/c'),
+  cpp: () => import('highlight.js/lib/languages/cpp'),
+  csharp: () => import('highlight.js/lib/languages/csharp'),
+  markdown: () => import('highlight.js/lib/languages/markdown'),
+  json: () => import('highlight.js/lib/languages/json'),
+  yaml: () => import('highlight.js/lib/languages/yaml'),
+  xml: () => import('highlight.js/lib/languages/xml'),
+  css: () => import('highlight.js/lib/languages/css'),
+  scss: () => import('highlight.js/lib/languages/scss'),
+  less: () => import('highlight.js/lib/languages/less'),
+  sql: () => import('highlight.js/lib/languages/sql'),
+  bash: () => import('highlight.js/lib/languages/bash'),
+  powershell: () => import('highlight.js/lib/languages/powershell'),
+  dockerfile: () => import('highlight.js/lib/languages/dockerfile'),
+  makefile: () => import('highlight.js/lib/languages/makefile'),
+  lua: () => import('highlight.js/lib/languages/lua'),
+  php: () => import('highlight.js/lib/languages/php'),
+  graphql: () => import('highlight.js/lib/languages/graphql'),
+  protobuf: () => import('highlight.js/lib/languages/protobuf'),
+  ini: () => import('highlight.js/lib/languages/ini'),
+  // hcl not available in highlight.js; tf files map to 'ini' instead
+  elixir: () => import('highlight.js/lib/languages/elixir'),
+  erlang: () => import('highlight.js/lib/languages/erlang'),
+  haskell: () => import('highlight.js/lib/languages/haskell'),
+  dart: () => import('highlight.js/lib/languages/dart'),
+  r: () => import('highlight.js/lib/languages/r'),
+  scala: () => import('highlight.js/lib/languages/scala'),
+  clojure: () => import('highlight.js/lib/languages/clojure'),
+  diff: () => import('highlight.js/lib/languages/diff'),
+  plaintext: () => import('highlight.js/lib/languages/plaintext'),
+};
+
+const registeredLangs = new Set<string>();
+const pendingRegistrations = new Map<string, Promise<void>>();
+
+/**
+ * Ensure a language is registered with hljs. Returns a Promise that resolves
+ * once the language is ready. Subsequent calls for the same language are no-ops.
+ */
+export async function ensureLanguage(lang: string): Promise<boolean> {
+  if (lang === 'plaintext' || lang === 'text') return true;
+  if (registeredLangs.has(lang)) return true;
+
+  const existing = pendingRegistrations.get(lang);
+  if (existing) {
+    await existing;
+    return registeredLangs.has(lang);
+  }
+
+  const importFn = LANG_IMPORTS[lang];
+  if (!importFn) return false;
+
+  const promise = importFn()
+    .then((mod) => {
+      const langDef = (mod as { default: unknown }).default;
+      if (langDef) {
+        hljs.registerLanguage(lang, langDef as Parameters<typeof hljs.registerLanguage>[1]);
+        registeredLangs.add(lang);
+      }
+    })
+    .catch(() => {
+      // Silently fail — will fall back to plain text
+    })
+    .finally(() => {
+      pendingRegistrations.delete(lang);
+    });
+
+  pendingRegistrations.set(lang, promise);
+  await promise;
+  return registeredLangs.has(lang);
+}
+
+/**
+ * Resolve a file extension to an hljs language name.
+ */
+export function extToHljsLang(ext: string): string {
+  return EXT_TO_HLJS_LANG[ext.toLowerCase()] ?? 'plaintext';
+}
+
+/**
+ * Get the file extension from a file path.
+ */
+export function getFileExtension(filePath: string): string {
+  const parts = filePath.split('.');
+  return parts.length > 1 ? parts[parts.length - 1] : '';
+}
+
+/**
+ * Resolve a file path to an hljs language name.
+ */
+export function filePathToHljsLang(filePath: string): string {
+  return extToHljsLang(getFileExtension(filePath));
+}
+
+/* ── Synchronous highlighting ── */
+
+function escapeHtml(str: string): string {
+  return str
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;');
+}
+
+/**
+ * Highlight a single line of code synchronously.
+ * Returns HTML string with hljs token classes.
+ * Falls back to escaped plain text if the language isn't loaded.
+ */
+export function highlightLine(line: string, lang: string): string {
+  if (!lang || lang === 'plaintext' || lang === 'text' || !registeredLangs.has(lang)) {
+    return escapeHtml(line);
+  }
+  try {
+    return hljs.highlight(line, { language: lang, ignoreIllegals: true }).value;
+  } catch {
+    return escapeHtml(line);
+  }
+}
+
+/**
+ * Highlight a full code block synchronously.
+ * Returns HTML string with hljs token classes.
+ */
+export function highlightCode(code: string, lang: string): string {
+  if (!lang || lang === 'plaintext' || lang === 'text' || !registeredLangs.has(lang)) {
+    return escapeHtml(code);
+  }
+  try {
+    return hljs.highlight(code, { language: lang, ignoreIllegals: true }).value;
+  } catch {
+    return escapeHtml(code);
+  }
+}

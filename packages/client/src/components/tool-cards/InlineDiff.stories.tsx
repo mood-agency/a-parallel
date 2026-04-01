@@ -1,10 +1,10 @@
 import type { Meta, StoryObj } from '@storybook/react-vite';
-import { Suspense, useState } from 'react';
+import { useState } from 'react';
 
 import { Button } from '@/components/ui/button';
+import { VirtualDiff } from '@/components/VirtualDiff';
 
 import { ExpandedDiffDialog } from './ExpandedDiffDialog';
-import { ReactDiffViewer, DIFF_VIEWER_STYLES } from './utils';
 
 /* -------------------------------------------------------------------------- */
 /*  Sample diff content                                                       */
@@ -96,39 +96,72 @@ const NEW_DELETIONS_ONLY = `export const config = {
 };`;
 
 /* -------------------------------------------------------------------------- */
-/*  Wrapper component (handles Suspense for lazy-loaded ReactDiffViewer)       */
+/*  Helper: compute a simple unified diff from old/new strings                */
+/* -------------------------------------------------------------------------- */
+
+function computeUnifiedDiff(oldValue: string, newValue: string): string {
+  const oldLines = oldValue.split('\n');
+  const newLines = newValue.split('\n');
+  const lines: string[] = ['--- a/file', '+++ b/file'];
+
+  let prefixLen = 0;
+  while (
+    prefixLen < oldLines.length &&
+    prefixLen < newLines.length &&
+    oldLines[prefixLen] === newLines[prefixLen]
+  )
+    prefixLen++;
+
+  let suffixLen = 0;
+  while (
+    suffixLen < oldLines.length - prefixLen &&
+    suffixLen < newLines.length - prefixLen &&
+    oldLines[oldLines.length - 1 - suffixLen] === newLines[newLines.length - 1 - suffixLen]
+  )
+    suffixLen++;
+
+  const oldChanged = oldLines.slice(prefixLen, oldLines.length - suffixLen);
+  const newChanged = newLines.slice(prefixLen, newLines.length - suffixLen);
+  const ctxBefore = Math.min(prefixLen, 3);
+  const ctxAfter = Math.min(suffixLen, 3);
+  const hunkOldStart = prefixLen - ctxBefore + 1;
+  const hunkOldLen = ctxBefore + oldChanged.length + ctxAfter;
+  const hunkNewLen = ctxBefore + newChanged.length + ctxAfter;
+
+  lines.push(`@@ -${hunkOldStart},${hunkOldLen} +${hunkOldStart},${hunkNewLen} @@`);
+  for (let i = prefixLen - ctxBefore; i < prefixLen; i++) lines.push(` ${oldLines[i]}`);
+  for (const l of oldChanged) lines.push(`-${l}`);
+  for (const l of newChanged) lines.push(`+${l}`);
+  for (let i = oldLines.length - suffixLen; i < oldLines.length - suffixLen + ctxAfter; i++)
+    lines.push(` ${oldLines[i]}`);
+
+  return lines.join('\n');
+}
+
+/* -------------------------------------------------------------------------- */
+/*  Wrapper component                                                         */
 /* -------------------------------------------------------------------------- */
 
 function DiffViewerWrapper({
   oldValue,
   newValue,
   splitView = false,
-  showDiffOnly = true,
-  hideLineNumbers = false,
 }: {
   oldValue: string;
   newValue: string;
   splitView?: boolean;
-  showDiffOnly?: boolean;
-  hideLineNumbers?: boolean;
 }) {
+  const unifiedDiff = computeUnifiedDiff(oldValue, newValue);
   return (
-    <div className="overflow-hidden rounded-md border border-border">
-      <div className="text-xs [&_.diff-container]:font-mono [&_.diff-container]:text-sm">
-        <Suspense
-          fallback={<div className="p-4 text-sm text-muted-foreground">Loading diff...</div>}
-        >
-          <ReactDiffViewer
-            oldValue={oldValue}
-            newValue={newValue}
-            splitView={splitView}
-            useDarkTheme={true}
-            hideLineNumbers={hideLineNumbers}
-            showDiffOnly={showDiffOnly}
-            styles={DIFF_VIEWER_STYLES}
-          />
-        </Suspense>
-      </div>
+    <div className="overflow-hidden rounded-md border border-border" style={{ height: 400 }}>
+      <VirtualDiff
+        unifiedDiff={unifiedDiff}
+        splitView={splitView}
+        filePath="example.tsx"
+        codeFolding={true}
+        className="h-full"
+        data-testid="story-diff-viewer"
+      />
     </div>
   );
 }
@@ -153,93 +186,42 @@ type Story = StoryObj<typeof meta>;
 
 export const UnifiedSimple: Story = {
   name: 'Unified — Simple Edit',
-  args: {
-    oldValue: OLD_SIMPLE,
-    newValue: NEW_SIMPLE,
-    splitView: false,
-  },
+  args: { oldValue: OLD_SIMPLE, newValue: NEW_SIMPLE, splitView: false },
 };
 
 export const SplitSimple: Story = {
   name: 'Split — Simple Edit',
-  args: {
-    oldValue: OLD_SIMPLE,
-    newValue: NEW_SIMPLE,
-    splitView: true,
-  },
+  args: { oldValue: OLD_SIMPLE, newValue: NEW_SIMPLE, splitView: true },
 };
 
 export const UnifiedMultiline: Story = {
   name: 'Unified — Multi-line Refactor',
-  args: {
-    oldValue: OLD_MULTILINE,
-    newValue: NEW_MULTILINE,
-    splitView: false,
-  },
+  args: { oldValue: OLD_MULTILINE, newValue: NEW_MULTILINE, splitView: false },
 };
 
 export const SplitMultiline: Story = {
   name: 'Split — Multi-line Refactor',
-  args: {
-    oldValue: OLD_MULTILINE,
-    newValue: NEW_MULTILINE,
-    splitView: true,
-  },
+  args: { oldValue: OLD_MULTILINE, newValue: NEW_MULTILINE, splitView: true },
 };
 
 export const AdditionsOnly: Story = {
   name: 'Additions Only',
-  args: {
-    oldValue: OLD_ADDITIONS_ONLY,
-    newValue: NEW_ADDITIONS_ONLY,
-    splitView: false,
-  },
+  args: { oldValue: OLD_ADDITIONS_ONLY, newValue: NEW_ADDITIONS_ONLY, splitView: false },
 };
 
 export const DeletionsOnly: Story = {
   name: 'Deletions Only',
-  args: {
-    oldValue: OLD_DELETIONS_ONLY,
-    newValue: NEW_DELETIONS_ONLY,
-    splitView: false,
-  },
+  args: { oldValue: OLD_DELETIONS_ONLY, newValue: NEW_DELETIONS_ONLY, splitView: false },
 };
 
 export const NoChanges: Story = {
   name: 'No Changes',
-  args: {
-    oldValue: OLD_SIMPLE,
-    newValue: OLD_SIMPLE,
-    splitView: false,
-  },
-};
-
-export const ShowAllLines: Story = {
-  name: 'Show All Lines (no collapse)',
-  args: {
-    oldValue: OLD_MULTILINE,
-    newValue: NEW_MULTILINE,
-    splitView: false,
-    showDiffOnly: false,
-  },
-};
-
-export const HiddenLineNumbers: Story = {
-  name: 'Hidden Line Numbers',
-  args: {
-    oldValue: OLD_SIMPLE,
-    newValue: NEW_SIMPLE,
-    splitView: false,
-    hideLineNumbers: true,
-  },
+  args: { oldValue: OLD_SIMPLE, newValue: OLD_SIMPLE, splitView: false },
 };
 
 export const ExpandedDiffDialogStory: Story = {
   name: 'Expanded Diff Dialog',
-  args: {
-    oldValue: OLD_MULTILINE,
-    newValue: NEW_MULTILINE,
-  },
+  args: { oldValue: OLD_MULTILINE, newValue: NEW_MULTILINE },
   render: () => {
     const [open, setOpen] = useState(false);
     return (

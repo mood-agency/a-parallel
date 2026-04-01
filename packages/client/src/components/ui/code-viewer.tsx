@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 
-import { useShiki } from '@/hooks/use-shiki';
+import { ensureLanguage, highlightCode } from '@/hooks/use-highlight';
 import { cn } from '@/lib/utils';
 
 interface CodeViewerProps {
@@ -18,25 +18,26 @@ export function CodeViewer({
   maxHeight = '320px',
   className,
 }: CodeViewerProps) {
-  const { highlight, ready } = useShiki();
   const [html, setHtml] = useState<string | null>(null);
 
   useEffect(() => {
-    if (!ready || !code) return;
+    if (!code) return;
     let cancelled = false;
-    highlight(code, language).then((result) => {
-      if (!cancelled) setHtml(result);
+    ensureLanguage(language).then(() => {
+      if (!cancelled) {
+        setHtml(highlightCode(code, language));
+      }
     });
     return () => {
       cancelled = true;
     };
-  }, [code, language, ready, highlight]);
+  }, [code, language]);
 
   return (
     <div className={cn('overflow-x-auto overflow-y-auto', className)} style={{ maxHeight }}>
       {html ? (
         <div
-          className="code-viewer font-mono text-xs leading-relaxed"
+          className="hljs code-viewer font-mono text-xs leading-relaxed"
           style={{ counterReset: `line ${startLine - 1}` }}
           dangerouslySetInnerHTML={{ __html: html }}
         />

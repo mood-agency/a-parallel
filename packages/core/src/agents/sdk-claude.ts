@@ -38,8 +38,13 @@ export class SDKClaudeProcess extends BaseAgentProcess {
     // Increase API_TIMEOUT_MS so interactive hooks (AskUserQuestion, ExitPlanMode)
     // don't get killed by the default 600s HTTP timeout while waiting for user input.
     // 4 hours = 14_400_000ms — enough for any realistic user response time.
+    // Strip CLAUDECODE to prevent "nested session" detection when the runner
+    // itself runs inside a Claude Code terminal or after a previous query()
+    // mutated process.env.
+    delete process.env.CLAUDECODE;
+    const { CLAUDECODE: _cc, ...cleanEnv } = process.env;
     const sdkEnv = {
-      ...process.env,
+      ...cleanEnv,
       API_TIMEOUT_MS: process.env.API_TIMEOUT_MS ?? '14400000',
     };
 
@@ -113,13 +118,11 @@ export class SDKClaudeProcess extends BaseAgentProcess {
       sdkOptions.allowDangerouslySkipPermissions = true;
     }
 
-    // On Windows, prevent the SDK's child process from inheriting the server's
-    // listening socket handle. The SDK's default spawn uses 'inherit' stdio which
-    // causes bInheritHandles=TRUE, inheriting ALL handles — including the server
-    // socket. Using 'pipe' triggers PROC_THREAD_ATTRIBUTE_HANDLE_LIST in libuv,
-    // restricting inheritance to only the pipe handles.
-    // Same pattern as sandbox-manager.ts createSpawnFn() and pty-manager.ts.
-    if (process.platform === 'win32' && !sdkOptions.spawnClaudeCodeProcess) {
+    // Custom spawn wrapper to:
+    // 1. Strip CLAUDECODE from the child env at spawn-time (prevents "nested
+    //    session" detection even if the SDK or Bun re-injects it into the env).
+    // 2. On Windows, use 'pipe' stdio to avoid inheriting the server socket.
+    if (!sdkOptions.spawnClaudeCodeProcess) {
       const { spawn } = await import('child_process');
       sdkOptions.spawnClaudeCodeProcess = (options: {
         command: string;
@@ -128,33 +131,36 @@ export class SDKClaudeProcess extends BaseAgentProcess {
         env: Record<string, string | undefined>;
         signal: AbortSignal;
       }) => {
+        // Final CLAUDECODE strip — belt-and-suspenders with the earlier env clean
+        const { CLAUDECODE: _stripped, ...spawnEnv } = options.env;
         const child = spawn(options.command, options.args, {
           stdio: ['pipe', 'pipe', 'pipe'],
           cwd: options.cwd,
-          env: options.env as NodeJS.ProcessEnv,
+          env: spawnEnv as NodeJS.ProcessEnv,
           windowsHide: true,
         });
-        // Capture stderr so we can diagnose startup failures (exit code 1)
         child.stderr?.on('data', (data: Buffer) => {
           dlog.error('child stderr', { data: data.toString().trimEnd() });
         });
-        // On Windows, child.kill('SIGTERM') only kills the immediate process,
-        // not the subprocess tree. Use taskkill /F /T to kill the entire tree.
-        const killTree = () => {
-          if (child.pid != null) {
-            try {
-              Bun.spawnSync(['taskkill', '/F', '/T', '/PID', String(child.pid)]);
-            } catch {
-              // Best-effort: process may have already exited
+        if (process.platform === 'win32') {
+          // On Windows, child.kill('SIGTERM') only kills the immediate process,
+          // not the subprocess tree. Use taskkill /F /T to kill the entire tree.
+          const killTree = () => {
+            if (child.pid != null) {
+              try {
+                Bun.spawnSync(['taskkill', '/F', '/T', '/PID', String(child.pid)]);
+              } catch {
+                // Best-effort: process may have already exited
+              }
             }
+          };
+          if (options.signal.aborted) {
+            killTree();
+          } else {
+            const onAbort = () => killTree();
+            options.signal.addEventListener('abort', onAbort, { once: true });
+            child.once('exit', () => options.signal.removeEventListener('abort', onAbort));
           }
-        };
-        if (options.signal.aborted) {
-          killTree();
-        } else {
-          const onAbort = () => killTree();
-          options.signal.addEventListener('abort', onAbort, { once: true });
-          child.once('exit', () => options.signal.removeEventListener('abort', onAbort));
         }
         return child;
       };

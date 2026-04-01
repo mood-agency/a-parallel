@@ -680,7 +680,10 @@
     "unpushedCommitsWarning": "This worktree has {{count}} unpushed commit(s). They will be lost if not pushed first.",
     "dirtyFilesWarning": "This worktree has {{count}} uncommitted file(s).",
     "noUnpushedCommits": "All commits have been pushed or merged.",
-    "deleteBranchOption": "Also delete local branch \"{{branch}}\""
+    "deleteBranchOption": "Also delete local branch \"{{branch}}\"",
+    "createBranchTitle": "Create Branch",
+    "createBranchPlaceholder": "new-branch-name",
+    "createBranchDesc": "Create a new branch for this thread. The thread will switch to the new branch."
   },
   "toast": {
     "threadArchived": "Thread archived successfully",

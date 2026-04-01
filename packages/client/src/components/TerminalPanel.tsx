@@ -741,8 +741,24 @@ export function TerminalPanel() {
   }, [fetchAvailableShells]);
 
   const [panelHeight, setPanelHeight] = useState(PANEL_HEIGHT);
-  const [dropdownOpen, setDropdownOpen] = useState(false);
-  const [tooltipOpen, setTooltipOpen] = useState(false);
+  const [newTermTooltipBlocked, setNewTermTooltipBlocked] = useState(false);
+  const handleNewTermDropdown = useCallback((open: boolean) => {
+    if (open) {
+      setNewTermTooltipBlocked(true);
+    } else {
+      (document.activeElement as HTMLElement)?.blur();
+      setTimeout(() => setNewTermTooltipBlocked(false), 150);
+    }
+  }, []);
+  const [signalTooltipBlocked, setSignalTooltipBlocked] = useState(false);
+  const handleSignalDropdown = useCallback((open: boolean) => {
+    if (open) {
+      setSignalTooltipBlocked(true);
+    } else {
+      (document.activeElement as HTMLElement)?.blur();
+      setTimeout(() => setSignalTooltipBlocked(false), 150);
+    }
+  }, []);
   const startHeight = useRef(panelHeight);
 
   const {
@@ -878,8 +894,8 @@ export function TerminalPanel() {
             ))}
           </div>
 
-          <DropdownMenu onOpenChange={setDropdownOpen}>
-            <Tooltip open={dropdownOpen ? false : tooltipOpen} onOpenChange={setTooltipOpen}>
+          <DropdownMenu onOpenChange={handleNewTermDropdown}>
+            <Tooltip open={newTermTooltipBlocked ? false : undefined}>
               <TooltipTrigger asChild>
                 <DropdownMenuTrigger asChild>
                   <Button variant="ghost" size="icon-xs">
@@ -910,8 +926,8 @@ export function TerminalPanel() {
           {effectiveActiveTabId &&
             visibleTabs.find((t) => t.id === effectiveActiveTabId)?.alive &&
             visibleTabs.find((t) => t.id === effectiveActiveTabId)?.type === 'pty' && (
-              <DropdownMenu>
-                <Tooltip>
+              <DropdownMenu onOpenChange={handleSignalDropdown}>
+                <Tooltip open={signalTooltipBlocked ? false : undefined}>
                   <TooltipTrigger asChild>
                     <DropdownMenuTrigger asChild>
                       <Button variant="ghost" size="icon-xs" data-testid="terminal-signal-menu">

@@ -46,6 +46,9 @@ export class AgentRunner {
    *  incorrect ordering in the DB. */
   private messageQueues = new Map<string, Promise<void>>();
 
+  /** Interval that sweeps settled promises from messageQueues to prevent unbounded growth. */
+  private messageQueueCleanupTimer: ReturnType<typeof setInterval>;
+
   constructor(
     private threadManager: IThreadManager,
     private wsBroker: IWSBroker,
@@ -157,6 +160,32 @@ export class AgentRunner {
         });
       });
     });
+
+    // Sweep settled promises from messageQueues every 5 minutes to prevent
+    // unbounded Map growth when threads are created continuously.
+    // Tracks which threads have settled so we can delete them on the next tick.
+    const settledThreads = new Set<string>();
+    this.messageQueueCleanupTimer = setInterval(() => {
+      // Delete threads that settled since the last sweep
+      for (const threadId of settledThreads) {
+        // Only delete if the promise reference hasn't changed (thread may have restarted)
+        const current = this.messageQueues.get(threadId);
+        if (current === undefined) {
+          settledThreads.delete(threadId);
+          continue;
+        }
+        this.messageQueues.delete(threadId);
+        settledThreads.delete(threadId);
+      }
+      // Mark currently-settled promises for deletion on the next sweep
+      for (const [threadId, promise] of this.messageQueues) {
+        void promise.then(
+          () => settledThreads.add(threadId),
+          () => settledThreads.add(threadId),
+        );
+      }
+    }, 5 * 60_000);
+    if (this.messageQueueCleanupTimer.unref) this.messageQueueCleanupTimer.unref();
 
     // Adopt surviving agent processes from a previous --watch restart.
     // globalThis.__funnyActiveAgents is set by the previous cleanup handler.
@@ -600,6 +629,8 @@ export class AgentRunner {
    * Kill all active agent processes. Called during server shutdown.
    */
   async stopAllAgents(): Promise<void> {
+    clearInterval(this.messageQueueCleanupTimer);
+    this.messageQueues.clear();
     await this.orchestrator.stopAll();
   }
 

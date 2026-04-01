@@ -10,13 +10,14 @@ import {
   PinOff,
   Bot,
   Pencil,
-  GitPullRequest,
-  GitPullRequestClosed,
-  GitMerge,
+  GitFork,
+  GitBranch,
+  Loader2,
 } from 'lucide-react';
 import { useState, memo, useCallback, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
 
+import { PRBadge } from '@/components/PRBadge';
 import { ThreadPowerline } from '@/components/ThreadPowerline';
 import { Button } from '@/components/ui/button';
 import {
@@ -96,6 +97,11 @@ export const ThreadItem = memo(function ThreadItem({
   const [isRenameOpen, setIsRenameOpen] = useState(false);
   const [renameValue, setRenameValue] = useState('');
 
+  // Create Branch dialog state
+  const [isCreateBranchOpen, setIsCreateBranchOpen] = useState(false);
+  const [branchName, setBranchName] = useState('');
+  const [createBranchLoading, setCreateBranchLoading] = useState(false);
+
   const openRenameDialog = useCallback(() => {
     setRenameValue(thread.title);
     setIsRenameOpen(true);
@@ -108,6 +114,23 @@ export const ThreadItem = memo(function ThreadItem({
     }
     setIsRenameOpen(false);
   }, [renameValue, thread.title, onRename]);
+
+  const commitCreateBranch = useCallback(async () => {
+    const name = branchName
+      .trim()
+      .replace(/\s+/g, '-')
+      .replace(/[^a-zA-Z0-9\-_/.]/g, '');
+    if (!name || !thread.projectId) return;
+    setCreateBranchLoading(true);
+    const result = await api.checkout(thread.projectId, name, 'carry', true);
+    setCreateBranchLoading(false);
+    if (result.isErr()) {
+      toastError(result.error);
+    } else {
+      setIsCreateBranchOpen(false);
+      setBranchName('');
+    }
+  }, [branchName, thread.projectId]);
 
   // Thread status config
   const threadStatusCfg = statusConfig[thread.status as ThreadStatus] ?? statusConfig.pending;
@@ -235,58 +258,15 @@ export const ThreadItem = memo(function ThreadItem({
               diffStatsSize="xs"
               data-testid={`thread-powerline-${thread.id}`}
             />
-            {hasPR &&
-              effectiveGitStatus &&
-              (() => {
-                const prState = effectiveGitStatus.prState ?? 'OPEN';
-                const PrIcon =
-                  prState === 'MERGED'
-                    ? GitMerge
-                    : prState === 'CLOSED'
-                      ? GitPullRequestClosed
-                      : GitPullRequest;
-                const prColor =
-                  prState === 'MERGED'
-                    ? 'text-purple-500 hover:text-purple-400'
-                    : prState === 'CLOSED'
-                      ? 'text-red-500 hover:text-red-400'
-                      : 'text-green-500 hover:text-green-400';
-                const prLabel =
-                  prState === 'MERGED'
-                    ? t('thread.prMerged', {
-                        number: effectiveGitStatus.prNumber,
-                        defaultValue: `PR #${effectiveGitStatus.prNumber} (merged)`,
-                      })
-                    : prState === 'CLOSED'
-                      ? t('thread.prClosed', {
-                          number: effectiveGitStatus.prNumber,
-                          defaultValue: `PR #${effectiveGitStatus.prNumber} (closed)`,
-                        })
-                      : t('thread.prOpen', {
-                          number: effectiveGitStatus.prNumber,
-                          defaultValue: `PR #${effectiveGitStatus.prNumber}`,
-                        });
-                return (
-                  <Tooltip>
-                    <TooltipTrigger asChild>
-                      <a
-                        href={effectiveGitStatus.prUrl}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        onClick={(e) => e.stopPropagation()}
-                        className={`flex flex-shrink-0 items-center gap-0.5 text-xs ${prColor}`}
-                        data-testid={`thread-pr-badge-${thread.id}`}
-                      >
-                        <PrIcon className="icon-xs" />
-                        <span>#{effectiveGitStatus.prNumber}</span>
-                      </a>
-                    </TooltipTrigger>
-                    <TooltipContent side="top" className="text-xs">
-                      {prLabel}
-                    </TooltipContent>
-                  </Tooltip>
-                );
-              })()}
+            {hasPR && effectiveGitStatus && (
+              <PRBadge
+                prNumber={effectiveGitStatus.prNumber!}
+                prState={effectiveGitStatus.prState ?? 'OPEN'}
+                prUrl={effectiveGitStatus.prUrl}
+                size="xs"
+                data-testid={`thread-pr-badge-${thread.id}`}
+              />
+            )}
             {hasSnippet ? (
               <span className="min-w-0 flex-1 truncate text-xs text-muted-foreground/50">
                 {thread.lastAssistantMessage}
@@ -359,6 +339,35 @@ export const ThreadItem = memo(function ThreadItem({
                   <Terminal className="icon-sm" />
                   {t('sidebar.openTerminal')}
                 </DropdownMenuItem>
+                {thread.mode !== 'worktree' && !isBusy && (
+                  <>
+                    <DropdownMenuSeparator />
+                    <DropdownMenuItem
+                      data-testid={`thread-convert-worktree-${thread.id}`}
+                      onClick={async (e) => {
+                        e.stopPropagation();
+                        const result = await api.convertToWorktree(thread.id);
+                        if (result.isErr()) {
+                          toastError(result.error);
+                        }
+                      }}
+                    >
+                      <GitFork className="icon-sm" />
+                      {t('dialog.convertToWorktreeTitle')}
+                    </DropdownMenuItem>
+                    <DropdownMenuItem
+                      data-testid={`thread-create-branch-${thread.id}`}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setIsCreateBranchOpen(true);
+                      }}
+                    >
+                      <GitBranch className="icon-sm" />
+                      {t('dialog.createBranchTitle')}
+                    </DropdownMenuItem>
+                    <DropdownMenuSeparator />
+                  </>
+                )}
                 {onRename && (
                   <DropdownMenuItem
                     data-testid={`thread-rename-${thread.id}`}
@@ -451,6 +460,48 @@ export const ThreadItem = memo(function ThreadItem({
               data-testid="thread-rename-confirm"
             >
               {t('common.save')}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Create Branch dialog */}
+      <Dialog open={isCreateBranchOpen} onOpenChange={setIsCreateBranchOpen}>
+        <DialogContent
+          className="sm:max-w-md"
+          data-testid={`thread-create-branch-dialog-${thread.id}`}
+        >
+          <DialogHeader>
+            <DialogTitle>{t('dialog.createBranchTitle')}</DialogTitle>
+          </DialogHeader>
+          <Input
+            data-testid={`thread-create-branch-input-${thread.id}`}
+            placeholder={t('dialog.createBranchPlaceholder')}
+            value={branchName}
+            onChange={(e) => setBranchName(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' && branchName.trim()) commitCreateBranch();
+            }}
+            autoFocus
+          />
+          <DialogFooter>
+            <Button
+              variant="ghost"
+              onClick={() => setIsCreateBranchOpen(false)}
+              data-testid={`thread-create-branch-cancel-${thread.id}`}
+            >
+              {t('common.cancel')}
+            </Button>
+            <Button
+              onClick={commitCreateBranch}
+              disabled={!branchName.trim() || createBranchLoading}
+              data-testid={`thread-create-branch-confirm-${thread.id}`}
+            >
+              {createBranchLoading ? (
+                <Loader2 className="icon-sm animate-spin" />
+              ) : (
+                t('common.create', 'Create')
+              )}
             </Button>
           </DialogFooter>
         </DialogContent>

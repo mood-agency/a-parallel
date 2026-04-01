@@ -1,6 +1,8 @@
 import type { StartupCommand, Message, ToolCall, ThreadStage } from '@funny/shared';
 import {
   GitCompare,
+  GitFork,
+  GitBranch,
   Globe,
   Terminal,
   ExternalLink,
@@ -23,7 +25,7 @@ import {
   ListChecks,
   Activity,
 } from 'lucide-react';
-import { memo, useState, useEffect, useCallback, startTransition } from 'react';
+import { memo, useState, useEffect, useCallback, useRef, startTransition } from 'react';
 import { useTranslation } from 'react-i18next';
 import { toast } from 'sonner';
 import { useShallow } from 'zustand/react/shallow';
@@ -39,12 +41,20 @@ import {
 } from '@/components/ui/breadcrumb';
 import { Button } from '@/components/ui/button';
 import {
+  Dialog,
+  DialogContent,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
+import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuTrigger,
   DropdownMenuSeparator,
 } from '@/components/ui/dropdown-menu';
+import { Input } from '@/components/ui/input';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import {
   Select,
@@ -131,6 +141,54 @@ const MoreActionsMenu = memo(function MoreActionsMenu() {
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [deleteLoading, setDeleteLoading] = useState(false);
   const isWorktree = threadMode === 'worktree' && !!threadBranch;
+  const threadStatus = useThreadStore((s) => s.activeThread?.status);
+  const isBusy = threadStatus === 'running' || threadStatus === 'setting_up';
+  const canConvertToWorktree = threadMode !== 'worktree' && !isBusy;
+
+  // Tooltip ↔ DropdownMenu: suppress tooltip while dropdown is open and
+  // briefly after it closes (focus-return would otherwise flash the tooltip).
+  const [moreActionsTooltipBlocked, setMoreActionsTooltipBlocked] = useState(false);
+  const handleMoreActionsDropdown = useCallback((open: boolean) => {
+    if (open) {
+      setMoreActionsTooltipBlocked(true);
+    } else {
+      // Keep blocked briefly so the focus-return tooltip doesn't flash
+      (document.activeElement as HTMLElement)?.blur();
+      setTimeout(() => setMoreActionsTooltipBlocked(false), 150);
+    }
+  }, []);
+
+  // Create Branch dialog state
+  const [createBranchOpen, setCreateBranchOpen] = useState(false);
+  const [branchName, setBranchName] = useState('');
+  const [createBranchLoading, setCreateBranchLoading] = useState(false);
+
+  const handleConvertToWorktree = useCallback(async () => {
+    if (!threadId) return;
+    const result = await api.convertToWorktree(threadId);
+    if (result.isErr()) {
+      toast.error(String(result.error));
+    } else {
+      toast.success(t('toast.convertToWorktreeStarted'));
+    }
+  }, [threadId, t]);
+
+  const handleCreateBranch = useCallback(async () => {
+    const name = branchName
+      .trim()
+      .replace(/\s+/g, '-')
+      .replace(/[^a-zA-Z0-9\-_/.]/g, '');
+    if (!name || !threadProjectId) return;
+    setCreateBranchLoading(true);
+    const result = await api.checkout(threadProjectId, name, 'carry', true);
+    setCreateBranchLoading(false);
+    if (result.isErr()) {
+      toast.error(String(result.error));
+    } else {
+      setCreateBranchOpen(false);
+      setBranchName('');
+    }
+  }, [branchName, threadProjectId]);
 
   const handleDeleteConfirm = useCallback(async () => {
     const state = useThreadStore.getState();
@@ -162,8 +220,8 @@ const MoreActionsMenu = memo(function MoreActionsMenu() {
 
   return (
     <>
-      <DropdownMenu>
-        <Tooltip>
+      <DropdownMenu onOpenChange={handleMoreActionsDropdown}>
+        <Tooltip open={moreActionsTooltipBlocked ? false : undefined}>
           <TooltipTrigger asChild>
             <DropdownMenuTrigger asChild>
               <Button
@@ -228,6 +286,27 @@ const MoreActionsMenu = memo(function MoreActionsMenu() {
             )}
             {t('thread.copyWithTools', 'Copy with tool calls')}
           </DropdownMenuItem>
+          {threadId && canConvertToWorktree && (
+            <>
+              <DropdownMenuSeparator />
+              <DropdownMenuItem
+                data-testid="header-menu-convert-worktree"
+                onClick={handleConvertToWorktree}
+                className="cursor-pointer"
+              >
+                <GitFork className="icon-base mr-2" />
+                {t('dialog.convertToWorktreeTitle')}
+              </DropdownMenuItem>
+              <DropdownMenuItem
+                data-testid="header-menu-create-branch"
+                onClick={() => setCreateBranchOpen(true)}
+                className="cursor-pointer"
+              >
+                <GitBranch className="icon-base mr-2" />
+                {t('dialog.createBranchTitle')}
+              </DropdownMenuItem>
+            </>
+          )}
           {threadId && (
             <>
               <DropdownMenuSeparator />
@@ -278,6 +357,43 @@ const MoreActionsMenu = memo(function MoreActionsMenu() {
         onCancel={() => setDeleteOpen(false)}
         onConfirm={handleDeleteConfirm}
       />
+      <Dialog open={createBranchOpen} onOpenChange={setCreateBranchOpen}>
+        <DialogContent className="sm:max-w-md" data-testid="create-branch-dialog">
+          <DialogHeader>
+            <DialogTitle>{t('dialog.createBranchTitle')}</DialogTitle>
+          </DialogHeader>
+          <Input
+            data-testid="create-branch-input"
+            placeholder={t('dialog.createBranchPlaceholder')}
+            value={branchName}
+            onChange={(e) => setBranchName(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' && branchName.trim()) handleCreateBranch();
+            }}
+            autoFocus
+          />
+          <DialogFooter>
+            <Button
+              variant="ghost"
+              onClick={() => setCreateBranchOpen(false)}
+              data-testid="create-branch-cancel"
+            >
+              {t('common.cancel')}
+            </Button>
+            <Button
+              onClick={handleCreateBranch}
+              disabled={!branchName.trim() || createBranchLoading}
+              data-testid="create-branch-confirm"
+            >
+              {createBranchLoading ? (
+                <Loader2 className="icon-base animate-spin" />
+              ) : (
+                t('common.create', 'Create')
+              )}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </>
   );
 });
@@ -496,6 +612,17 @@ export const ProjectHeader = memo(function ProjectHeader() {
     }
   }, [activeThreadId, selectedProjectId, fetchForThread, fetchProjectStatus]);
 
+  // Tooltip ↔ DropdownMenu: suppress tooltip while editor dropdown is open
+  const [editorTooltipBlocked, setEditorTooltipBlocked] = useState(false);
+  const handleEditorDropdown = useCallback((open: boolean) => {
+    if (open) {
+      setEditorTooltipBlocked(true);
+    } else {
+      (document.activeElement as HTMLElement)?.blur();
+      setTimeout(() => setEditorTooltipBlocked(false), 150);
+    }
+  }, []);
+
   if (!selectedProjectId) return null;
 
   const handleOpenInEditor = async (editor: Editor) => {
@@ -649,8 +776,8 @@ export const ProjectHeader = memo(function ProjectHeader() {
                 <TooltipContent>{t('preview.openPreview')}</TooltipContent>
               </Tooltip>
             )}
-            <DropdownMenu>
-              <Tooltip>
+            <DropdownMenu onOpenChange={handleEditorDropdown}>
+              <Tooltip open={editorTooltipBlocked ? false : undefined}>
                 <TooltipTrigger asChild>
                   <DropdownMenuTrigger asChild>
                     <Button

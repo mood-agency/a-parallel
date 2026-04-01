@@ -675,7 +675,10 @@
     "unpushedCommitsWarning": "Este worktree tiene {{count}} commit(s) sin push. Se perderán si no se hace push primero.",
     "dirtyFilesWarning": "Este worktree tiene {{count}} archivo(s) sin commitear.",
     "noUnpushedCommits": "Todos los commits han sido pusheados o mergeados.",
-    "deleteBranchOption": "También eliminar la rama local \"{{branch}}\""
+    "deleteBranchOption": "También eliminar la rama local \"{{branch}}\"",
+    "createBranchTitle": "Crear Rama",
+    "createBranchPlaceholder": "nombre-nueva-rama",
+    "createBranchDesc": "Crear una nueva rama para este hilo. El hilo cambiará a la nueva rama."
   },
   "toast": {
     "threadArchived": "Hilo archivado exitosamente",

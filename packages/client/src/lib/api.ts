@@ -247,10 +247,15 @@ export const api = {
       hasDirtyFiles?: boolean;
       dirtyFileCount?: number;
     }>(`/projects/${projectId}/checkout-preflight?branch=${encodeURIComponent(branch)}`),
-  checkout: (projectId: string, branch: string, strategy: 'stash' | 'carry' = 'carry') =>
+  checkout: (
+    projectId: string,
+    branch: string,
+    strategy: 'stash' | 'carry' = 'carry',
+    create = false,
+  ) =>
     request<{ ok: boolean; currentBranch: string }>(`/projects/${projectId}/checkout`, {
       method: 'POST',
-      body: JSON.stringify({ branch, strategy }),
+      body: JSON.stringify({ branch, strategy, create }),
     }),
 
   // Threads
