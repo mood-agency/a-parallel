@@ -1,7 +1,5 @@
 import type { FileDiffSummary, PRReviewThread } from '@funny/shared';
 import {
-  ArrowDown,
-  ArrowUp,
   Columns3,
   Columns2,
   FileCode,
@@ -19,7 +17,6 @@ import {
   useCallback,
   useEffect,
   useMemo,
-  useRef,
   useTransition,
 } from 'react';
 
@@ -31,7 +28,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
-import { Input } from '@/components/ui/input';
+import { SearchBar } from '@/components/ui/search-bar';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { FileExtensionIcon } from '@/lib/file-icons';
 import { cn } from '@/lib/utils';
@@ -135,6 +132,24 @@ interface ExpandedDiffDialogProps {
   ) => Promise<{ oldValue: string; newValue: string; rawDiff?: string } | null>;
 }
 
+/** Props for the inline (non-dialog) expanded diff view */
+export interface ExpandedDiffViewProps {
+  filePath: string;
+  oldValue: string;
+  newValue: string;
+  icon?: ComponentType<{ className?: string }>;
+  loading?: boolean;
+  rawDiff?: string;
+  files?: FileDiffSummary[];
+  onFileSelect?: (filePath: string) => void;
+  diffCache?: Map<string, string>;
+  onClose: () => void;
+  prReviewThreads?: PRReviewThread[];
+  onRequestFullDiff?: (
+    filePath: string,
+  ) => Promise<{ oldValue: string; newValue: string; rawDiff?: string } | null>;
+}
+
 /* ── Diff content ── */
 
 function DiffContent({
@@ -226,7 +241,7 @@ export function ExpandedDiffDialog({
   prReviewThreads,
   onRequestFullDiff,
 }: ExpandedDiffDialogProps) {
-  const [viewMode, setViewMode] = useState<DiffViewMode>('three-pane');
+  const [userViewMode, setUserViewMode] = useState<DiffViewMode>('three-pane');
   const [wordWrap, setWordWrap] = useState(false);
   const [showFullFile, setShowFullFile] = useState(false);
   const [isPending, startTransition] = useTransition();
@@ -235,17 +250,21 @@ export function ExpandedDiffDialog({
   >(new Map());
   const [loadingFullDiff, setLoadingFullDiff] = useState(false);
 
+  // Force unified mode for fully added/deleted files (split/three-pane would show empty columns)
+  const currentFileStatus = files?.find((f) => f.path === filePath)?.status;
+  const isOneSided = currentFileStatus === 'deleted' || currentFileStatus === 'added';
+  const viewMode: DiffViewMode = isOneSided ? 'unified' : userViewMode;
+
   // ── Search state ──
   const [showSearch, setShowSearch] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [currentMatchIndex, setCurrentMatchIndex] = useState(0);
   const [totalMatches, setTotalMatches] = useState(0);
-  const searchInputRef = useRef<HTMLInputElement>(null);
 
   const VIEW_MODE_CYCLE: DiffViewMode[] = ['unified', 'split', 'three-pane'];
   const cycleViewMode = useCallback(() => {
     startTransition(() => {
-      setViewMode((prev) => {
+      setUserViewMode((prev) => {
         const idx = VIEW_MODE_CYCLE.indexOf(prev);
         return VIEW_MODE_CYCLE[(idx + 1) % VIEW_MODE_CYCLE.length];
       });
@@ -275,10 +294,7 @@ export function ExpandedDiffDialog({
   }, [showFullFile, filePath, fullDiffCache, onRequestFullDiff]);
 
   // ── Search handlers ──
-  const openSearch = useCallback(() => {
-    setShowSearch(true);
-    setTimeout(() => searchInputRef.current?.focus(), 0);
-  }, []);
+  const openSearch = useCallback(() => setShowSearch(true), []);
 
   const closeSearch = useCallback(() => {
     setShowSearch(false);
@@ -302,33 +318,26 @@ export function ExpandedDiffDialog({
     setCurrentMatchIndex((prev) => (count === 0 ? 0 : Math.min(prev, count - 1)));
   }, []);
 
-  const handleSearchKeyDown = useCallback(
-    (e: React.KeyboardEvent) => {
-      if (e.key === 'Escape') {
-        closeSearch();
-      } else if (e.key === 'Enter') {
-        if (e.shiftKey) goToPrevMatch();
-        else goToNextMatch();
-      }
-    },
-    [closeSearch, goToNextMatch, goToPrevMatch],
-  );
-
-  // Ctrl+F / Escape handler for the dialog
-  const handleDialogKeyDown = useCallback(
-    (e: React.KeyboardEvent) => {
+  // Global Ctrl+F / Escape handler — uses window listener so it works
+  // even when focus is on a nested element inside the dialog.
+  // stopImmediatePropagation prevents other capture-phase listeners
+  // (e.g. ThreadView search) from also firing.
+  useEffect(() => {
+    if (!open) return;
+    const handler = (e: KeyboardEvent) => {
       if ((e.ctrlKey || e.metaKey) && e.key === 'f') {
         e.preventDefault();
-        e.stopPropagation();
+        e.stopImmediatePropagation();
         openSearch();
       } else if (e.key === 'Escape' && showSearch) {
         e.preventDefault();
-        e.stopPropagation();
+        e.stopImmediatePropagation();
         closeSearch();
       }
-    },
-    [openSearch, showSearch, closeSearch],
-  );
+    };
+    window.addEventListener('keydown', handler, true);
+    return () => window.removeEventListener('keydown', handler, true);
+  }, [open, openSearch, showSearch, closeSearch]);
 
   // Reset search when file changes
   useEffect(() => {
@@ -410,7 +419,6 @@ export function ExpandedDiffDialog({
       <DialogContent
         className="flex h-[85vh] w-[90vw] max-w-[90vw] flex-col gap-0 p-0"
         onOpenAutoFocus={(e) => e.preventDefault()}
-        onKeyDown={handleDialogKeyDown}
         onEscapeKeyDown={(e) => {
           if (showSearch) e.preventDefault();
         }}
@@ -429,9 +437,9 @@ export function ExpandedDiffDialog({
             <TooltipTrigger asChild>
               <Button
                 variant="ghost"
-                size="icon-xs"
+                size="icon-sm"
                 onClick={cycleViewMode}
-                disabled={isPending}
+                disabled={isPending || isOneSided}
                 className="flex-shrink-0 text-muted-foreground"
                 data-testid="diff-toggle-view-mode"
               >
@@ -447,18 +455,20 @@ export function ExpandedDiffDialog({
               </Button>
             </TooltipTrigger>
             <TooltipContent side="bottom">
-              {viewMode === 'three-pane'
-                ? 'Three-pane — click for split'
-                : viewMode === 'split'
-                  ? 'Split — click for unified'
-                  : 'Unified — click for three-pane'}
+              {isOneSided
+                ? `Unified only — file ${currentFileStatus === 'deleted' ? 'deleted' : 'added'}`
+                : viewMode === 'three-pane'
+                  ? 'Three-pane — click for split'
+                  : viewMode === 'split'
+                    ? 'Split — click for unified'
+                    : 'Unified — click for three-pane'}
             </TooltipContent>
           </Tooltip>
           <Tooltip>
             <TooltipTrigger asChild>
               <Button
                 variant="ghost"
-                size="icon-xs"
+                size="icon-sm"
                 onClick={() => setWordWrap((w) => !w)}
                 className={cn(
                   'flex-shrink-0 text-muted-foreground',
@@ -477,7 +487,7 @@ export function ExpandedDiffDialog({
             <TooltipTrigger asChild>
               <Button
                 variant="ghost"
-                size="icon-xs"
+                size="icon-sm"
                 onClick={toggleFullFile}
                 disabled={isPending || loadingFullDiff}
                 className={cn(
@@ -501,7 +511,7 @@ export function ExpandedDiffDialog({
             <TooltipTrigger asChild>
               <Button
                 variant="ghost"
-                size="icon-xs"
+                size="icon-sm"
                 onClick={openSearch}
                 className={cn(
                   'flex-shrink-0 text-muted-foreground',
@@ -518,64 +528,6 @@ export function ExpandedDiffDialog({
             {description || `Diff for ${getFileName(filePath)}`}
           </DialogDescription>
         </DialogHeader>
-
-        {/* Search bar */}
-        {showSearch && (
-          <div
-            className="flex items-center gap-2 border-b border-border bg-muted/30 px-4 py-2"
-            data-testid="diff-search-bar"
-          >
-            <Search className="h-3.5 w-3.5 flex-shrink-0 text-muted-foreground" />
-            <Input
-              ref={searchInputRef}
-              value={searchQuery}
-              onChange={(e) => {
-                setSearchQuery(e.target.value);
-                setCurrentMatchIndex(0);
-              }}
-              onKeyDown={handleSearchKeyDown}
-              placeholder="Search in diff..."
-              className="h-7 flex-1 text-xs"
-              data-testid="diff-search-input"
-            />
-            <span
-              className="flex-shrink-0 text-xs tabular-nums text-muted-foreground"
-              data-testid="diff-search-count"
-            >
-              {searchQuery
-                ? totalMatches > 0
-                  ? `${currentMatchIndex + 1}/${totalMatches}`
-                  : 'No results'
-                : ''}
-            </span>
-            <Button
-              variant="ghost"
-              size="icon-xs"
-              onClick={goToPrevMatch}
-              disabled={totalMatches === 0}
-              data-testid="diff-search-prev"
-            >
-              <ArrowUp className="h-3.5 w-3.5" />
-            </Button>
-            <Button
-              variant="ghost"
-              size="icon-xs"
-              onClick={goToNextMatch}
-              disabled={totalMatches === 0}
-              data-testid="diff-search-next"
-            >
-              <ArrowDown className="h-3.5 w-3.5" />
-            </Button>
-            <Button
-              variant="ghost"
-              size="icon-xs"
-              onClick={closeSearch}
-              data-testid="diff-search-close"
-            >
-              <X className="h-3.5 w-3.5" />
-            </Button>
-          </div>
-        )}
 
         {/* Multi-tab bar */}
         {hasMultipleTabs && (
@@ -609,7 +561,26 @@ export function ExpandedDiffDialog({
           </div>
         )}
 
-        <div className="flex min-h-0 flex-1">
+        <div className="relative flex min-h-0 flex-1">
+          {/* Search bar — positioned below header, above diff content */}
+          {showSearch && (
+            <SearchBar
+              query={searchQuery}
+              onQueryChange={(v) => {
+                setSearchQuery(v);
+                setCurrentMatchIndex(0);
+              }}
+              currentIndex={currentMatchIndex}
+              totalMatches={totalMatches}
+              onPrev={goToPrevMatch}
+              onNext={goToNextMatch}
+              onClose={closeSearch}
+              placeholder="Search in diff..."
+              showIcon={false}
+              testIdPrefix="diff-search"
+              className="absolute right-4 top-0 z-30 gap-1.5 rounded-b-lg border border-t-0 border-border bg-popover px-2 py-1.5 shadow-md"
+            />
+          )}
           {/* File tree sidebar */}
           {hasFileSidebar && (
             <div className="flex w-80 flex-shrink-0 flex-col border-r border-border">
@@ -679,5 +650,387 @@ export function ExpandedDiffDialog({
         </div>
       </DialogContent>
     </Dialog>
+  );
+}
+
+/* ── Inline expanded diff view (no dialog, no file tree) ── */
+
+export function ExpandedDiffView({
+  filePath,
+  oldValue,
+  newValue,
+  icon: Icon = FileCode,
+  loading = false,
+  rawDiff,
+  files,
+  onFileSelect,
+  diffCache,
+  onClose,
+  prReviewThreads,
+  onRequestFullDiff,
+}: ExpandedDiffViewProps) {
+  const [userViewMode, setUserViewMode] = useState<DiffViewMode>('three-pane');
+  const [wordWrap, setWordWrap] = useState(false);
+  const [showFullFile, setShowFullFile] = useState(false);
+  const [isPending, startTransition] = useTransition();
+  const [fullDiffCache, setFullDiffCache] = useState<
+    Map<string, { oldValue: string; newValue: string; rawDiff?: string }>
+  >(new Map());
+  const [loadingFullDiff, setLoadingFullDiff] = useState(false);
+
+  const currentFileStatus = files?.find((f) => f.path === filePath)?.status;
+  const isOneSided = currentFileStatus === 'deleted' || currentFileStatus === 'added';
+  const viewMode: DiffViewMode = isOneSided ? 'unified' : userViewMode;
+
+  // ── Search state ──
+  const [showSearch, setShowSearch] = useState(false);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [currentMatchIndex, setCurrentMatchIndex] = useState(0);
+  const [totalMatches, setTotalMatches] = useState(0);
+
+  const VIEW_MODE_CYCLE: DiffViewMode[] = ['unified', 'split', 'three-pane'];
+  const cycleViewMode = useCallback(() => {
+    startTransition(() => {
+      setUserViewMode((prev) => {
+        const idx = VIEW_MODE_CYCLE.indexOf(prev);
+        return VIEW_MODE_CYCLE[(idx + 1) % VIEW_MODE_CYCLE.length];
+      });
+    });
+  }, []);
+
+  const toggleFullFile = useCallback(async () => {
+    if (showFullFile) {
+      startTransition(() => setShowFullFile(false));
+      return;
+    }
+    if (fullDiffCache.has(filePath)) {
+      startTransition(() => setShowFullFile(true));
+      return;
+    }
+    if (!onRequestFullDiff) {
+      startTransition(() => setShowFullFile(true));
+      return;
+    }
+    setLoadingFullDiff(true);
+    const result = await onRequestFullDiff(filePath);
+    setLoadingFullDiff(false);
+    if (result) {
+      setFullDiffCache((prev) => new Map(prev).set(filePath, result));
+      startTransition(() => setShowFullFile(true));
+    }
+  }, [showFullFile, filePath, fullDiffCache, onRequestFullDiff]);
+
+  // ── Search handlers ──
+  const openSearch = useCallback(() => setShowSearch(true), []);
+
+  const closeSearch = useCallback(() => {
+    setShowSearch(false);
+    setSearchQuery('');
+    setCurrentMatchIndex(0);
+    setTotalMatches(0);
+  }, []);
+
+  const goToNextMatch = useCallback(() => {
+    if (totalMatches === 0) return;
+    setCurrentMatchIndex((prev) => (prev + 1) % totalMatches);
+  }, [totalMatches]);
+
+  const goToPrevMatch = useCallback(() => {
+    if (totalMatches === 0) return;
+    setCurrentMatchIndex((prev) => (prev - 1 + totalMatches) % totalMatches);
+  }, [totalMatches]);
+
+  const handleMatchCount = useCallback((count: number) => {
+    setTotalMatches(count);
+    setCurrentMatchIndex((prev) => (count === 0 ? 0 : Math.min(prev, count - 1)));
+  }, []);
+
+  // Global Ctrl+F / Escape handler — uses window listener so it works
+  // even when the overlay (rendered via portal) doesn't have focus.
+  // stopImmediatePropagation prevents other capture-phase listeners
+  // (e.g. ThreadView search) from also firing.
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && e.key === 'f') {
+        e.preventDefault();
+        e.stopImmediatePropagation();
+        openSearch();
+      } else if (e.key === 'Escape') {
+        if (showSearch) {
+          e.preventDefault();
+          e.stopImmediatePropagation();
+          closeSearch();
+        } else {
+          onClose();
+        }
+      }
+    };
+    // Use capture phase to intercept before other handlers
+    window.addEventListener('keydown', handler, true);
+    return () => window.removeEventListener('keydown', handler, true);
+  }, [openSearch, showSearch, closeSearch, onClose]);
+
+  // Reset search when file changes
+  useEffect(() => {
+    setSearchQuery('');
+    setCurrentMatchIndex(0);
+    setTotalMatches(0);
+  }, [filePath]);
+
+  // ── Multi-tab state ──
+  const [openTabs, setOpenTabs] = useState<string[]>([filePath]);
+  const activeTab = filePath;
+
+  useEffect(() => {
+    setOpenTabs((prev) => (prev.includes(filePath) ? prev : [...prev, filePath]));
+    if (showFullFile && !fullDiffCache.has(filePath)) {
+      setShowFullFile(false);
+    }
+  }, [filePath]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const handleTabClick = useCallback(
+    (path: string) => {
+      onFileSelect?.(path);
+    },
+    [onFileSelect],
+  );
+
+  const handleTabClose = useCallback(
+    (path: string, e: React.MouseEvent) => {
+      e.stopPropagation();
+      setOpenTabs((prev) => {
+        const next = prev.filter((p) => p !== path);
+        if (next.length === 0) {
+          onClose();
+          return prev;
+        }
+        if (path === filePath) {
+          const idx = prev.indexOf(path);
+          const newActive = next[Math.min(idx, next.length - 1)];
+          onFileSelect?.(newActive);
+        }
+        return next;
+      });
+    },
+    [filePath, onFileSelect, onClose],
+  );
+
+  const fileThreads = useMemo(
+    () => (prReviewThreads ?? []).filter((t) => t.path === filePath),
+    [prReviewThreads, filePath],
+  );
+
+  const hasMultipleTabs = openTabs.length > 1;
+
+  // Determine which raw diff / old/new values to pass
+  const effectiveRawDiff =
+    showFullFile && fullDiffCache.has(filePath)
+      ? fullDiffCache.get(filePath)!.rawDiff
+      : (rawDiff ?? diffCache?.get(filePath));
+  const effectiveOldValue =
+    showFullFile && fullDiffCache.has(filePath) ? fullDiffCache.get(filePath)!.oldValue : oldValue;
+  const effectiveNewValue =
+    showFullFile && fullDiffCache.has(filePath) ? fullDiffCache.get(filePath)!.newValue : newValue;
+
+  return (
+    <div className="flex h-full flex-col bg-background" data-testid="expanded-diff-view">
+      {/* Header toolbar */}
+      <div className="flex flex-shrink-0 items-center gap-2 border-b border-border px-4 py-2">
+        <Icon className="icon-base flex-shrink-0 text-muted-foreground" />
+        <span
+          className="min-w-0 flex-1 overflow-hidden text-ellipsis whitespace-nowrap font-mono text-xs text-foreground"
+          style={{ direction: 'rtl', textAlign: 'left' }}
+        >
+          {filePath}
+        </span>
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <Button
+              variant="ghost"
+              size="icon-sm"
+              onClick={cycleViewMode}
+              disabled={isPending || isOneSided}
+              className="flex-shrink-0 text-muted-foreground"
+              data-testid="diff-view-toggle-view-mode"
+            >
+              {isPending ? (
+                <Loader2 className="icon-base animate-spin" />
+              ) : viewMode === 'unified' ? (
+                <Rows2 className="icon-base" />
+              ) : viewMode === 'split' ? (
+                <Columns2 className="icon-base" />
+              ) : (
+                <Columns3 className="icon-base" />
+              )}
+            </Button>
+          </TooltipTrigger>
+          <TooltipContent side="bottom">
+            {isOneSided
+              ? `Unified only — file ${currentFileStatus === 'deleted' ? 'deleted' : 'added'}`
+              : viewMode === 'three-pane'
+                ? 'Three-pane — click for split'
+                : viewMode === 'split'
+                  ? 'Split — click for unified'
+                  : 'Unified — click for three-pane'}
+          </TooltipContent>
+        </Tooltip>
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <Button
+              variant="ghost"
+              size="icon-sm"
+              onClick={() => setWordWrap((w) => !w)}
+              className={cn(
+                'flex-shrink-0 text-muted-foreground',
+                wordWrap && 'bg-accent text-accent-foreground',
+              )}
+              data-testid="diff-view-toggle-word-wrap"
+            >
+              <WrapText className="icon-base" />
+            </Button>
+          </TooltipTrigger>
+          <TooltipContent side="bottom">
+            {wordWrap ? 'Word wrap on' : 'Word wrap off'}
+          </TooltipContent>
+        </Tooltip>
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <Button
+              variant="ghost"
+              size="icon-sm"
+              onClick={toggleFullFile}
+              disabled={isPending || loadingFullDiff}
+              className={cn(
+                'flex-shrink-0 text-muted-foreground',
+                showFullFile && 'bg-accent text-accent-foreground',
+              )}
+              data-testid="diff-view-toggle-full-file"
+            >
+              {isPending || loadingFullDiff ? (
+                <Loader2 className="icon-base animate-spin" />
+              ) : (
+                <FileText className="icon-base" />
+              )}
+            </Button>
+          </TooltipTrigger>
+          <TooltipContent side="bottom">
+            {showFullFile ? 'Show changes only' : 'Show full file'}
+          </TooltipContent>
+        </Tooltip>
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <Button
+              variant="ghost"
+              size="icon-sm"
+              onClick={openSearch}
+              className={cn(
+                'flex-shrink-0 text-muted-foreground',
+                showSearch && 'bg-accent text-accent-foreground',
+              )}
+              data-testid="diff-view-toggle-search"
+            >
+              <Search className="icon-base" />
+            </Button>
+          </TooltipTrigger>
+          <TooltipContent side="bottom">Search (Ctrl+F)</TooltipContent>
+        </Tooltip>
+        <Button
+          variant="ghost"
+          size="icon-sm"
+          onClick={onClose}
+          className="flex-shrink-0 text-muted-foreground"
+          data-testid="expanded-diff-close"
+        >
+          <X className="icon-base" />
+        </Button>
+      </div>
+
+      {/* Multi-tab bar */}
+      {hasMultipleTabs && (
+        <div
+          className="flex items-center overflow-x-auto border-b border-border bg-muted/30"
+          data-testid="diff-view-tab-bar"
+        >
+          {openTabs.map((tabPath) => (
+            <div
+              key={tabPath}
+              className={cn(
+                'group flex items-center gap-1.5 border-r border-border px-3 py-1.5 text-[11px] cursor-pointer shrink-0',
+                activeTab === tabPath
+                  ? 'bg-background text-foreground'
+                  : 'text-muted-foreground hover:bg-muted/50',
+              )}
+              onClick={() => handleTabClick(tabPath)}
+              data-testid={`diff-view-tab-${getFileName(tabPath)}`}
+            >
+              <FileExtensionIcon filePath={tabPath} className="h-3.5 w-3.5 shrink-0" />
+              <span className="max-w-[120px] truncate">{getFileName(tabPath)}</span>
+              <button
+                onClick={(e) => handleTabClose(tabPath, e)}
+                className="ml-0.5 rounded p-0.5 opacity-0 hover:bg-muted group-hover:opacity-100"
+                data-testid={`diff-view-tab-close-${getFileName(tabPath)}`}
+              >
+                <X className="h-3 w-3" />
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* Diff content + review threads */}
+      <div className="relative flex min-h-0 flex-1 flex-col overflow-hidden">
+        {/* Search bar — positioned below header, above diff content */}
+        {showSearch && (
+          <SearchBar
+            query={searchQuery}
+            onQueryChange={(v) => {
+              setSearchQuery(v);
+              setCurrentMatchIndex(0);
+            }}
+            currentIndex={currentMatchIndex}
+            totalMatches={totalMatches}
+            onPrev={goToPrevMatch}
+            onNext={goToNextMatch}
+            onClose={closeSearch}
+            placeholder="Search in diff..."
+            showIcon={false}
+            testIdPrefix="diff-view-search"
+            className="absolute right-4 top-0 z-30 gap-1.5 rounded-b-lg border border-t-0 border-border bg-popover px-2 py-1.5 shadow-md"
+          />
+        )}
+        <div className="min-h-0 flex-1 overflow-auto">
+          <DiffContent
+            filePath={filePath}
+            splitView={viewMode === 'split'}
+            viewMode={viewMode}
+            loading={loading || loadingFullDiff}
+            rawDiff={effectiveRawDiff}
+            oldValue={effectiveOldValue}
+            newValue={effectiveNewValue}
+            showFullFile={showFullFile}
+            wordWrap={wordWrap}
+            searchQuery={showSearch ? searchQuery : undefined}
+            currentMatchIndex={currentMatchIndex}
+            onMatchCount={handleMatchCount}
+          />
+        </div>
+        {fileThreads.length > 0 && (
+          <div
+            className="border-t border-border bg-muted/20 px-4 py-3"
+            data-testid="diff-view-review-threads"
+          >
+            <div className="mb-2 flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
+              <MessageSquare className="h-3.5 w-3.5" />
+              {fileThreads.length} review {fileThreads.length === 1 ? 'thread' : 'threads'}
+            </div>
+            <div className="space-y-2">
+              {fileThreads.map((thread) => (
+                <DiffCommentThread key={thread.id} thread={thread} className="w-full max-w-none" />
+              ))}
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
   );
 }

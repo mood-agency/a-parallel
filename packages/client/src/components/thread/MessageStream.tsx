@@ -468,7 +468,10 @@ export const MessageStream = forwardRef<MessageStreamHandle, MessageStreamProps>
     // ── Render ───────────────────────────────────────────────────────
     return (
       <div
-        className={cn('flex min-h-0 min-w-0 flex-1 flex-col overflow-y-auto', className)}
+        className={cn(
+          'flex min-h-0 min-w-0 flex-1 flex-col overflow-x-hidden overflow-y-auto',
+          className,
+        )}
         ref={scrollViewportRef}
         style={{ contain: 'layout style', scrollbarGutter: compact ? undefined : 'stable' }}
       >

@@ -72,7 +72,7 @@ const LazyMarkdownRenderer = lazy(() =>
 
 export const MessageContent = memo(function MessageContent({ content }: { content: string }) {
   return (
-    <div className="prose prose-sm max-w-none overflow-x-auto">
+    <div className="prose prose-sm max-w-none overflow-hidden">
       <Suspense
         fallback={
           <div className="prose prose-sm max-w-none whitespace-pre-wrap text-sm">{content}</div>

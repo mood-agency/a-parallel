@@ -1,12 +1,15 @@
 import { ChevronRight, FilePen, Maximize2 } from 'lucide-react';
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { Button } from '@/components/ui/button';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { VirtualDiff } from '@/components/VirtualDiff';
+import { api } from '@/lib/api';
+import { parseDiffOld, parseDiffNew } from '@/lib/diff-parse';
 import { cn } from '@/lib/utils';
 import { useSettingsStore } from '@/stores/settings-store';
+import { useThreadStore } from '@/stores/thread-store';
 
 import { ExpandedDiffDialog } from './ExpandedDiffDialog';
 import {
@@ -87,8 +90,28 @@ export function EditFileCard({
   const oldString = parsed.old_string as string | undefined;
   const newString = parsed.new_string as string | undefined;
 
+  const threadId = useThreadStore((s) => s.activeThread?.id);
+
   const [expanded, setExpanded] = useState(true);
   const [showExpandedDiff, setShowExpandedDiff] = useState(false);
+
+  const requestFullDiff = useCallback(
+    async (
+      path: string,
+    ): Promise<{ oldValue: string; newValue: string; rawDiff?: string } | null> => {
+      if (!threadId) return null;
+      const result = await api.getFileDiff(threadId, path, false, undefined, 'full');
+      if (result.isOk()) {
+        return {
+          oldValue: parseDiffOld(result.value.diff),
+          newValue: parseDiffNew(result.value.diff),
+          rawDiff: result.value.diff,
+        };
+      }
+      return null;
+    },
+    [threadId],
+  );
 
   const hasDiff = useMemo(() => {
     return filePath && oldString != null && newString != null && oldString !== newString;
@@ -195,6 +218,7 @@ export function EditFileCard({
         filePath={filePath || ''}
         oldValue={oldString || ''}
         newValue={newString || ''}
+        onRequestFullDiff={requestFullDiff}
       />
     </div>
   );

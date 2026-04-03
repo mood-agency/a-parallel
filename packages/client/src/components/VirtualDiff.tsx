@@ -447,6 +447,15 @@ const H_SCROLL_STYLE: React.CSSProperties = {
   zIndex: 0,
 };
 
+/**
+ * Opaque gutter backgrounds — composites the semi-transparent diff tint over
+ * the card background so the gutter blocks h-scrolled text while matching
+ * the row's visual color exactly.
+ */
+const GUTTER_BG_CARD = 'hsl(var(--card))';
+const GUTTER_BG_ADDED = 'color-mix(in srgb, hsl(var(--diff-added)) 12%, hsl(var(--card)))';
+const GUTTER_BG_REMOVED = 'color-mix(in srgb, hsl(var(--diff-removed)) 12%, hsl(var(--card)))';
+
 const SplitRow = memo(function SplitRow({
   left,
   right,
@@ -467,6 +476,8 @@ const SplitRow = memo(function SplitRow({
   const leftMatches = searchQuery && left ? countTextMatches(left.text, searchQuery) : 0;
   const leftBg = left?.type === 'del' ? 'hsl(var(--diff-removed) / 0.12)' : undefined;
   const rightBg = right?.type === 'add' ? 'hsl(var(--diff-added) / 0.12)' : undefined;
+  const leftGutterBg = left?.type === 'del' ? GUTTER_BG_REMOVED : GUTTER_BG_CARD;
+  const rightGutterBg = right?.type === 'add' ? GUTTER_BG_ADDED : GUTTER_BG_CARD;
   return (
     <div
       className="flex font-mono text-[11px]"
@@ -480,7 +491,10 @@ const SplitRow = memo(function SplitRow({
         )}
         style={leftBg ? { backgroundColor: leftBg } : undefined}
       >
-        <div className="relative z-10 flex flex-shrink-0 items-center bg-background">
+        <div
+          className="relative z-10 flex flex-shrink-0 items-center"
+          style={{ backgroundColor: leftGutterBg }}
+        >
           <span className="w-11 flex-shrink-0 select-none pr-1 text-right text-muted-foreground/40">
             {left?.oldNo ?? ''}
           </span>
@@ -520,7 +534,10 @@ const SplitRow = memo(function SplitRow({
         )}
         style={rightBg ? { backgroundColor: rightBg } : undefined}
       >
-        <div className="relative z-10 flex flex-shrink-0 items-center bg-background">
+        <div
+          className="relative z-10 flex flex-shrink-0 items-center"
+          style={{ backgroundColor: rightGutterBg }}
+        >
           <span className="w-11 flex-shrink-0 select-none pr-1 text-right text-muted-foreground/40">
             {right?.newNo ?? ''}
           </span>
@@ -580,6 +597,8 @@ const ThreePaneRow = memo(function ThreePaneRow({
   const align = wrap ? 'items-start overflow-visible' : 'items-center overflow-hidden';
   const leftBg = left?.type === 'del' ? 'hsl(var(--diff-removed) / 0.12)' : undefined;
   const rightBg = right?.type === 'add' ? 'hsl(var(--diff-added) / 0.12)' : undefined;
+  const leftGutterBg = left?.type === 'del' ? GUTTER_BG_REMOVED : GUTTER_BG_CARD;
+  const rightGutterBg = right?.type === 'add' ? GUTTER_BG_ADDED : GUTTER_BG_CARD;
   return (
     <div
       className="flex font-mono text-[11px]"
@@ -590,7 +609,10 @@ const ThreePaneRow = memo(function ThreePaneRow({
         className={cn('flex flex-1 border-r border-border/30', align)}
         style={leftBg ? { backgroundColor: leftBg } : undefined}
       >
-        <div className="relative z-10 flex flex-shrink-0 items-center bg-background">
+        <div
+          className="relative z-10 flex flex-shrink-0 items-center"
+          style={{ backgroundColor: leftGutterBg }}
+        >
           <span className="w-11 flex-shrink-0 select-none pr-1 text-right text-muted-foreground/40">
             {left?.oldNo ?? ''}
           </span>
@@ -624,7 +646,10 @@ const ThreePaneRow = memo(function ThreePaneRow({
       </div>
       {/* Center (result — clean, no diff highlighting) */}
       <div className={cn('flex flex-1 border-r border-border/30', align)}>
-        <div className="relative z-10 flex flex-shrink-0 items-center bg-background">
+        <div
+          className="relative z-10 flex flex-shrink-0 items-center"
+          style={{ backgroundColor: GUTTER_BG_CARD }}
+        >
           <span className="w-11 flex-shrink-0 select-none pr-1 text-right text-muted-foreground/40">
             {center?.newNo ?? ''}
           </span>
@@ -654,7 +679,10 @@ const ThreePaneRow = memo(function ThreePaneRow({
         className={cn('flex flex-1', align)}
         style={rightBg ? { backgroundColor: rightBg } : undefined}
       >
-        <div className="relative z-10 flex flex-shrink-0 items-center bg-background">
+        <div
+          className="relative z-10 flex flex-shrink-0 items-center"
+          style={{ backgroundColor: rightGutterBg }}
+        >
           <span className="w-11 flex-shrink-0 select-none pr-1 text-right text-muted-foreground/40">
             {right?.newNo ?? ''}
           </span>

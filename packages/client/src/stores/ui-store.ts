@@ -46,7 +46,6 @@ interface UIState {
   kanbanContext: { projectId?: string; search?: string; threadId?: string } | null;
   /** Pre-fill context for creating a thread from a GitHub issue */
   newThreadIssueContext: { prompt: string; branchName: string; title: string } | null;
-
   setReviewSubTab: (tab: ReviewSubTab) => void;
   setReviewPaneOpen: (open: boolean) => void;
   setTestPaneOpen: (open: boolean) => void;

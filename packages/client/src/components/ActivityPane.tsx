@@ -461,6 +461,26 @@ export function ActivityPane() {
     }
   }, [expandedFile]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  const requestFullDiff = useCallback(
+    async (
+      path: string,
+    ): Promise<{ oldValue: string; newValue: string; rawDiff?: string } | null> => {
+      if (!threadId) return null;
+      const summary = files.find((s) => s.path === path);
+      if (!summary) return null;
+      const result = await api.getFileDiff(threadId, path, summary.staged, undefined, 'full');
+      if (result.isOk()) {
+        return {
+          oldValue: parseDiffOld(result.value.diff),
+          newValue: parseDiffNew(result.value.diff),
+          rawDiff: result.value.diff,
+        };
+      }
+      return null;
+    },
+    [threadId, files],
+  );
+
   const handleRevertFile = useCallback(
     async (path: string) => {
       if (!threadId) return;
@@ -628,6 +648,7 @@ export function ActivityPane() {
             loadingDiffPath={loadingDiff}
             onRevertFile={handleRevertFile}
             basePath={basePath}
+            onRequestFullDiff={requestFullDiff}
           />
         );
       })()}

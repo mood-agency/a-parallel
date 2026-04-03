@@ -608,7 +608,7 @@ export function AppSidebar() {
       </SidebarContent>
 
       {/* Footer with automation inbox + settings */}
-      <SidebarFooter>
+      <SidebarFooter className="pb-4">
         <div className="px-1">
           <AutomationInboxButton />
         </div>
