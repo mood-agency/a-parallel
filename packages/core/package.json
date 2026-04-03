@@ -15,7 +15,7 @@
     "./symbols": "./src/symbols/index.ts"
   },
   "scripts": {
-    "test": "bun test"
+    "test": "vitest run && bun test"
   },
   "dependencies": {
     "@ai-sdk/anthropic": "^3.0.46",

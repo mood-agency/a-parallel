@@ -9,12 +9,7 @@ import { resolve } from 'path';
 import { describe, test, expect, beforeEach, afterEach } from 'vitest';
 
 import { executeSync } from '../git/process.js';
-import {
-  createWorktree,
-  listWorktrees,
-  pruneOrphanWorktrees,
-  getWorktreeBasePath,
-} from '../git/worktree.js';
+import { createWorktree, pruneOrphanWorktrees, getWorktreeBasePath } from '../git/worktree.js';
 
 const TMP = resolve(tmpdir(), 'core-prune-wt-test-' + Date.now());
 
