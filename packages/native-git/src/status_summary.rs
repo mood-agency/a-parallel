@@ -189,12 +189,8 @@ pub async fn get_status_summary(
       r.name().shorten().to_string()
     });
 
-    // Get HEAD commit and tree for diffing
-    let head_commit = repo.head_commit()
-      .map_err(|e| napi::Error::from_reason(format!("Failed to get HEAD commit: {e}")))?;
-
-    let head_tree = head_commit.tree()
-      .map_err(|e| napi::Error::from_reason(format!("Failed to get HEAD tree: {e}")))?;
+    // Get HEAD commit and tree for diffing (optional — may not exist for new repos)
+    let head_tree = repo.head_commit().ok().and_then(|c| c.tree().ok());
 
     // ── Set up attribute stack for .gitattributes binary detection ──
     let (mut attr_stack, mut attr_outcome) = match repo.open_index() {
@@ -229,6 +225,7 @@ pub async fn get_status_summary(
     let mut modified_rel_paths: Vec<String> = Vec::new();
     let mut lines_added: u32 = 0;
     let mut lines_deleted: u32 = 0;
+    let mut worktree_changed_paths = std::collections::HashSet::new();
 
     for entry in status_iter {
       let entry = entry
@@ -238,33 +235,69 @@ pub async fn get_status_summary(
 
       match &entry {
         gix::status::index_worktree::Item::Modification { rela_path, .. } => {
-          modified_rel_paths.push(rela_path.to_string());
+          let rel_str = rela_path.to_string();
+          worktree_changed_paths.insert(rel_str.clone());
+          modified_rel_paths.push(rel_str);
         }
         gix::status::index_worktree::Item::DirectoryContents { entry: dir_entry, .. } => {
           let rel_str = dir_entry.rela_path.to_string();
+          worktree_changed_paths.insert(rel_str.clone());
           untracked_paths.push(worktree_path.join(&rel_str));
           untracked_rel_paths.push(rel_str);
         }
-        gix::status::index_worktree::Item::Rewrite { .. } => {
-          // Renamed file - counts as dirty but line counting not needed
+        gix::status::index_worktree::Item::Rewrite { dirwalk_entry, .. } => {
+          worktree_changed_paths.insert(dirwalk_entry.rela_path.to_string());
         }
       }
     }
 
-    // Count lines for modified tracked files
-    for rel_path_str in &modified_rel_paths {
-      if let (Some(ref mut stack), Some(ref mut outcome)) = (&mut attr_stack, &mut attr_outcome) {
-        if is_binary_by_attr(stack, outcome, rel_path_str, &repo.objects) {
-          continue;
-        }
+    // Count staged files that differ from HEAD (or all index entries if no HEAD)
+    let index = repo
+      .open_index()
+      .map_err(|e| napi::Error::from_reason(format!("Failed to open index: {e}")))?;
+
+    let mut staged_new_paths: Vec<PathBuf> = Vec::new();
+    let mut staged_new_rel_paths: Vec<String> = Vec::new();
+
+    for idx_entry in index.entries().iter() {
+      let path_str = idx_entry.path(&index).to_str_lossy().to_string();
+      if worktree_changed_paths.contains(&path_str) {
+        continue;
       }
-      let (added, deleted) = count_lines_for_entry(repo, &worktree_path, rel_path_str, &head_tree);
-      lines_added += added;
-      lines_deleted += deleted;
+
+      let is_staged = match &head_tree {
+        Some(tree) => match tree.lookup_entry_by_path(&path_str) {
+          Ok(Some(tree_entry)) => tree_entry.object_id() != idx_entry.id,
+          _ => true,
+        },
+        None => true,
+      };
+
+      if is_staged {
+        dirty_file_count += 1;
+        staged_new_paths.push(worktree_path.join(&path_str));
+        staged_new_rel_paths.push(path_str);
+      }
     }
 
-    // Count lines for untracked files
-    for (i, (path, rel_path)) in untracked_paths.iter().zip(untracked_rel_paths.iter()).enumerate() {
+    // Count lines for modified tracked files (only when HEAD exists)
+    if let Some(ref tree) = head_tree {
+      for rel_path_str in &modified_rel_paths {
+        if let (Some(ref mut stack), Some(ref mut outcome)) = (&mut attr_stack, &mut attr_outcome) {
+          if is_binary_by_attr(stack, outcome, rel_path_str, &repo.objects) {
+            continue;
+          }
+        }
+        let (added, deleted) = count_lines_for_entry(repo, &worktree_path, rel_path_str, tree);
+        lines_added += added;
+        lines_deleted += deleted;
+      }
+    }
+
+    // Count lines for untracked files and staged new files (both are new content)
+    let all_new_paths = untracked_paths.iter().chain(staged_new_paths.iter());
+    let all_new_rel_paths = untracked_rel_paths.iter().chain(staged_new_rel_paths.iter());
+    for (i, (path, rel_path)) in all_new_paths.zip(all_new_rel_paths).enumerate() {
       if i >= MAX_UNTRACKED_TO_COUNT {
         break;
       }

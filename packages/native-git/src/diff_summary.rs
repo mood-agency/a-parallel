@@ -1,4 +1,6 @@
-use gix::bstr::BString;
+use std::collections::HashSet;
+
+use gix::bstr::{BString, ByteSlice};
 
 use crate::repo_cache::with_repo;
 
@@ -50,6 +52,7 @@ pub async fn get_diff_summary(
       .map_err(|e| napi::Error::from_reason(format!("Failed to iterate status: {e}")))?;
 
     let mut all_files: Vec<FileDiffSummaryItem> = Vec::new();
+    let mut worktree_changed_paths = HashSet::new();
 
     for entry in status_iter {
       let entry = entry
@@ -87,10 +90,56 @@ pub async fn get_diff_summary(
         continue;
       }
 
+      worktree_changed_paths.insert(path.clone());
       all_files.push(FileDiffSummaryItem {
         path,
         status,
         staged: false,
+      });
+    }
+
+    // ── Phase 2: HEAD-vs-index changes (staged) ──
+    // Detects files staged in the index that differ from HEAD (or all index
+    // entries when HEAD doesn't exist, e.g. repos with no commits yet).
+    let head_tree = repo.head_commit().ok().and_then(|c| c.tree().ok());
+    let index = repo
+      .open_index()
+      .map_err(|e| napi::Error::from_reason(format!("Failed to open index: {e}")))?;
+
+    for entry in index.entries().iter() {
+      let path_str = entry.path(&index).to_str_lossy().to_string();
+
+      // Skip files already reported as worktree changes
+      if worktree_changed_paths.contains(&path_str) {
+        continue;
+      }
+
+      let (is_staged, status) = match &head_tree {
+        Some(tree) => match tree.lookup_entry_by_path(&path_str) {
+          Ok(Some(tree_entry)) => {
+            if tree_entry.object_id() == entry.id {
+              (false, "")
+            } else {
+              (true, "modified")
+            }
+          }
+          _ => (true, "added"),
+        },
+        None => (true, "added"),
+      };
+
+      if !is_staged {
+        continue;
+      }
+
+      if !exclude.is_empty() && matches_any_pattern(&path_str, &exclude) {
+        continue;
+      }
+
+      all_files.push(FileDiffSummaryItem {
+        path: path_str,
+        status: status.to_string(),
+        staged: true,
       });
     }
 
