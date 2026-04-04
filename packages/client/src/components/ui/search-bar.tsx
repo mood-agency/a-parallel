@@ -105,7 +105,7 @@ export function SearchBar({
         onChange={(e) => onQueryChange(e.target.value)}
         onKeyDown={handleKeyDown}
         placeholder={placeholder}
-        className="h-7 flex-1 rounded-none border-none bg-transparent text-xs shadow-none focus-visible:ring-0 focus-visible:ring-offset-0"
+        className="h-7 flex-1 rounded-none border-none bg-transparent text-xs shadow-none focus-visible:ring-0"
         data-testid={`${testIdPrefix}-input`}
       />
       {loading && (

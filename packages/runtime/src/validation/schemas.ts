@@ -288,6 +288,17 @@ export const gitInitSchema = z.object({
   path: z.string().min(1, 'path is required'),
 });
 
+export const publishRepoSchema = z.object({
+  name: z
+    .string()
+    .min(1)
+    .max(100)
+    .regex(/^[a-zA-Z0-9_.-]+$/, 'Invalid repository name'),
+  description: z.string().max(350).optional(),
+  org: z.string().optional(),
+  private: z.boolean().default(true),
+});
+
 // ── Automations ─────────────────────────────────────────────────
 
 export const automationScheduleSchema = z

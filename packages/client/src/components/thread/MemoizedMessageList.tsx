@@ -378,6 +378,10 @@ export const MemoizedMessageList = memo(
       }
     }, [scrollRef]);
 
+    // Stable ref so scroll listeners and rAF callbacks never hit a TDZ during HMR
+    const captureScrollAnchorRef = useRef(captureScrollAnchor);
+    captureScrollAnchorRef.current = captureScrollAnchor;
+
     const restoreScrollAnchor = useCallback(() => {
       const viewport = scrollRef.current;
       const container = itemContainerRef.current;
@@ -445,14 +449,14 @@ export const MemoizedMessageList = memo(
       const onScroll = () => {
         if (windowStartRef.current <= 0) return;
         if (scrollEl.scrollTop < spacerHeightRef.current + 600) {
-          captureScrollAnchor();
+          captureScrollAnchorRef.current();
           setRenderCount((prev) => Math.min(groupedLenRef.current, prev + EXPAND_BATCH));
         }
       };
 
       scrollEl.addEventListener('scroll', onScroll, { passive: true });
       return () => scrollEl.removeEventListener('scroll', onScroll);
-    }, [scrollRef, captureScrollAnchor]);
+    }, [scrollRef]);
 
     // After each expansion, restore the scroll anchor.
     // If the expansion came from effectiveInitialWindow growth (no anchor
@@ -476,12 +480,12 @@ export const MemoizedMessageList = memo(
 
       const rafId = requestAnimationFrame(() => {
         if (scrollEl.scrollTop < spacerHeightRef.current + 600) {
-          captureScrollAnchor();
+          captureScrollAnchorRef.current();
           setRenderCount((prev) => Math.min(groupedLenRef.current, prev + EXPAND_BATCH));
         }
       });
       return () => cancelAnimationFrame(rafId);
-    }, [windowStart, scrollRef, captureScrollAnchor]);
+    }, [windowStart, scrollRef]);
 
     const renderToolItem = useCallback(
       (ti: ToolItem) => {

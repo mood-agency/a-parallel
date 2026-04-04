@@ -56,6 +56,9 @@ export function createRunnerServiceProvider(): RuntimeServiceProvider {
       },
       async markStaleThreadsInterrupted() {},
       async markStaleExternalThreadsStopped() {},
+      async markAndListStaleThreads() {
+        return [];
+      },
       async getThreadMessages() {
         return [];
       },

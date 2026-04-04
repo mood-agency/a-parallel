@@ -6,7 +6,7 @@ import {
   FileText,
   Loader2,
   MessageSquare,
-  Rows2,
+  RectangleVertical,
   Search,
   WrapText,
   X,
@@ -29,8 +29,8 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import { SearchBar } from '@/components/ui/search-bar';
+import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
-import { FileExtensionIcon } from '@/lib/file-icons';
 import { cn } from '@/lib/utils';
 
 import { DiffCommentThread } from '../DiffCommentThread';
@@ -261,14 +261,9 @@ export function ExpandedDiffDialog({
   const [currentMatchIndex, setCurrentMatchIndex] = useState(0);
   const [totalMatches, setTotalMatches] = useState(0);
 
-  const VIEW_MODE_CYCLE: DiffViewMode[] = ['unified', 'split', 'three-pane'];
-  const cycleViewMode = useCallback(() => {
-    startTransition(() => {
-      setUserViewMode((prev) => {
-        const idx = VIEW_MODE_CYCLE.indexOf(prev);
-        return VIEW_MODE_CYCLE[(idx + 1) % VIEW_MODE_CYCLE.length];
-      });
-    });
+  const handleViewModeChange = useCallback((value: string) => {
+    if (!value) return;
+    startTransition(() => setUserViewMode(value as DiffViewMode));
   }, []);
 
   const toggleFullFile = useCallback(async () => {
@@ -346,47 +341,11 @@ export function ExpandedDiffDialog({
     setTotalMatches(0);
   }, [filePath]);
 
-  // ── Multi-tab state ──
-  const [openTabs, setOpenTabs] = useState<string[]>([filePath]);
-  const activeTab = filePath;
-
   useEffect(() => {
-    setOpenTabs((prev) => (prev.includes(filePath) ? prev : [...prev, filePath]));
     if (showFullFile && !fullDiffCache.has(filePath)) {
       setShowFullFile(false);
     }
   }, [filePath]); // eslint-disable-line react-hooks/exhaustive-deps
-
-  useEffect(() => {
-    if (!open) setOpenTabs([]);
-  }, [open]);
-
-  const handleTabClick = useCallback(
-    (path: string) => {
-      onFileSelect?.(path);
-    },
-    [onFileSelect],
-  );
-
-  const handleTabClose = useCallback(
-    (path: string, e: React.MouseEvent) => {
-      e.stopPropagation();
-      setOpenTabs((prev) => {
-        const next = prev.filter((p) => p !== path);
-        if (next.length === 0) {
-          onOpenChange(false);
-          return prev;
-        }
-        if (path === filePath) {
-          const idx = prev.indexOf(path);
-          const newActive = next[Math.min(idx, next.length - 1)];
-          onFileSelect?.(newActive);
-        }
-        return next;
-      });
-    },
-    [filePath, onFileSelect, onOpenChange],
-  );
 
   const fileThreads = useMemo(
     () => (prReviewThreads ?? []).filter((t) => t.path === filePath),
@@ -394,15 +353,6 @@ export function ExpandedDiffDialog({
   );
 
   const hasFileSidebar = files && files.length > 0 && onFileSelect;
-  const hasMultipleTabs = openTabs.length > 1;
-
-  const handleFileClick = useCallback(
-    (path: string) => {
-      setOpenTabs((prev) => (prev.includes(path) ? prev : [...prev, path]));
-      onFileSelect?.(path);
-    },
-    [onFileSelect],
-  );
 
   // Determine which raw diff / old/new values to pass
   const effectiveRawDiff =
@@ -423,7 +373,7 @@ export function ExpandedDiffDialog({
           if (showSearch) e.preventDefault();
         }}
       >
-        <DialogHeader className="flex-shrink-0 overflow-hidden border-b border-border px-4 py-3">
+        <DialogHeader className="flex-shrink-0 select-none overflow-hidden border-b border-border px-4 py-3">
           <DialogTitle className="flex min-w-0 items-center gap-2 overflow-hidden font-mono text-sm">
             <Icon className="icon-base flex-shrink-0" />
             <span
@@ -433,37 +383,52 @@ export function ExpandedDiffDialog({
               {filePath}
             </span>
           </DialogTitle>
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <Button
-                variant="ghost"
-                size="icon-sm"
-                onClick={cycleViewMode}
-                disabled={isPending || isOneSided}
-                className="flex-shrink-0 text-muted-foreground"
-                data-testid="diff-toggle-view-mode"
-              >
-                {isPending ? (
-                  <Loader2 className="icon-base animate-spin" />
-                ) : viewMode === 'unified' ? (
-                  <Rows2 className="icon-base" />
-                ) : viewMode === 'split' ? (
+          <ToggleGroup
+            type="single"
+            size="sm"
+            value={viewMode}
+            onValueChange={handleViewModeChange}
+            disabled={isPending || isOneSided}
+            className="flex-shrink-0 gap-0 rounded-md border border-border"
+            data-testid="diff-view-mode-group"
+          >
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <ToggleGroupItem
+                  value="unified"
+                  className="rounded-none rounded-l-md border-0 px-1.5 data-[state=on]:bg-accent"
+                  data-testid="diff-view-mode-unified"
+                >
+                  <RectangleVertical className="icon-base" />
+                </ToggleGroupItem>
+              </TooltipTrigger>
+              <TooltipContent side="bottom">Unified</TooltipContent>
+            </Tooltip>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <ToggleGroupItem
+                  value="split"
+                  className="rounded-none border-x border-border px-1.5 data-[state=on]:bg-accent"
+                  data-testid="diff-view-mode-split"
+                >
                   <Columns2 className="icon-base" />
-                ) : (
+                </ToggleGroupItem>
+              </TooltipTrigger>
+              <TooltipContent side="bottom">Split</TooltipContent>
+            </Tooltip>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <ToggleGroupItem
+                  value="three-pane"
+                  className="rounded-none rounded-r-md border-0 px-1.5 data-[state=on]:bg-accent"
+                  data-testid="diff-view-mode-three-pane"
+                >
                   <Columns3 className="icon-base" />
-                )}
-              </Button>
-            </TooltipTrigger>
-            <TooltipContent side="bottom">
-              {isOneSided
-                ? `Unified only — file ${currentFileStatus === 'deleted' ? 'deleted' : 'added'}`
-                : viewMode === 'three-pane'
-                  ? 'Three-pane — click for split'
-                  : viewMode === 'split'
-                    ? 'Split — click for unified'
-                    : 'Unified — click for three-pane'}
-            </TooltipContent>
-          </Tooltip>
+                </ToggleGroupItem>
+              </TooltipTrigger>
+              <TooltipContent side="bottom">Three-pane</TooltipContent>
+            </Tooltip>
+          </ToggleGroup>
           <Tooltip>
             <TooltipTrigger asChild>
               <Button
@@ -529,38 +494,6 @@ export function ExpandedDiffDialog({
           </DialogDescription>
         </DialogHeader>
 
-        {/* Multi-tab bar */}
-        {hasMultipleTabs && (
-          <div
-            className="flex items-center overflow-x-auto border-b border-border bg-muted/30"
-            data-testid="diff-tab-bar"
-          >
-            {openTabs.map((tabPath) => (
-              <div
-                key={tabPath}
-                className={cn(
-                  'group flex items-center gap-1.5 border-r border-border px-3 py-1.5 text-[11px] cursor-pointer shrink-0',
-                  activeTab === tabPath
-                    ? 'bg-background text-foreground'
-                    : 'text-muted-foreground hover:bg-muted/50',
-                )}
-                onClick={() => handleTabClick(tabPath)}
-                data-testid={`diff-tab-${getFileName(tabPath)}`}
-              >
-                <FileExtensionIcon filePath={tabPath} className="h-3.5 w-3.5 shrink-0" />
-                <span className="max-w-[120px] truncate">{getFileName(tabPath)}</span>
-                <button
-                  onClick={(e) => handleTabClose(tabPath, e)}
-                  className="ml-0.5 rounded p-0.5 opacity-0 hover:bg-muted group-hover:opacity-100"
-                  data-testid={`diff-tab-close-${getFileName(tabPath)}`}
-                >
-                  <X className="h-3 w-3" />
-                </button>
-              </div>
-            ))}
-          </div>
-        )}
-
         <div className="relative flex min-h-0 flex-1">
           {/* Search bar — positioned below header, above diff content */}
           {showSearch && (
@@ -591,7 +524,7 @@ export function ExpandedDiffDialog({
                 <FileTree
                   files={files}
                   selectedFile={filePath}
-                  onFileClick={handleFileClick}
+                  onFileClick={onFileSelect}
                   checkedFiles={checkedFiles}
                   onToggleFile={onToggleFile}
                   onRevertFile={onRevertFile}
@@ -688,14 +621,9 @@ export function ExpandedDiffView({
   const [currentMatchIndex, setCurrentMatchIndex] = useState(0);
   const [totalMatches, setTotalMatches] = useState(0);
 
-  const VIEW_MODE_CYCLE: DiffViewMode[] = ['unified', 'split', 'three-pane'];
-  const cycleViewMode = useCallback(() => {
-    startTransition(() => {
-      setUserViewMode((prev) => {
-        const idx = VIEW_MODE_CYCLE.indexOf(prev);
-        return VIEW_MODE_CYCLE[(idx + 1) % VIEW_MODE_CYCLE.length];
-      });
-    });
+  const handleViewModeChange = useCallback((value: string) => {
+    if (!value) return;
+    startTransition(() => setUserViewMode(value as DiffViewMode));
   }, []);
 
   const toggleFullFile = useCallback(async () => {
@@ -777,50 +705,16 @@ export function ExpandedDiffView({
     setTotalMatches(0);
   }, [filePath]);
 
-  // ── Multi-tab state ──
-  const [openTabs, setOpenTabs] = useState<string[]>([filePath]);
-  const activeTab = filePath;
-
   useEffect(() => {
-    setOpenTabs((prev) => (prev.includes(filePath) ? prev : [...prev, filePath]));
     if (showFullFile && !fullDiffCache.has(filePath)) {
       setShowFullFile(false);
     }
   }, [filePath]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const handleTabClick = useCallback(
-    (path: string) => {
-      onFileSelect?.(path);
-    },
-    [onFileSelect],
-  );
-
-  const handleTabClose = useCallback(
-    (path: string, e: React.MouseEvent) => {
-      e.stopPropagation();
-      setOpenTabs((prev) => {
-        const next = prev.filter((p) => p !== path);
-        if (next.length === 0) {
-          onClose();
-          return prev;
-        }
-        if (path === filePath) {
-          const idx = prev.indexOf(path);
-          const newActive = next[Math.min(idx, next.length - 1)];
-          onFileSelect?.(newActive);
-        }
-        return next;
-      });
-    },
-    [filePath, onFileSelect, onClose],
-  );
-
   const fileThreads = useMemo(
     () => (prReviewThreads ?? []).filter((t) => t.path === filePath),
     [prReviewThreads, filePath],
   );
-
-  const hasMultipleTabs = openTabs.length > 1;
 
   // Determine which raw diff / old/new values to pass
   const effectiveRawDiff =
@@ -835,7 +729,7 @@ export function ExpandedDiffView({
   return (
     <div className="flex h-full flex-col bg-background" data-testid="expanded-diff-view">
       {/* Header toolbar */}
-      <div className="flex flex-shrink-0 items-center gap-2 border-b border-border px-4 py-2">
+      <div className="flex flex-shrink-0 select-none items-center gap-2 border-b border-border px-4 py-2">
         <Icon className="icon-base flex-shrink-0 text-muted-foreground" />
         <span
           className="min-w-0 flex-1 overflow-hidden text-ellipsis whitespace-nowrap font-mono text-xs text-foreground"
@@ -843,37 +737,52 @@ export function ExpandedDiffView({
         >
           {filePath}
         </span>
-        <Tooltip>
-          <TooltipTrigger asChild>
-            <Button
-              variant="ghost"
-              size="icon-sm"
-              onClick={cycleViewMode}
-              disabled={isPending || isOneSided}
-              className="flex-shrink-0 text-muted-foreground"
-              data-testid="diff-view-toggle-view-mode"
-            >
-              {isPending ? (
-                <Loader2 className="icon-base animate-spin" />
-              ) : viewMode === 'unified' ? (
-                <Rows2 className="icon-base" />
-              ) : viewMode === 'split' ? (
+        <ToggleGroup
+          type="single"
+          size="sm"
+          value={viewMode}
+          onValueChange={handleViewModeChange}
+          disabled={isPending || isOneSided}
+          className="flex-shrink-0 gap-0 rounded-md border border-border"
+          data-testid="diff-view-view-mode-group"
+        >
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <ToggleGroupItem
+                value="unified"
+                className="rounded-none rounded-l-md border-0 px-1.5 data-[state=on]:bg-accent"
+                data-testid="diff-view-view-mode-unified"
+              >
+                <RectangleVertical className="icon-base" />
+              </ToggleGroupItem>
+            </TooltipTrigger>
+            <TooltipContent side="bottom">Unified</TooltipContent>
+          </Tooltip>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <ToggleGroupItem
+                value="split"
+                className="rounded-none border-x border-border px-1.5 data-[state=on]:bg-accent"
+                data-testid="diff-view-view-mode-split"
+              >
                 <Columns2 className="icon-base" />
-              ) : (
+              </ToggleGroupItem>
+            </TooltipTrigger>
+            <TooltipContent side="bottom">Split</TooltipContent>
+          </Tooltip>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <ToggleGroupItem
+                value="three-pane"
+                className="rounded-none rounded-r-md border-0 px-1.5 data-[state=on]:bg-accent"
+                data-testid="diff-view-view-mode-three-pane"
+              >
                 <Columns3 className="icon-base" />
-              )}
-            </Button>
-          </TooltipTrigger>
-          <TooltipContent side="bottom">
-            {isOneSided
-              ? `Unified only — file ${currentFileStatus === 'deleted' ? 'deleted' : 'added'}`
-              : viewMode === 'three-pane'
-                ? 'Three-pane — click for split'
-                : viewMode === 'split'
-                  ? 'Split — click for unified'
-                  : 'Unified — click for three-pane'}
-          </TooltipContent>
-        </Tooltip>
+              </ToggleGroupItem>
+            </TooltipTrigger>
+            <TooltipContent side="bottom">Three-pane</TooltipContent>
+          </Tooltip>
+        </ToggleGroup>
         <Tooltip>
           <TooltipTrigger asChild>
             <Button
@@ -944,38 +853,6 @@ export function ExpandedDiffView({
           <X className="icon-base" />
         </Button>
       </div>
-
-      {/* Multi-tab bar */}
-      {hasMultipleTabs && (
-        <div
-          className="flex items-center overflow-x-auto border-b border-border bg-muted/30"
-          data-testid="diff-view-tab-bar"
-        >
-          {openTabs.map((tabPath) => (
-            <div
-              key={tabPath}
-              className={cn(
-                'group flex items-center gap-1.5 border-r border-border px-3 py-1.5 text-[11px] cursor-pointer shrink-0',
-                activeTab === tabPath
-                  ? 'bg-background text-foreground'
-                  : 'text-muted-foreground hover:bg-muted/50',
-              )}
-              onClick={() => handleTabClick(tabPath)}
-              data-testid={`diff-view-tab-${getFileName(tabPath)}`}
-            >
-              <FileExtensionIcon filePath={tabPath} className="h-3.5 w-3.5 shrink-0" />
-              <span className="max-w-[120px] truncate">{getFileName(tabPath)}</span>
-              <button
-                onClick={(e) => handleTabClose(tabPath, e)}
-                className="ml-0.5 rounded p-0.5 opacity-0 hover:bg-muted group-hover:opacity-100"
-                data-testid={`diff-view-tab-close-${getFileName(tabPath)}`}
-              >
-                <X className="h-3 w-3" />
-              </button>
-            </div>
-          ))}
-        </div>
-      )}
 
       {/* Diff content + review threads */}
       <div className="relative flex min-h-0 flex-1 flex-col overflow-hidden">

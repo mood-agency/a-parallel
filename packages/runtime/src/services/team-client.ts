@@ -886,6 +886,18 @@ export async function remoteUpdateQueuedMessage(
   return result?.updated ?? null;
 }
 
+// ── Auto-resume ─────────────────────────────────────────
+
+/**
+ * Ask the server to mark stale running threads for this runner as interrupted
+ * and return them. Used on startup to auto-resume threads that were interrupted
+ * by a runtime crash.
+ */
+export async function remoteMarkAndListStaleThreads(): Promise<any[]> {
+  const result = await sendDataMessage('data:mark_and_list_stale_threads', {});
+  return result?.threads ?? [];
+}
+
 // ── Lifecycle ────────────────────────────────────────────
 
 /**

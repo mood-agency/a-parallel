@@ -833,7 +833,7 @@ export const PromptInputUI = memo(function PromptInputUI({
             'relative cursor-text rounded-md border bg-input/80',
             isDragging
               ? 'border-primary border-2 ring-2 ring-primary/20'
-              : 'border-border/80 focus-within:border-ring',
+              : 'border-border/80 focus-within:border-ring focus-within:ring-1 focus-within:ring-ring/50',
           )}
           onClick={handlePromptBoxClick}
           onDragOver={handleDragOver}

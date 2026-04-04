@@ -116,7 +116,7 @@ export function TestRunnerPane() {
   }
 
   return (
-    <div className="flex h-full flex-col overflow-hidden">
+    <div className="flex h-full w-full flex-col overflow-hidden">
       {/* Header */}
       <div className="flex items-center justify-between border-b border-sidebar-border px-4 py-3">
         <h3 className="text-xs font-semibold uppercase tracking-wider text-sidebar-foreground">
@@ -127,7 +127,7 @@ export function TestRunnerPane() {
             <Button
               variant="ghost"
               size="icon-xs"
-              onClick={() => useUIStore.getState().setTestPaneOpen(false)}
+              onClick={() => useUIStore.getState().setTestRunnerOpen(false)}
               className="text-muted-foreground"
               data-testid="test-runner-close"
             >

@@ -655,6 +655,18 @@ export const api = {
       method: 'POST',
       body: JSON.stringify({ hookIndex }),
     }),
+  projectGetRemoteUrl: (projectId: string, signal?: AbortSignal) =>
+    request<{ remoteUrl: string | null }>(`/git/project/${projectId}/remote-url`, { signal }),
+  projectGetGhOrgs: (projectId: string, signal?: AbortSignal) =>
+    request<{ orgs: string[] }>(`/git/project/${projectId}/gh-orgs`, { signal }),
+  projectPublish: (
+    projectId: string,
+    params: { name: string; description?: string; org?: string; private: boolean },
+  ) =>
+    request<{ ok: boolean; repoUrl: string }>(`/git/project/${projectId}/publish`, {
+      method: 'POST',
+      body: JSON.stringify(params),
+    }),
   projectPush: (projectId: string) =>
     request<{ ok: boolean; output?: string }>(`/git/project/${projectId}/push`, { method: 'POST' }),
   projectPull: (projectId: string) =>

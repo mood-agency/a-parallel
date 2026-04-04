@@ -208,7 +208,7 @@ export const ExitPlanModeCard = memo(function ExitPlanModeCard({
             </button>
           </div>
 
-          <div className="rounded-md border border-border/40 bg-background/50 focus-within:border-primary/50 focus-within:ring-1 focus-within:ring-primary/20">
+          <div className="rounded-md border border-border/40 bg-background/50 focus-within:border-ring focus-within:ring-1 focus-within:ring-ring/50">
             <div className="px-2.5 py-1.5">
               <PromptEditor
                 ref={editorRef}

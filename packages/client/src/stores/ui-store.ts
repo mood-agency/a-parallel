@@ -4,9 +4,7 @@ import { useProjectStore } from './project-store';
 import { useThreadStore, invalidateSelectThread } from './thread-store';
 
 const REVIEW_PANE_WIDTH_KEY = 'review_pane_width';
-const TEST_PANE_WIDTH_KEY = 'test_pane_width';
 const DEFAULT_REVIEW_PANE_WIDTH = 50; // percentage of viewport width
-const DEFAULT_TEST_PANE_WIDTH = 50;
 const MIN_REVIEW_PANE_WIDTH = 20;
 const MAX_REVIEW_PANE_WIDTH = 70;
 const TIMELINE_VISIBLE_KEY = 'timeline_visible';
@@ -14,7 +12,7 @@ const RIGHT_PANE_OPEN_KEY = 'right_pane_open';
 const RIGHT_PANE_TAB_KEY = 'right_pane_tab';
 const REVIEW_SUB_TAB_KEY = 'review_sub_tab';
 
-export type RightPaneTab = 'review' | 'tests' | 'tasks' | 'activity';
+export type RightPaneTab = 'review' | 'tasks' | 'activity';
 export type ReviewSubTab = 'changes' | 'history' | 'stash' | 'prs';
 const VALID_REVIEW_SUB_TABS: ReviewSubTab[] = ['changes', 'history', 'stash', 'prs'];
 
@@ -28,7 +26,6 @@ function persistRightPane(open: boolean, tab?: RightPaneTab) {
 interface UIState {
   reviewPaneOpen: boolean;
   reviewPaneWidth: number; // percentage of viewport width
-  testPaneWidth: number; // percentage of viewport width
   rightPaneTab: RightPaneTab;
   settingsOpen: boolean;
   activeSettingsPage: string | null;
@@ -39,6 +36,7 @@ interface UIState {
   addProjectOpen: boolean;
   analyticsOpen: boolean;
   liveColumnsOpen: boolean;
+  testRunnerOpen: boolean;
   generalSettingsOpen: boolean;
   activePreferencesPage: string | null;
   timelineVisible: boolean;
@@ -48,11 +46,10 @@ interface UIState {
   newThreadIssueContext: { prompt: string; branchName: string; title: string } | null;
   setReviewSubTab: (tab: ReviewSubTab) => void;
   setReviewPaneOpen: (open: boolean) => void;
-  setTestPaneOpen: (open: boolean) => void;
+  setTestRunnerOpen: (open: boolean) => void;
   setTasksPaneOpen: (open: boolean) => void;
   setActivityPaneOpen: (open: boolean) => void;
   setReviewPaneWidth: (width: number) => void;
-  setTestPaneWidth: (width: number) => void;
   setRightPaneTab: (tab: RightPaneTab) => void;
   setSettingsOpen: (open: boolean) => void;
   setActiveSettingsPage: (page: string | null) => void;
@@ -90,7 +87,7 @@ export const useUIStore = create<UIState>((set) => ({
   rightPaneTab: (() => {
     try {
       const stored = localStorage.getItem(RIGHT_PANE_TAB_KEY);
-      if (stored && ['review', 'tests', 'tasks', 'activity'].includes(stored)) {
+      if (stored && ['review', 'tasks', 'activity'].includes(stored)) {
         return stored as RightPaneTab;
       }
       return 'activity' as RightPaneTab;
@@ -106,14 +103,6 @@ export const useUIStore = create<UIState>((set) => ({
       return DEFAULT_REVIEW_PANE_WIDTH;
     }
   })(),
-  testPaneWidth: (() => {
-    try {
-      const stored = localStorage.getItem(TEST_PANE_WIDTH_KEY);
-      return stored ? Number(stored) : DEFAULT_TEST_PANE_WIDTH;
-    } catch {
-      return DEFAULT_TEST_PANE_WIDTH;
-    }
-  })(),
   settingsOpen: false,
   activeSettingsPage: null,
   newThreadProjectId: null,
@@ -123,6 +112,7 @@ export const useUIStore = create<UIState>((set) => ({
   addProjectOpen: false,
   analyticsOpen: false,
   liveColumnsOpen: false,
+  testRunnerOpen: false,
   generalSettingsOpen: false,
   activePreferencesPage: null,
   timelineVisible: (() => {
@@ -158,12 +148,27 @@ export const useUIStore = create<UIState>((set) => ({
         : { reviewPaneOpen: false },
     );
   },
-  setTestPaneOpen: (open) => {
-    persistRightPane(open, open ? 'tests' : undefined);
+  setTestRunnerOpen: (open) => {
+    if (open) {
+      invalidateSelectThread();
+      useThreadStore.setState({ selectedThreadId: null, activeThread: null });
+      persistRightPane(false);
+    }
     set(
       open
-        ? { reviewPaneOpen: true, rightPaneTab: 'tests' as RightPaneTab }
-        : { reviewPaneOpen: false },
+        ? {
+            testRunnerOpen: true,
+            reviewPaneOpen: false,
+            settingsOpen: false,
+            activeSettingsPage: null,
+            allThreadsProjectId: null,
+            addProjectOpen: false,
+            automationInboxOpen: false,
+            analyticsOpen: false,
+            liveColumnsOpen: false,
+            generalSettingsOpen: false,
+          }
+        : { testRunnerOpen: false },
     );
   },
   setTasksPaneOpen: (open) => {
@@ -193,17 +198,15 @@ export const useUIStore = create<UIState>((set) => ({
     } catch {}
     set({ reviewPaneWidth: clamped });
   },
-  setTestPaneWidth: (width) => {
-    const clamped = Math.max(MIN_REVIEW_PANE_WIDTH, Math.min(MAX_REVIEW_PANE_WIDTH, width));
-    try {
-      localStorage.setItem(TEST_PANE_WIDTH_KEY, String(clamped));
-    } catch {}
-    set({ testPaneWidth: clamped });
-  },
   setSettingsOpen: (open) =>
     set(
       open
-        ? { settingsOpen: true, automationInboxOpen: false, addProjectOpen: false }
+        ? {
+            settingsOpen: true,
+            automationInboxOpen: false,
+            addProjectOpen: false,
+            testRunnerOpen: false,
+          }
         : { settingsOpen: false, activeSettingsPage: null },
     ),
   setActiveSettingsPage: (page) => set({ activeSettingsPage: page }),
@@ -225,6 +228,7 @@ export const useUIStore = create<UIState>((set) => ({
             allThreadsProjectId: null,
             analyticsOpen: false,
             liveColumnsOpen: false,
+            testRunnerOpen: false,
           }
         : { generalSettingsOpen: false, activePreferencesPage: null },
     );
@@ -245,6 +249,7 @@ export const useUIStore = create<UIState>((set) => ({
             activeSettingsPage: null,
             allThreadsProjectId: null,
             addProjectOpen: false,
+            testRunnerOpen: false,
           }
         : { automationInboxOpen: false },
     );
@@ -260,6 +265,7 @@ export const useUIStore = create<UIState>((set) => ({
         automationInboxOpen: false,
         allThreadsProjectId: null,
         newThreadProjectId: null,
+        testRunnerOpen: false,
       });
     } else {
       set({ addProjectOpen: false });
@@ -282,6 +288,7 @@ export const useUIStore = create<UIState>((set) => ({
       automationInboxOpen: false,
       addProjectOpen: false,
       reviewPaneOpen: false,
+      testRunnerOpen: false,
     });
   },
 
@@ -306,6 +313,7 @@ export const useUIStore = create<UIState>((set) => ({
       analyticsOpen: false,
       liveColumnsOpen: false,
       reviewPaneOpen: false,
+      testRunnerOpen: false,
     });
   },
 
@@ -326,6 +334,7 @@ export const useUIStore = create<UIState>((set) => ({
             addProjectOpen: false,
             automationInboxOpen: false,
             liveColumnsOpen: false,
+            testRunnerOpen: false,
           }
         : { analyticsOpen: false },
     );
@@ -348,6 +357,7 @@ export const useUIStore = create<UIState>((set) => ({
             addProjectOpen: false,
             automationInboxOpen: false,
             analyticsOpen: false,
+            testRunnerOpen: false,
           }
         : { liveColumnsOpen: false },
     );

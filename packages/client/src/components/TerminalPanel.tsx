@@ -742,6 +742,7 @@ export function TerminalPanel() {
 
   const [panelHeight, setPanelHeight] = useState(PANEL_HEIGHT);
   const [newTermTooltipBlocked, setNewTermTooltipBlocked] = useState(false);
+  const [newTermTooltipOpen, setNewTermTooltipOpen] = useState(false);
   const handleNewTermDropdown = useCallback((open: boolean) => {
     if (open) {
       setNewTermTooltipBlocked(true);
@@ -751,6 +752,7 @@ export function TerminalPanel() {
     }
   }, []);
   const [signalTooltipBlocked, setSignalTooltipBlocked] = useState(false);
+  const [signalTooltipOpen, setSignalTooltipOpen] = useState(false);
   const handleSignalDropdown = useCallback((open: boolean) => {
     if (open) {
       setSignalTooltipBlocked(true);
@@ -895,7 +897,10 @@ export function TerminalPanel() {
           </div>
 
           <DropdownMenu onOpenChange={handleNewTermDropdown}>
-            <Tooltip open={newTermTooltipBlocked ? false : undefined}>
+            <Tooltip
+              open={!newTermTooltipBlocked && newTermTooltipOpen}
+              onOpenChange={setNewTermTooltipOpen}
+            >
               <TooltipTrigger asChild>
                 <DropdownMenuTrigger asChild>
                   <Button variant="ghost" size="icon-xs">
@@ -927,7 +932,10 @@ export function TerminalPanel() {
             visibleTabs.find((t) => t.id === effectiveActiveTabId)?.alive &&
             visibleTabs.find((t) => t.id === effectiveActiveTabId)?.type === 'pty' && (
               <DropdownMenu onOpenChange={handleSignalDropdown}>
-                <Tooltip open={signalTooltipBlocked ? false : undefined}>
+                <Tooltip
+                  open={!signalTooltipBlocked && signalTooltipOpen}
+                  onOpenChange={setSignalTooltipOpen}
+                >
                   <TooltipTrigger asChild>
                     <DropdownMenuTrigger asChild>
                       <Button variant="ghost" size="icon-xs" data-testid="terminal-signal-menu">

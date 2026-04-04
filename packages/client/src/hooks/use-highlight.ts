@@ -125,35 +125,46 @@ const pendingRegistrations = new Map<string, Promise<void>>();
  */
 export async function ensureLanguage(lang: string): Promise<boolean> {
   if (lang === 'plaintext' || lang === 'text') return true;
-  if (registeredLangs.has(lang)) return true;
 
-  const existing = pendingRegistrations.get(lang);
+  // Resolve aliases (e.g. "tsx" → "typescript", "jsx" → "javascript")
+  const resolved = resolveLang(lang);
+  if (registeredLangs.has(resolved)) return true;
+
+  const existing = pendingRegistrations.get(resolved);
   if (existing) {
     await existing;
-    return registeredLangs.has(lang);
+    return registeredLangs.has(resolved);
   }
 
-  const importFn = LANG_IMPORTS[lang];
+  const importFn = LANG_IMPORTS[resolved];
   if (!importFn) return false;
 
   const promise = importFn()
     .then((mod) => {
       const langDef = (mod as { default: unknown }).default;
       if (langDef) {
-        hljs.registerLanguage(lang, langDef as Parameters<typeof hljs.registerLanguage>[1]);
-        registeredLangs.add(lang);
+        hljs.registerLanguage(resolved, langDef as Parameters<typeof hljs.registerLanguage>[1]);
+        registeredLangs.add(resolved);
       }
     })
     .catch(() => {
       // Silently fail — will fall back to plain text
     })
     .finally(() => {
-      pendingRegistrations.delete(lang);
+      pendingRegistrations.delete(resolved);
     });
 
-  pendingRegistrations.set(lang, promise);
+  pendingRegistrations.set(resolved, promise);
   await promise;
-  return registeredLangs.has(lang);
+  return registeredLangs.has(resolved);
+}
+
+/**
+ * Resolve a language name or extension alias to a registered hljs language.
+ */
+function resolveLang(lang: string): string {
+  if (LANG_IMPORTS[lang]) return lang;
+  return EXT_TO_HLJS_LANG[lang] ?? lang;
 }
 
 /**
@@ -194,11 +205,17 @@ function escapeHtml(str: string): string {
  * Falls back to escaped plain text if the language isn't loaded.
  */
 export function highlightLine(line: string, lang: string): string {
-  if (!lang || lang === 'plaintext' || lang === 'text' || !registeredLangs.has(lang)) {
+  const resolved = resolveLang(lang);
+  if (
+    !resolved ||
+    resolved === 'plaintext' ||
+    resolved === 'text' ||
+    !registeredLangs.has(resolved)
+  ) {
     return escapeHtml(line);
   }
   try {
-    return hljs.highlight(line, { language: lang, ignoreIllegals: true }).value;
+    return hljs.highlight(line, { language: resolved, ignoreIllegals: true }).value;
   } catch {
     return escapeHtml(line);
   }
@@ -209,11 +226,17 @@ export function highlightLine(line: string, lang: string): string {
  * Returns HTML string with hljs token classes.
  */
 export function highlightCode(code: string, lang: string): string {
-  if (!lang || lang === 'plaintext' || lang === 'text' || !registeredLangs.has(lang)) {
+  const resolved = resolveLang(lang);
+  if (
+    !resolved ||
+    resolved === 'plaintext' ||
+    resolved === 'text' ||
+    !registeredLangs.has(resolved)
+  ) {
     return escapeHtml(code);
   }
   try {
-    return hljs.highlight(code, { language: lang, ignoreIllegals: true }).value;
+    return hljs.highlight(code, { language: resolved, ignoreIllegals: true }).value;
   } catch {
     return escapeHtml(code);
   }

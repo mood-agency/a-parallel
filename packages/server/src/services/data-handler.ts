@@ -268,6 +268,11 @@ export async function handleDataMessageWithAck(runnerId: string, data: any): Pro
         const arc = await arcRepository.getArc(data.arcId);
         return { type: 'data:get_arc_response', arc: arc ?? null };
       }
+      case 'data:mark_and_list_stale_threads': {
+        const threadRepo = getThreadRepo();
+        const staleThreads = await threadRepo.markAndListStaleThreads(runnerId);
+        return { type: 'data:mark_and_list_stale_threads_response', threads: staleThreads };
+      }
       default:
         log.warn('Unknown data message type from runner', {
           namespace: 'data-handler',
@@ -631,6 +636,17 @@ export async function handleDataMessage(runnerId: string, data: any): Promise<vo
           type: 'data:get_arc_response',
           requestId: data.requestId,
           arc: arc ?? null,
+        });
+        break;
+      }
+
+      case 'data:mark_and_list_stale_threads': {
+        const threadRepo = getThreadRepo();
+        const staleThreads = await threadRepo.markAndListStaleThreads(runnerId);
+        sendToRunner(runnerId, {
+          type: 'data:mark_and_list_stale_threads_response',
+          requestId: data.requestId,
+          threads: staleThreads,
         });
         break;
       }

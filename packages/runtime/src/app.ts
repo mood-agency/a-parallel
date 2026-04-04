@@ -398,6 +398,77 @@ export async function createRuntimeApp(options: RuntimeAppOptions): Promise<Runt
       if (!parsed?.type) return;
       handlePtyMessage(parsed.type, parsed.data, userId, (msg) => respond(msg));
     });
+
+    // Auto-resume threads that were running when the runtime crashed
+    autoResumeStaleThreads().catch((err) => {
+      log.error('Failed to auto-resume stale threads', {
+        namespace: 'server',
+        error: (err as Error).message,
+      });
+    });
+  }
+
+  /**
+   * On startup, find threads that were running when the runtime crashed,
+   * mark them as interrupted, and automatically resume each one.
+   */
+  async function autoResumeStaleThreads(): Promise<void> {
+    const { remoteMarkAndListStaleThreads } = await import('./services/team-client.js');
+    const staleThreads = await remoteMarkAndListStaleThreads();
+    if (staleThreads.length === 0) return;
+
+    log.info(`Auto-resuming ${staleThreads.length} interrupted thread(s)`, {
+      namespace: 'server',
+      count: staleThreads.length,
+      threadIds: staleThreads.map((t: any) => t.id),
+    });
+
+    for (const thread of staleThreads) {
+      try {
+        // Resolve the working directory: worktree path takes priority, then project path
+        let cwd = thread.worktreePath;
+        if (!cwd) {
+          const pathResult = await getServices().projects.resolveProjectPath(
+            thread.projectId,
+            thread.userId,
+          );
+          if (pathResult.isErr()) {
+            log.warn('Cannot auto-resume thread — failed to resolve project path', {
+              namespace: 'server',
+              threadId: thread.id,
+              error: pathResult.error.message,
+            });
+            continue;
+          }
+          cwd = pathResult.value;
+        }
+
+        await startAgent(
+          thread.id,
+          'continue',
+          cwd,
+          thread.model,
+          thread.permissionMode,
+          undefined, // images
+          undefined, // disallowedTools
+          undefined, // allowedTools
+          thread.provider,
+        );
+
+        log.info('Auto-resumed thread', {
+          namespace: 'server',
+          threadId: thread.id,
+          model: thread.model,
+          provider: thread.provider,
+        });
+      } catch (err) {
+        log.error('Failed to auto-resume thread', {
+          namespace: 'server',
+          threadId: thread.id,
+          error: (err as Error).message,
+        });
+      }
+    }
   }
 
   async function shutdown(): Promise<void> {

@@ -39,6 +39,9 @@ import {
   fetchRemote,
   git,
   getPRForBranch,
+  getRemoteUrl,
+  listGitHubOrgs,
+  publishRepo,
 } from '@funny/core/git';
 import { badRequest, internal } from '@funny/shared/errors';
 import { Hono } from 'hono';
@@ -81,6 +84,7 @@ import {
   commitSchema,
   createPRSchema,
   workflowSchema,
+  publishRepoSchema,
 } from '../validation/schemas.js';
 
 export const gitRoutes = new Hono<HonoEnv>();
@@ -620,6 +624,59 @@ gitRoutes.post('/project/:projectId/push', async (c) => {
   if (result.isErr()) return resultToResponse(c, result);
   _gitStatusCache.delete(projectId);
   return c.json({ ok: true, output: result.value });
+});
+
+// GET /api/git/project/:projectId/remote-url
+gitRoutes.get('/project/:projectId/remote-url', async (c) => {
+  const projectId = c.req.param('projectId');
+  const userId = c.get('userId') as string;
+  const orgId = c.get('organizationId');
+  const cwdResult = await requireProjectCwd(projectId, userId, orgId);
+  if (cwdResult.isErr()) return resultToResponse(c, cwdResult);
+  const result = await getRemoteUrl(cwdResult.value);
+  if (result.isErr()) return resultToResponse(c, result);
+  return c.json({ remoteUrl: result.value });
+});
+
+// GET /api/git/project/:projectId/gh-orgs
+gitRoutes.get('/project/:projectId/gh-orgs', async (c) => {
+  const projectId = c.req.param('projectId');
+  const userId = c.get('userId') as string;
+  const orgId = c.get('organizationId');
+  const cwdResult = await requireProjectCwd(projectId, userId, orgId);
+  if (cwdResult.isErr()) return resultToResponse(c, cwdResult);
+  const identity = await resolveIdentity(userId);
+  if (!identity?.githubToken) {
+    return c.json({ orgs: [] });
+  }
+  const result = await listGitHubOrgs(cwdResult.value, { GH_TOKEN: identity.githubToken });
+  if (result.isErr()) return resultToResponse(c, result);
+  return c.json({ orgs: result.value });
+});
+
+// POST /api/git/project/:projectId/publish
+gitRoutes.post('/project/:projectId/publish', async (c) => {
+  const projectId = c.req.param('projectId');
+  const userId = c.get('userId') as string;
+  const orgId = c.get('organizationId');
+  const cwdResult = await requireProjectCwd(projectId, userId, orgId);
+  if (cwdResult.isErr()) return resultToResponse(c, cwdResult);
+  const identity = await resolveIdentity(userId);
+  if (!identity?.githubToken) {
+    return c.json({ error: 'GitHub token required. Set one in Settings > Profile.' }, 400);
+  }
+  const parsed = validate(publishRepoSchema, await c.req.json());
+  if (parsed.isErr()) return resultToResponse(c, parsed);
+  log.info('git.publish', { namespace: 'git', projectId, repoName: parsed.value.name });
+  const result = await publishRepo(cwdResult.value, parsed.value, {
+    GH_TOKEN: identity.githubToken,
+  });
+  if (result.isErr()) {
+    log.error('git.publish.failed', { namespace: 'git', projectId, error: String(result.error) });
+    return resultToResponse(c, result);
+  }
+  _gitStatusCache.delete(projectId);
+  return c.json({ ok: true, repoUrl: result.value });
 });
 
 // POST /api/git/project/:projectId/pull

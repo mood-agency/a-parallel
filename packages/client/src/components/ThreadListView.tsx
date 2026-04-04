@@ -171,7 +171,7 @@ export function ThreadListView({
             <select
               value={pageSize}
               onChange={(e) => onPageSizeChange(Number(e.target.value))}
-              className="cursor-pointer rounded-md border border-input bg-background px-2 py-1.5 text-xs text-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+              className="cursor-pointer rounded-md border border-input bg-background px-2 py-1.5 text-xs text-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring/50"
             >
               {pageSizeOptions.map((size) => (
                 <option key={size} value={size}>

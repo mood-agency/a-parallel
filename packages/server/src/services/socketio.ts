@@ -449,6 +449,7 @@ function setupRunnerDataHandlers(socket: Socket, runnerId: string): void {
     'data:get_minimax_api_key',
     'data:update_profile',
     'data:get_arc',
+    'data:mark_and_list_stale_threads',
   ];
 
   // Regex to validate requestId is a safe identifier (UUID or nanoid-like)

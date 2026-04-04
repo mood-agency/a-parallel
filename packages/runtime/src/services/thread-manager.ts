@@ -31,6 +31,8 @@ export const markStaleThreadsInterrupted = () =>
   getServices().threads.markStaleThreadsInterrupted();
 export const markStaleExternalThreadsStopped = () =>
   getServices().threads.markStaleExternalThreadsStopped();
+export const markAndListStaleThreads = (runnerId: string) =>
+  getServices().threads.markAndListStaleThreads(runnerId);
 
 // ── Messages ────────────────────────────────────────────────
 export const getThreadWithMessages = (id: string) =>

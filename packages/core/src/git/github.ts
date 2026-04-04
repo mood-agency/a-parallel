@@ -267,6 +267,80 @@ export function postPRReview(
  * Returns null when no PR exists or when `gh` is unavailable/unauthenticated.
  * Designed to fail silently — never breaks callers.
  */
+// ── Publish Repository ──────────────────────────────────────
+
+export interface PublishRepoOptions {
+  name: string;
+  description?: string;
+  org?: string;
+  private: boolean;
+}
+
+/**
+ * List GitHub organizations the authenticated user belongs to.
+ * Requires a valid GH_TOKEN.
+ */
+export function listGitHubOrgs(
+  cwd: string,
+  env?: Record<string, string>,
+): ResultAsync<string[], DomainError> {
+  return ResultAsync.fromPromise(
+    execute('gh', ['api', 'user/memberships/orgs', '--jq', '.[].organization.login'], {
+      cwd,
+      timeout: 15_000,
+      reject: false,
+      env,
+    }).then((r) => {
+      if (r.exitCode !== 0) return [];
+      return r.stdout.trim().split('\n').filter(Boolean);
+    }),
+    (error) => {
+      if (error instanceof ProcessExecutionError) {
+        return processError(error.message, error.exitCode, error.stderr);
+      }
+      return internal(String(error));
+    },
+  );
+}
+
+/**
+ * Publish a local repository to GitHub.
+ * Uses `gh repo create` with `--source . --remote origin --push` to create
+ * the repo, add the remote, and push in one atomic operation.
+ */
+export function publishRepo(
+  cwd: string,
+  options: PublishRepoOptions,
+  env?: Record<string, string>,
+): ResultAsync<string, DomainError> {
+  const repoName = options.org ? `${options.org}/${options.name}` : options.name;
+  const args = [
+    'repo',
+    'create',
+    repoName,
+    options.private ? '--private' : '--public',
+    '--source',
+    '.',
+    '--remote',
+    'origin',
+    '--push',
+  ];
+  if (options.description) {
+    args.push('--description', options.description);
+  }
+  return ResultAsync.fromPromise(
+    execute('gh', args, { cwd, timeout: 60_000, env }).then((r) => r.stdout.trim()),
+    (error) => {
+      if (error instanceof ProcessExecutionError) {
+        return processError(error.message, error.exitCode, error.stderr);
+      }
+      return internal(String(error));
+    },
+  );
+}
+
+// ── PR Queries ──────────────────────────────────────────────
+
 export async function getPRForBranch(
   cwd: string,
   branch: string,

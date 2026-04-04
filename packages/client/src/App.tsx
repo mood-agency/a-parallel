@@ -130,11 +130,8 @@ export function App() {
   const loadProjects = useProjectStore((s) => s.loadProjects);
   const reviewPaneOpen = useUIStore((s) => s.reviewPaneOpen);
   const reviewPaneWidth = useUIStore((s) => s.reviewPaneWidth);
-  const testPaneWidth = useUIStore((s) => s.testPaneWidth);
   const setReviewPaneWidth = useUIStore((s) => s.setReviewPaneWidth);
-  const setTestPaneWidth = useUIStore((s) => s.setTestPaneWidth);
   const rightPaneTab = useUIStore((s) => s.rightPaneTab);
-  const activeWidth = rightPaneTab === 'tests' ? testPaneWidth : reviewPaneWidth;
   const settingsOpen = useUIStore((s) => s.settingsOpen);
   const generalSettingsOpen = useUIStore((s) => s.generalSettingsOpen);
   const allThreadsProjectId = useUIStore((s) => s.allThreadsProjectId);
@@ -142,6 +139,7 @@ export function App() {
   const addProjectOpen = useUIStore((s) => s.addProjectOpen);
   const analyticsOpen = useUIStore((s) => s.analyticsOpen);
   const liveColumnsOpen = useUIStore((s) => s.liveColumnsOpen);
+  const testRunnerOpen = useUIStore((s) => s.testRunnerOpen);
   const internalEditorOpen = useInternalEditorStore((s) => s.isOpen);
   const internalEditorFilePath = useInternalEditorStore((s) => s.filePath);
   const internalEditorContent = useInternalEditorStore((s) => s.initialContent);
@@ -151,18 +149,31 @@ export function App() {
 
   // --- Right panel (ResizablePanelGroup) ---
   const rightPanelRef = useRef<PanelImperativeHandle>(null);
-  const rightPaneVisible = reviewPaneOpen && !settingsOpen && !allThreadsProjectId;
+  const isFullScreenView =
+    settingsOpen ||
+    generalSettingsOpen ||
+    analyticsOpen ||
+    liveColumnsOpen ||
+    testRunnerOpen ||
+    automationInboxOpen ||
+    addProjectOpen ||
+    !!allThreadsProjectId;
+  const rightPaneVisible = reviewPaneOpen && !isFullScreenView;
 
   // Sync panel collapse/expand with store
   useEffect(() => {
     const panel = rightPanelRef.current;
-    if (!panel) return;
-    if (rightPaneVisible) {
-      if (panel.isCollapsed()) panel.expand();
-    } else {
-      if (!panel.isCollapsed()) panel.collapse();
+    if (!panel || isFullScreenView) return;
+    try {
+      if (rightPaneVisible) {
+        if (panel.isCollapsed()) panel.expand();
+      } else {
+        if (!panel.isCollapsed()) panel.collapse();
+      }
+    } catch {
+      // Panel may not be registered with PanelGroup yet after re-mount
     }
-  }, [rightPaneVisible]);
+  }, [rightPaneVisible, isFullScreenView]);
 
   // Persist right panel size to store (convert px → vw) and detect collapse/expand
   const handleRightPanelResize = useCallback(
@@ -176,11 +187,9 @@ export function App() {
       // Panel expanded — sync store
       if (!state.reviewPaneOpen) state.setReviewPaneOpen(true);
       const vw = (size.inPixels / window.innerWidth) * 100;
-      const isTests = state.rightPaneTab === 'tests';
-      if (isTests) setTestPaneWidth(vw);
-      else setReviewPaneWidth(vw);
+      setReviewPaneWidth(vw);
     },
-    [setTestPaneWidth, setReviewPaneWidth],
+    [setReviewPaneWidth],
   );
 
   // Eagerly mount ReviewPane (hidden) after initial load so first toggle is instant.
@@ -251,6 +260,8 @@ export function App() {
                       <AnalyticsView />
                     ) : liveColumnsOpen ? (
                       <LiveColumnsView />
+                    ) : testRunnerOpen ? (
+                      <TestRunnerPane />
                     ) : automationInboxOpen ? (
                       <AutomationInboxView />
                     ) : addProjectOpen ? (
@@ -270,6 +281,7 @@ export function App() {
                   settingsOpen ||
                   analyticsOpen ||
                   liveColumnsOpen ||
+                  testRunnerOpen ||
                   automationInboxOpen ||
                   addProjectOpen
                 ) && <TerminalPanel />}
@@ -277,41 +289,41 @@ export function App() {
             </SidebarInset>
           </ResizablePanel>
 
-          {/* Resize handle between center and right pane */}
-          <ResizableHandle data-testid="right-pane-resize-handle" />
+          {/* Resize handle between center and right pane — hidden during full-screen views */}
+          {!isFullScreenView && <ResizableHandle data-testid="right-pane-resize-handle" />}
 
-          {/* Right panel — Review / Tests / Activity / Tasks */}
-          <ResizablePanel
-            panelRef={rightPanelRef}
-            defaultSize={`${activeWidth}vw`}
-            minSize="250px"
-            maxSize="70vw"
-            collapsible
-            collapsedSize="0px"
-            onResize={handleRightPanelResize}
-            className="flex flex-col"
-            style={{ overflow: 'hidden', minWidth: 0 }}
-          >
-            {(reviewPaneReady || reviewPaneOpen) && (
-              <div className="flex h-full min-w-0 flex-1 flex-col bg-sidebar">
-                <div className="min-h-0 flex-1 overflow-hidden">
-                  <ErrorBoundary area="right-pane">
-                    <Suspense>
-                      {rightPaneTab === 'review' ? (
-                        <ReviewPane />
-                      ) : rightPaneTab === 'tasks' ? (
-                        <TasksPane />
-                      ) : rightPaneTab === 'activity' ? (
-                        <ActivityPane />
-                      ) : (
-                        <TestRunnerPane />
-                      )}
-                    </Suspense>
-                  </ErrorBoundary>
+          {/* Right panel — Review / Tests / Activity / Tasks — unmounted during full-screen views */}
+          {!isFullScreenView && (
+            <ResizablePanel
+              panelRef={rightPanelRef}
+              defaultSize={`${reviewPaneWidth}vw`}
+              minSize="250px"
+              maxSize="70vw"
+              collapsible
+              collapsedSize="0px"
+              onResize={handleRightPanelResize}
+              className="flex flex-col"
+              style={{ overflow: 'hidden', minWidth: 0 }}
+            >
+              {(reviewPaneReady || reviewPaneOpen) && (
+                <div className="flex h-full min-w-0 flex-1 flex-col bg-sidebar">
+                  <div className="min-h-0 flex-1 overflow-hidden">
+                    <ErrorBoundary area="right-pane">
+                      <Suspense>
+                        {rightPaneTab === 'review' ? (
+                          <ReviewPane />
+                        ) : rightPaneTab === 'tasks' ? (
+                          <TasksPane />
+                        ) : (
+                          <ActivityPane />
+                        )}
+                      </Suspense>
+                    </ErrorBoundary>
+                  </div>
                 </div>
-              </div>
-            )}
-          </ResizablePanel>
+              )}
+            </ResizablePanel>
+          )}
         </ResizablePanelGroup>
       </div>
 

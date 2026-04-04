@@ -375,7 +375,7 @@ function AddThreadButton({
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             placeholder={t('kanban.searchProject')}
-            className="h-auto flex-1 rounded-none border-0 bg-transparent px-0 py-0 text-sm shadow-none placeholder:text-muted-foreground focus-visible:ring-0 focus-visible:ring-offset-0"
+            className="h-auto flex-1 rounded-none border-0 bg-transparent px-0 py-0 text-sm shadow-none placeholder:text-muted-foreground focus-visible:ring-0"
             autoFocus
           />
         </div>

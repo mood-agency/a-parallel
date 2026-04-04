@@ -490,6 +490,7 @@ const SplitRow = memo(function SplitRow({
           wrap ? 'items-start overflow-visible' : 'items-center overflow-hidden',
         )}
         style={leftBg ? { backgroundColor: leftBg } : undefined}
+        data-pane="left"
       >
         <div
           className="relative z-10 flex flex-shrink-0 items-center"
@@ -533,6 +534,7 @@ const SplitRow = memo(function SplitRow({
           wrap ? 'items-start overflow-visible' : 'items-center overflow-hidden',
         )}
         style={rightBg ? { backgroundColor: rightBg } : undefined}
+        data-pane="right"
       >
         <div
           className="relative z-10 flex flex-shrink-0 items-center"
@@ -608,6 +610,7 @@ const ThreePaneRow = memo(function ThreePaneRow({
       <div
         className={cn('flex flex-1 border-r border-border/30', align)}
         style={leftBg ? { backgroundColor: leftBg } : undefined}
+        data-pane="left"
       >
         <div
           className="relative z-10 flex flex-shrink-0 items-center"
@@ -645,7 +648,7 @@ const ThreePaneRow = memo(function ThreePaneRow({
         )}
       </div>
       {/* Center (result — clean, no diff highlighting) */}
-      <div className={cn('flex flex-1 border-r border-border/30', align)}>
+      <div className={cn('flex flex-1 border-r border-border/30', align)} data-pane="center">
         <div
           className="relative z-10 flex flex-shrink-0 items-center"
           style={{ backgroundColor: GUTTER_BG_CARD }}
@@ -678,6 +681,7 @@ const ThreePaneRow = memo(function ThreePaneRow({
       <div
         className={cn('flex flex-1', align)}
         style={rightBg ? { backgroundColor: rightBg } : undefined}
+        data-pane="right"
       >
         <div
           className="relative z-10 flex flex-shrink-0 items-center"
@@ -1065,6 +1069,56 @@ export const VirtualDiff = memo(function VirtualDiff({
     };
   }, [wordWrap, parsed.lines]);
 
+  // ── Pane selection isolation: constrain text selection to a single pane ──
+  useEffect(() => {
+    if (viewMode === 'unified') return;
+    const container = scrollRef.current;
+    if (!container) return;
+
+    let disabled: HTMLElement[] = [];
+
+    const restore = () => {
+      for (const p of disabled) p.style.userSelect = '';
+      disabled = [];
+    };
+
+    const onMouseDown = (e: MouseEvent) => {
+      // Clear the browser selection before restoring panes so the old
+      // highlight doesn't flash across all columns.
+      const sel = window.getSelection();
+      if (sel && !sel.isCollapsed) sel.removeAllRanges();
+
+      // Restore previous isolation
+      restore();
+
+      const target = e.target as HTMLElement;
+      const pane = target.closest('[data-pane]') as HTMLElement | null;
+      if (!pane) return;
+
+      // Disable all panes that don't match the clicked one
+      const activePaneName = pane.dataset.pane;
+      container.querySelectorAll<HTMLElement>('[data-pane]').forEach((p) => {
+        if (p.dataset.pane !== activePaneName) {
+          p.style.userSelect = 'none';
+          disabled.push(p);
+        }
+      });
+    };
+
+    // Clicking outside the diff container restores all panes
+    const onDocMouseDown = (e: MouseEvent) => {
+      if (!container.contains(e.target as Node)) restore();
+    };
+
+    container.addEventListener('mousedown', onMouseDown);
+    document.addEventListener('mousedown', onDocMouseDown);
+    return () => {
+      container.removeEventListener('mousedown', onMouseDown);
+      document.removeEventListener('mousedown', onDocMouseDown);
+      restore();
+    };
+  }, [viewMode]);
+
   const sections = useMemo(
     () => (codeFolding ? buildSections(parsed.lines, contextLines) : []),
     [parsed.lines, codeFolding, contextLines],
@@ -1339,7 +1393,11 @@ export const VirtualDiff = memo(function VirtualDiff({
           style={{
             height: virtualizer.getTotalSize(),
             minWidth: '100%',
-            width: maxContentWidth > 0 ? maxContentWidth : '100%',
+            // In split/three-pane mode, horizontal scroll is handled via CSS
+            // translateX on each pane's text — the container must stay at 100%
+            // so flex-1 columns divide the *visible* width equally.
+            // Only unified mode needs to expand the container for native h-scroll.
+            width: maxContentWidth > 0 && !needsHScroll ? maxContentWidth : '100%',
             position: 'relative',
           }}
         >
@@ -1364,20 +1422,20 @@ export const VirtualDiff = memo(function VirtualDiff({
               >
                 {row.type === 'hunk' ? (
                   <div
-                    className="flex items-center bg-accent/50 px-2 font-mono text-[11px] text-muted-foreground"
+                    className="flex select-none items-center bg-accent/50 px-2 font-mono text-[11px] text-muted-foreground"
                     style={{ height: ROW_HEIGHT }}
                   >
-                    <span className={cn(gutterWidth, 'flex-shrink-0 select-none')} />
+                    <span className={cn(gutterWidth, 'flex-shrink-0')} />
                     <span className="truncate">{row.text}</span>
                   </div>
                 ) : row.type === 'fold' ? (
                   <button
-                    className="flex w-full items-center bg-muted/50 px-2 font-mono text-[11px] text-muted-foreground transition-colors hover:bg-accent/50 hover:text-foreground"
+                    className="flex w-full select-none items-center bg-muted/50 px-2 font-mono text-[11px] text-muted-foreground transition-colors hover:bg-accent/50 hover:text-foreground"
                     style={{ height: ROW_HEIGHT }}
                     onClick={() => toggleFold(row.sectionIdx)}
                     data-testid="diff-fold-toggle"
                   >
-                    <span className={cn(gutterWidth, 'flex-shrink-0 select-none')} />
+                    <span className={cn(gutterWidth, 'flex-shrink-0')} />
                     <span className="truncate">
                       @@ -{row.oldStart},{row.lineCount} +{row.newStart},{row.lineCount} @@ —{' '}
                       {row.lineCount} lines hidden

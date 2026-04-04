@@ -423,11 +423,15 @@ export const PromptEditor = forwardRef<PromptEditorHandle, PromptEditorProps>(fu
         // Use the full text after @ (up to next space) instead of TipTap's
         // caret-dependent query, so moving the caret doesn't change results
         const fullQuery = getFullQuery(query);
-        setSuggestionQuery(fullQuery);
+        // Defer state updates out of TipTap's render cycle to avoid
+        // "Cannot update a component while rendering a different component"
+        queueMicrotask(() => {
+          setSuggestionQuery(fullQuery);
+          setSuggestionLoading(true);
+        });
         // Return a promise that resolves with items after debounce
         return new Promise<SuggestionItem[]>((resolve) => {
           if (fileTimerRef.current) clearTimeout(fileTimerRef.current);
-          setSuggestionLoading(true);
           fileTimerRef.current = setTimeout(async () => {
             const path = cwdRef.current;
             if (!path) {
@@ -555,9 +559,10 @@ export const PromptEditor = forwardRef<PromptEditorHandle, PromptEditorProps>(fu
       allowedPrefixes: [' ', '\n'],
       items: async ({ query }: { query: string }) => {
         const fullQuery = getFullQuery(query);
-        setSuggestionQuery(fullQuery);
+        // Defer state updates out of TipTap's render cycle
+        queueMicrotask(() => setSuggestionQuery(fullQuery));
         if (!skillsCacheRef.current) {
-          setSuggestionLoading(true);
+          queueMicrotask(() => setSuggestionLoading(true));
           const fn = loadSkillsRef.current;
           skillsCacheRef.current = fn ? await fn() : [];
           setSuggestionLoading(false);
@@ -670,10 +675,13 @@ export const PromptEditor = forwardRef<PromptEditorHandle, PromptEditorProps>(fu
       allowedPrefixes: [' ', '\n'],
       items: ({ query }: { query: string }) => {
         const fullQuery = getFullQuery(query);
-        setSuggestionQuery(fullQuery);
+        // Defer state updates out of TipTap's render cycle
+        queueMicrotask(() => {
+          setSuggestionQuery(fullQuery);
+          setSuggestionLoading(true);
+        });
         return new Promise<SuggestionItem[]>((resolve) => {
           if (symbolTimerRef.current) clearTimeout(symbolTimerRef.current);
-          setSuggestionLoading(true);
           symbolTimerRef.current = setTimeout(async () => {
             const path = cwdRef.current;
             if (!path) {

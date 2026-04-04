@@ -888,7 +888,7 @@ export function CommitHistoryTab({ visible }: CommitHistoryTabProps) {
           </DialogHeader>
           <div className="space-y-2">
             <input
-              className="w-full rounded-md border border-input bg-background px-2 py-1.5 text-xs placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+              className="w-full rounded-md border border-input bg-background px-2 py-1.5 text-xs placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring/50"
               placeholder={t('review.prTitle', 'PR title')}
               data-testid="history-pr-title"
               value={prDialog?.title ?? ''}
@@ -897,7 +897,7 @@ export function CommitHistoryTab({ visible }: CommitHistoryTabProps) {
               }
             />
             <textarea
-              className="w-full resize-none rounded-md border border-input bg-background px-2 py-1.5 text-xs placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+              className="w-full resize-none rounded-md border border-input bg-background px-2 py-1.5 text-xs placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring/50"
               rows={4}
               placeholder={t('review.commitBody', 'Description (optional)')}
               data-testid="history-pr-body"

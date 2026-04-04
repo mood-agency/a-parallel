@@ -108,4 +108,7 @@ export {
   type PRInfo,
   type ReviewEvent,
   type BranchPRInfo,
+  listGitHubOrgs,
+  publishRepo,
+  type PublishRepoOptions,
 } from './github.js';

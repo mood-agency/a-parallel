@@ -148,6 +148,7 @@ const MoreActionsMenu = memo(function MoreActionsMenu() {
   // Tooltip ↔ DropdownMenu: suppress tooltip while dropdown is open and
   // briefly after it closes (focus-return would otherwise flash the tooltip).
   const [moreActionsTooltipBlocked, setMoreActionsTooltipBlocked] = useState(false);
+  const [moreActionsTooltipOpen, setMoreActionsTooltipOpen] = useState(false);
   const handleMoreActionsDropdown = useCallback((open: boolean) => {
     if (open) {
       setMoreActionsTooltipBlocked(true);
@@ -221,7 +222,10 @@ const MoreActionsMenu = memo(function MoreActionsMenu() {
   return (
     <>
       <DropdownMenu onOpenChange={handleMoreActionsDropdown}>
-        <Tooltip open={moreActionsTooltipBlocked ? false : undefined}>
+        <Tooltip
+          open={!moreActionsTooltipBlocked && moreActionsTooltipOpen}
+          onOpenChange={setMoreActionsTooltipOpen}
+        >
           <TooltipTrigger asChild>
             <DropdownMenuTrigger asChild>
               <Button
@@ -574,7 +578,8 @@ export const ProjectHeader = memo(function ProjectHeader() {
   const projects = useProjectStore((s) => s.projects);
   const setReviewPaneOpen = useUIStore((s) => s.setReviewPaneOpen);
   const reviewPaneOpen = useUIStore((s) => s.reviewPaneOpen);
-  const setTestPaneOpen = useUIStore((s) => s.setTestPaneOpen);
+  const setTestRunnerOpen = useUIStore((s) => s.setTestRunnerOpen);
+  const testRunnerOpen = useUIStore((s) => s.testRunnerOpen);
   const setTasksPaneOpen = useUIStore((s) => s.setTasksPaneOpen);
   const setActivityPaneOpen = useUIStore((s) => s.setActivityPaneOpen);
   const rightPaneTab = useUIStore((s) => s.rightPaneTab);
@@ -614,6 +619,7 @@ export const ProjectHeader = memo(function ProjectHeader() {
 
   // Tooltip ↔ DropdownMenu: suppress tooltip while editor dropdown is open
   const [editorTooltipBlocked, setEditorTooltipBlocked] = useState(false);
+  const [editorTooltipOpen, setEditorTooltipOpen] = useState(false);
   const handleEditorDropdown = useCallback((open: boolean) => {
     if (open) {
       setEditorTooltipBlocked(true);
@@ -777,7 +783,10 @@ export const ProjectHeader = memo(function ProjectHeader() {
               </Tooltip>
             )}
             <DropdownMenu onOpenChange={handleEditorDropdown}>
-              <Tooltip open={editorTooltipBlocked ? false : undefined}>
+              <Tooltip
+                open={!editorTooltipBlocked && editorTooltipOpen}
+                onOpenChange={setEditorTooltipOpen}
+              >
                 <TooltipTrigger asChild>
                   <DropdownMenuTrigger asChild>
                     <Button
@@ -879,19 +888,11 @@ export const ProjectHeader = memo(function ProjectHeader() {
                   size="icon-sm"
                   onClick={() =>
                     startTransition(() => {
-                      if (reviewPaneOpen && rightPaneTab === 'tests') {
-                        setTestPaneOpen(false);
-                      } else {
-                        setTestPaneOpen(true);
-                      }
+                      setTestRunnerOpen(!testRunnerOpen);
                     })
                   }
                   data-testid="header-toggle-tests"
-                  className={
-                    reviewPaneOpen && rightPaneTab === 'tests'
-                      ? 'text-foreground'
-                      : 'text-muted-foreground'
-                  }
+                  className={testRunnerOpen ? 'text-foreground' : 'text-muted-foreground'}
                 >
                   <FlaskConical className="icon-base" />
                 </Button>

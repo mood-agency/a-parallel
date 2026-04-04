@@ -379,6 +379,38 @@ export function createThreadRepository(deps: ThreadRepositoryDeps) {
     }
   }
 
+  /**
+   * Mark stale running threads for a specific runner as interrupted and return them.
+   * Called by the runner on startup so it can auto-resume interrupted work.
+   * Only targets threads that were actively `running` (not `waiting` — those need user input).
+   */
+  async function markAndListStaleThreads(runnerId: string): Promise<any[]> {
+    const staleCondition = and(
+      eq(schema.threads.status, 'running'),
+      eq(schema.threads.runnerId, runnerId),
+      ne(schema.threads.provider, 'external'),
+    );
+
+    const stale = await dbAll(db.select().from(schema.threads).where(staleCondition));
+
+    if (stale.length > 0) {
+      await dbRun(
+        db
+          .update(schema.threads)
+          .set({ status: 'interrupted', completedAt: new Date().toISOString() })
+          .where(staleCondition),
+      );
+      log?.info(`Marked ${stale.length} stale thread(s) as interrupted for runner auto-resume`, {
+        namespace: 'thread-manager',
+        runnerId,
+        count: stale.length,
+        threadIds: stale.map((t) => t.id),
+      });
+    }
+
+    return stale;
+  }
+
   return {
     listThreads,
     listArchivedThreads,
@@ -390,5 +422,6 @@ export function createThreadRepository(deps: ThreadRepositoryDeps) {
     deleteThread,
     markStaleThreadsInterrupted,
     markStaleExternalThreadsStopped,
+    markAndListStaleThreads,
   };
 }
