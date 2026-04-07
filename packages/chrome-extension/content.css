@@ -850,12 +850,38 @@
 
 .highlight-container,
 .badge-container,
-.multi-select-container {
+.multi-select-container,
+.testid-container {
   position: fixed;
   top: 0;
   left: 0;
   width: 0;
   height: 0;
+}
+
+/* Test ID label overlays */
+.testid-label {
+  background: #a855f7;
+  color: white;
+  font-size: 10px;
+  font-family: 'SF Mono', 'Fira Code', 'Consolas', monospace;
+  padding: 1px 5px;
+  border-radius: 0 0 4px 0;
+  white-space: nowrap;
+  max-width: 120px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  z-index: 12;
+  line-height: 1.4;
+  opacity: 0.92;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
+}
+
+.testid-highlight {
+  border: 1px dashed #a855f7;
+  background: rgba(168, 85, 247, 0.05);
+  border-radius: 2px;
+  z-index: 4;
 }
 
 /* Multi-select highlights */

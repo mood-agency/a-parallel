@@ -19,6 +19,7 @@ import {
   unstageFiles,
   revertFiles,
   addToGitignore,
+  resolveFileConflict,
   commit,
   runHookCommand,
   push,
@@ -85,6 +86,7 @@ import {
   createPRSchema,
   workflowSchema,
   publishRepoSchema,
+  resolveConflictSchema,
 } from '../validation/schemas.js';
 
 export const gitRoutes = new Hono<HonoEnv>();
@@ -563,6 +565,30 @@ gitRoutes.post('/project/:projectId/revert', async (c) => {
   if (result.isErr()) return resultToResponse(c, result);
   _gitStatusCache.delete(projectId);
   return c.json({ ok: true });
+});
+
+// POST /api/git/project/:projectId/conflict/resolve
+gitRoutes.post('/project/:projectId/conflict/resolve', async (c) => {
+  const projectId = c.req.param('projectId');
+  const userId = c.get('userId') as string;
+  const orgId = c.get('organizationId');
+  const cwdResult = await requireProjectCwd(projectId, userId, orgId);
+  if (cwdResult.isErr()) return resultToResponse(c, cwdResult);
+  const cwd = cwdResult.value;
+  const raw = await c.req.json().catch(() => ({}));
+  const parsed = validate(resolveConflictSchema, raw);
+  if (parsed.isErr()) return resultToResponse(c, parsed);
+  const pathCheck = validateFilePaths(cwd, [parsed.value.filePath]);
+  if (pathCheck.isErr()) return resultToResponse(c, pathCheck);
+  const result = await resolveFileConflict(
+    cwd,
+    parsed.value.filePath,
+    parsed.value.blockIndex,
+    parsed.value.resolution,
+  );
+  if (result.isErr()) return resultToResponse(c, result);
+  _gitStatusCache.delete(projectId);
+  return c.json({ ok: true, remainingConflicts: result.value.remainingConflicts });
 });
 
 // POST /api/git/project/:projectId/commit
@@ -1102,6 +1128,34 @@ gitRoutes.post('/:threadId/revert', async (c) => {
 
   await invalidateGitStatusCache(threadId);
   return c.json({ ok: true });
+});
+
+// POST /api/git/:threadId/conflict/resolve
+gitRoutes.post('/:threadId/conflict/resolve', async (c) => {
+  const threadId = c.req.param('threadId');
+  const userId = c.get('userId') as string;
+  const orgId = c.get('organizationId');
+  const cwdResult = await requireThreadCwd(threadId, userId, orgId);
+  if (cwdResult.isErr()) return resultToResponse(c, cwdResult);
+  const cwd = cwdResult.value;
+
+  const raw = await c.req.json().catch(() => ({}));
+  const parsed = validate(resolveConflictSchema, raw);
+  if (parsed.isErr()) return resultToResponse(c, parsed);
+
+  const pathCheck = validateFilePaths(cwd, [parsed.value.filePath]);
+  if (pathCheck.isErr()) return resultToResponse(c, pathCheck);
+
+  const result = await resolveFileConflict(
+    cwd,
+    parsed.value.filePath,
+    parsed.value.blockIndex,
+    parsed.value.resolution,
+  );
+  if (result.isErr()) return resultToResponse(c, result);
+
+  await invalidateGitStatusCache(threadId);
+  return c.json({ ok: true, remainingConflicts: result.value.remainingConflicts });
 });
 
 // POST /api/git/:threadId/commit

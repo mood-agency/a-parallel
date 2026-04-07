@@ -41,7 +41,13 @@ export {
   type BranchInfo,
 } from './branch.js';
 
-export { stageFiles, unstageFiles, revertFiles, addToGitignore } from './stage.js';
+export {
+  stageFiles,
+  unstageFiles,
+  revertFiles,
+  addToGitignore,
+  resolveFileConflict,
+} from './stage.js';
 
 export { commit, runHookCommand } from './commit.js';
 

@@ -36,9 +36,6 @@ export const useBranchPickerStore = create<BranchPickerState>((set, get) => ({
   ...initialState,
 
   fetchBranches: async (projectId: string, projectDefaultBranch?: string | null) => {
-    // Avoid re-fetching for same project if already loaded
-    if (get().projectId === projectId && get().branches.length > 0) return;
-
     set({ loading: true, projectId });
     const result = await api.listBranches(projectId);
     if (result.isOk()) {

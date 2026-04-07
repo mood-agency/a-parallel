@@ -20,11 +20,26 @@ import { cn } from '@/lib/utils';
 
 /* ── Types ── */
 
+type ConflictRole = 'marker-start' | 'ours' | 'separator' | 'theirs' | 'marker-end';
+
 interface DiffLine {
   type: 'add' | 'del' | 'ctx';
   text: string;
   oldNo?: number;
   newNo?: number;
+  /** When this line is part of a conflict block */
+  conflictRole?: ConflictRole;
+  /** Index of the conflict block (0-based) */
+  conflictBlockId?: number;
+}
+
+interface ConflictBlock {
+  id: number;
+  startLineIdx: number;
+  separatorLineIdx: number;
+  endLineIdx: number;
+  oursLabel: string; // e.g. "HEAD"
+  theirsLabel: string; // e.g. "main"
 }
 
 interface DiffSection {
@@ -37,14 +52,16 @@ interface DiffSection {
 type VirtualRow =
   | { type: 'line'; lineIdx: number }
   | { type: 'fold'; sectionIdx: number; lineCount: number; oldStart: number; newStart: number }
-  | { type: 'hunk'; text: string };
+  | { type: 'hunk'; text: string }
+  | { type: 'conflict-actions'; block: ConflictBlock };
 
 type RenderRow =
   | { type: 'unified-line'; line: DiffLine }
   | { type: 'split-pair'; pair: SplitPair }
   | { type: 'three-pane-triple'; triple: ThreePaneTriple }
   | { type: 'fold'; sectionIdx: number; lineCount: number; oldStart: number; newStart: number }
-  | { type: 'hunk'; text: string };
+  | { type: 'hunk'; text: string }
+  | { type: 'conflict-actions'; block: ConflictBlock };
 
 interface SplitPair {
   left?: DiffLine;
@@ -58,6 +75,8 @@ interface ThreePaneTriple {
 }
 
 export type DiffViewMode = 'unified' | 'split' | 'three-pane';
+
+export type ConflictResolution = 'ours' | 'theirs' | 'both';
 
 export interface VirtualDiffProps {
   /** Raw unified diff string (from gitoxide or git diff) */
@@ -82,6 +101,8 @@ export interface VirtualDiffProps {
   currentMatchIndex?: number;
   /** Callback reporting total match count when searchQuery changes */
   onMatchCount?: (count: number) => void;
+  /** Callback when user resolves a conflict block. blockId is 0-based index of the conflict. */
+  onResolveConflict?: (blockId: number, resolution: ConflictResolution) => void;
   className?: string;
   'data-testid'?: string;
 }
@@ -90,9 +111,92 @@ export interface VirtualDiffProps {
 
 const HUNK_RE = /^@@ -(\d+)(?:,\d+)? \+(\d+)(?:,\d+)? @@/;
 
+/** Conflict marker patterns (match the text content after the diff prefix is stripped) */
+const CONFLICT_START_RE = /^<{7}\s?(.*)/;
+const CONFLICT_SEP_RE = /^={7}$/;
+const CONFLICT_END_RE = /^>{7}\s?(.*)/;
+
 interface ParsedDiff {
   lines: DiffLine[];
   hunkHeaders: Map<number, string>;
+  conflictBlocks: ConflictBlock[];
+}
+
+/**
+ * Post-process parsed lines to detect and annotate conflict marker blocks.
+ * Scans for <<<<<<< ... ======= ... >>>>>>> sequences and annotates
+ * each line with its conflict role and block ID.
+ */
+function annotateConflicts(lines: DiffLine[]): ConflictBlock[] {
+  const blocks: ConflictBlock[] = [];
+  let i = 0;
+
+  while (i < lines.length) {
+    const startMatch = CONFLICT_START_RE.exec(lines[i].text);
+    if (!startMatch) {
+      i++;
+      continue;
+    }
+
+    // Found <<<<<<< — scan forward for ======= and >>>>>>>
+    const startIdx = i;
+    const oursLabel = startMatch[1]?.trim() || 'Current';
+    let sepIdx = -1;
+    let endIdx = -1;
+
+    for (let j = startIdx + 1; j < lines.length; j++) {
+      if (CONFLICT_SEP_RE.test(lines[j].text) && sepIdx === -1) {
+        sepIdx = j;
+      } else if (sepIdx !== -1) {
+        const endMatch = CONFLICT_END_RE.exec(lines[j].text);
+        if (endMatch) {
+          endIdx = j;
+          const theirsLabel = endMatch[1]?.trim() || 'Incoming';
+
+          const blockId = blocks.length;
+          const block: ConflictBlock = {
+            id: blockId,
+            startLineIdx: startIdx,
+            separatorLineIdx: sepIdx,
+            endLineIdx: endIdx,
+            oursLabel,
+            theirsLabel,
+          };
+          blocks.push(block);
+
+          // Annotate all lines in this block
+          lines[startIdx].conflictRole = 'marker-start';
+          lines[startIdx].conflictBlockId = blockId;
+
+          for (let k = startIdx + 1; k < sepIdx; k++) {
+            lines[k].conflictRole = 'ours';
+            lines[k].conflictBlockId = blockId;
+          }
+
+          lines[sepIdx].conflictRole = 'separator';
+          lines[sepIdx].conflictBlockId = blockId;
+
+          for (let k = sepIdx + 1; k < endIdx; k++) {
+            lines[k].conflictRole = 'theirs';
+            lines[k].conflictBlockId = blockId;
+          }
+
+          lines[endIdx].conflictRole = 'marker-end';
+          lines[endIdx].conflictBlockId = blockId;
+
+          i = endIdx + 1;
+          break;
+        }
+      }
+    }
+
+    // If we didn't find a complete block, skip this line
+    if (endIdx === -1) {
+      i++;
+    }
+  }
+
+  return blocks;
 }
 
 function parseUnifiedDiff(diff: string): ParsedDiff {
@@ -127,7 +231,8 @@ function parseUnifiedDiff(diff: string): ParsedDiff {
     }
   }
 
-  return { lines, hunkHeaders };
+  const conflictBlocks = annotateConflicts(lines);
+  return { lines, hunkHeaders, conflictBlocks };
 }
 
 /* ── Section builder (code folding) ── */
@@ -373,6 +478,76 @@ function getSearchHighlight(
   return injectSearchMarks(html, query, globalOffset, currentIdx);
 }
 
+/* ── Conflict colors ── */
+
+const CONFLICT_OURS_BG = 'hsl(210 80% 55% / 0.15)';
+const CONFLICT_OURS_MARKER_BG = 'hsl(210 80% 55% / 0.30)';
+const CONFLICT_THEIRS_BG = 'hsl(30 80% 55% / 0.15)';
+const CONFLICT_THEIRS_MARKER_BG = 'hsl(30 80% 55% / 0.30)';
+const CONFLICT_SEP_BG = 'hsl(0 0% 50% / 0.25)';
+
+function getConflictBg(role?: ConflictRole): string | undefined {
+  switch (role) {
+    case 'marker-start':
+      return CONFLICT_OURS_MARKER_BG;
+    case 'ours':
+      return CONFLICT_OURS_BG;
+    case 'separator':
+      return CONFLICT_SEP_BG;
+    case 'theirs':
+      return CONFLICT_THEIRS_BG;
+    case 'marker-end':
+      return CONFLICT_THEIRS_MARKER_BG;
+    default:
+      return undefined;
+  }
+}
+
+/* ── Conflict action bar component ── */
+
+const ConflictActionBar = memo(function ConflictActionBar({
+  block,
+  onResolve,
+}: {
+  block: ConflictBlock;
+  onResolve?: (blockId: number, resolution: ConflictResolution) => void;
+}) {
+  if (!onResolve) return null;
+
+  return (
+    <div
+      className="flex items-center gap-1.5 px-2 py-0.5 font-sans text-[11px]"
+      style={{ height: ROW_HEIGHT, backgroundColor: 'hsl(210 80% 55% / 0.10)' }}
+      data-testid={`conflict-actions-${block.id}`}
+    >
+      <span className="mr-1 font-medium text-muted-foreground">Conflict {block.id + 1}:</span>
+      <button
+        className="rounded px-1.5 py-0.5 text-[10px] font-medium text-blue-400 transition-colors hover:bg-blue-500/20 hover:text-blue-300"
+        onClick={() => onResolve(block.id, 'ours')}
+        data-testid={`conflict-accept-current-${block.id}`}
+      >
+        Accept Current
+      </button>
+      <span className="text-muted-foreground/40">|</span>
+      <button
+        className="rounded px-1.5 py-0.5 text-[10px] font-medium text-orange-400 transition-colors hover:bg-orange-500/20 hover:text-orange-300"
+        onClick={() => onResolve(block.id, 'theirs')}
+        data-testid={`conflict-accept-incoming-${block.id}`}
+      >
+        Accept Incoming
+      </button>
+      <span className="text-muted-foreground/40">|</span>
+      <button
+        className="rounded px-1.5 py-0.5 text-[10px] font-medium text-emerald-400 transition-colors hover:bg-emerald-500/20 hover:text-emerald-300"
+        onClick={() => onResolve(block.id, 'both')}
+        data-testid={`conflict-accept-both-${block.id}`}
+      >
+        Accept Both
+      </button>
+    </div>
+  );
+});
+
 /* ── Row components ── */
 
 const UnifiedRow = memo(function UnifiedRow({
@@ -390,21 +565,42 @@ const UnifiedRow = memo(function UnifiedRow({
   matchOffset?: number;
   currentMatchIdx?: number;
 }) {
-  const bgStyle =
-    line.type === 'add'
+  const conflictBg = getConflictBg(line.conflictRole);
+  const bgStyle = conflictBg
+    ? { backgroundColor: conflictBg }
+    : line.type === 'add'
       ? { backgroundColor: 'hsl(var(--diff-added) / 0.22)' }
       : line.type === 'del'
         ? { backgroundColor: 'hsl(var(--diff-removed) / 0.22)' }
         : undefined;
 
-  const textClass =
-    line.type === 'add'
-      ? 'text-diff-added'
-      : line.type === 'del'
-        ? 'text-diff-removed'
-        : 'text-foreground/80';
+  const isConflictMarker =
+    line.conflictRole === 'marker-start' ||
+    line.conflictRole === 'separator' ||
+    line.conflictRole === 'marker-end';
+
+  const textClass = isConflictMarker
+    ? 'text-muted-foreground/60 italic'
+    : line.conflictRole === 'ours'
+      ? 'text-blue-300'
+      : line.conflictRole === 'theirs'
+        ? 'text-orange-300'
+        : line.type === 'add'
+          ? 'text-diff-added'
+          : line.type === 'del'
+            ? 'text-diff-removed'
+            : 'text-foreground/80';
 
   const prefix = line.type === 'add' ? '+' : line.type === 'del' ? '-' : ' ';
+
+  // For conflict markers, show a readable label instead of raw markers
+  const displayText = isConflictMarker
+    ? line.conflictRole === 'marker-start'
+      ? `── Current Change (${line.text.replace(/^<{7}\s?/, '').trim() || 'HEAD'}) ──`
+      : line.conflictRole === 'separator'
+        ? '────────────────────────────────'
+        : `── Incoming Change (${line.text.replace(/^>{7}\s?/, '').trim() || 'branch'}) ──`
+    : line.text;
 
   return (
     <div
@@ -427,8 +623,8 @@ const UnifiedRow = memo(function UnifiedRow({
         )}
         dangerouslySetInnerHTML={{
           __html: getSearchHighlight(
-            line.text,
-            lang,
+            displayText,
+            isConflictMarker ? 'plaintext' : lang,
             searchQuery,
             matchOffset ?? 0,
             currentMatchIdx ?? -1,
@@ -474,10 +670,16 @@ const SplitRow = memo(function SplitRow({
   currentMatchIdx?: number;
 }) {
   const leftMatches = searchQuery && left ? countTextMatches(left.text, searchQuery) : 0;
-  const leftBg = left?.type === 'del' ? 'hsl(var(--diff-removed) / 0.22)' : undefined;
-  const rightBg = right?.type === 'add' ? 'hsl(var(--diff-added) / 0.22)' : undefined;
-  const leftGutterBg = left?.type === 'del' ? GUTTER_BG_REMOVED : GUTTER_BG_CARD;
-  const rightGutterBg = right?.type === 'add' ? GUTTER_BG_ADDED : GUTTER_BG_CARD;
+  const leftConflictBg = getConflictBg(left?.conflictRole);
+  const rightConflictBg = getConflictBg(right?.conflictRole);
+  const leftBg =
+    leftConflictBg ?? (left?.type === 'del' ? 'hsl(var(--diff-removed) / 0.22)' : undefined);
+  const rightBg =
+    rightConflictBg ?? (right?.type === 'add' ? 'hsl(var(--diff-added) / 0.22)' : undefined);
+  const leftGutterBg =
+    leftConflictBg ?? (left?.type === 'del' ? GUTTER_BG_REMOVED : GUTTER_BG_CARD);
+  const rightGutterBg =
+    rightConflictBg ?? (right?.type === 'add' ? GUTTER_BG_ADDED : GUTTER_BG_CARD);
   return (
     <div
       className="flex font-mono text-[11px]"
@@ -597,10 +799,16 @@ const ThreePaneRow = memo(function ThreePaneRow({
   const leftMatches = searchQuery && left ? countTextMatches(left.text, searchQuery) : 0;
   const centerMatches = searchQuery && center ? countTextMatches(center.text, searchQuery) : 0;
   const align = wrap ? 'items-start overflow-visible' : 'items-center overflow-hidden';
-  const leftBg = left?.type === 'del' ? 'hsl(var(--diff-removed) / 0.22)' : undefined;
-  const rightBg = right?.type === 'add' ? 'hsl(var(--diff-added) / 0.22)' : undefined;
-  const leftGutterBg = left?.type === 'del' ? GUTTER_BG_REMOVED : GUTTER_BG_CARD;
-  const rightGutterBg = right?.type === 'add' ? GUTTER_BG_ADDED : GUTTER_BG_CARD;
+  const leftConflictBg = getConflictBg(left?.conflictRole);
+  const rightConflictBg = getConflictBg(right?.conflictRole);
+  const leftBg =
+    leftConflictBg ?? (left?.type === 'del' ? 'hsl(var(--diff-removed) / 0.22)' : undefined);
+  const rightBg =
+    rightConflictBg ?? (right?.type === 'add' ? 'hsl(var(--diff-added) / 0.22)' : undefined);
+  const leftGutterBg =
+    leftConflictBg ?? (left?.type === 'del' ? GUTTER_BG_REMOVED : GUTTER_BG_CARD);
+  const rightGutterBg =
+    rightConflictBg ?? (right?.type === 'add' ? GUTTER_BG_ADDED : GUTTER_BG_CARD);
   return (
     <div
       className="flex font-mono text-[11px]"
@@ -996,6 +1204,7 @@ export const VirtualDiff = memo(function VirtualDiff({
   searchQuery,
   currentMatchIndex = -1,
   onMatchCount,
+  onResolveConflict,
   className,
   ...props
 }: VirtualDiffProps) {
@@ -1132,6 +1341,15 @@ export const VirtualDiff = memo(function VirtualDiff({
     }));
   }, [sections, collapsedState, codeFolding]);
 
+  // Build a set of line indices where conflict action bars should be injected (before the marker-start line)
+  const conflictStartLines = useMemo(() => {
+    const s = new Map<number, ConflictBlock>();
+    for (const block of parsed.conflictBlocks) {
+      s.set(block.startLineIdx, block);
+    }
+    return s;
+  }, [parsed.conflictBlocks]);
+
   // Build intermediate VirtualRow list
   const rows = useMemo((): VirtualRow[] => {
     if (!codeFolding) {
@@ -1143,12 +1361,44 @@ export const VirtualDiff = memo(function VirtualDiff({
           r.push({ type: 'hunk', text: sortedHunks[nextHunkI][1] });
           nextHunkI++;
         }
+        // Inject conflict action bar before the marker-start line
+        const block = conflictStartLines.get(i);
+        if (block) {
+          r.push({ type: 'conflict-actions', block });
+        }
         r.push({ type: 'line', lineIdx: i });
       }
       return r;
     }
-    return buildVirtualRows(effectiveSections, parsed.lines, parsed.hunkHeaders, contextLines);
-  }, [codeFolding, effectiveSections, parsed.lines, parsed.hunkHeaders, contextLines]);
+    const base = buildVirtualRows(
+      effectiveSections,
+      parsed.lines,
+      parsed.hunkHeaders,
+      contextLines,
+    );
+    // Inject conflict action bars
+    if (conflictStartLines.size > 0) {
+      const result: VirtualRow[] = [];
+      for (const row of base) {
+        if (row.type === 'line') {
+          const block = conflictStartLines.get(row.lineIdx);
+          if (block) {
+            result.push({ type: 'conflict-actions', block });
+          }
+        }
+        result.push(row);
+      }
+      return result;
+    }
+    return base;
+  }, [
+    codeFolding,
+    effectiveSections,
+    parsed.lines,
+    parsed.hunkHeaders,
+    contextLines,
+    conflictStartLines,
+  ]);
 
   // Build final render rows (handles split/three-pane pairing)
   const renderRows = useMemo((): RenderRow[] => {
@@ -1161,6 +1411,9 @@ export const VirtualDiff = memo(function VirtualDiff({
           result.push({ type: 'hunk', text: row.text });
           i++;
         } else if (row.type === 'fold') {
+          result.push(row);
+          i++;
+        } else if (row.type === 'conflict-actions') {
           result.push(row);
           i++;
         } else {
@@ -1190,6 +1443,7 @@ export const VirtualDiff = memo(function VirtualDiff({
     return rows.map((row): RenderRow => {
       if (row.type === 'hunk') return { type: 'hunk', text: row.text };
       if (row.type === 'fold') return row;
+      if (row.type === 'conflict-actions') return row;
       return { type: 'unified-line', line: parsed.lines[row.lineIdx] };
     });
   }, [viewMode, rows, parsed.lines]);
@@ -1420,7 +1674,9 @@ export const VirtualDiff = memo(function VirtualDiff({
                   ? { ref: virtualizer.measureElement, 'data-index': vItem.index }
                   : {})}
               >
-                {row.type === 'hunk' ? (
+                {row.type === 'conflict-actions' ? (
+                  <ConflictActionBar block={row.block} onResolve={onResolveConflict} />
+                ) : row.type === 'hunk' ? (
                   <div
                     className="flex select-none items-center bg-accent/50 px-2 font-mono text-[11px] text-muted-foreground"
                     style={{ height: ROW_HEIGHT }}

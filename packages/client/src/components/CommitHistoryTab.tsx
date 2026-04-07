@@ -11,6 +11,7 @@ import {
   X,
 } from 'lucide-react';
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
+import { createPortal } from 'react-dom';
 import { useTranslation } from 'react-i18next';
 import { toast } from 'sonner';
 
@@ -36,9 +37,10 @@ import { cn, resolveThreadBranch } from '@/lib/utils';
 import { useGitStatusForThread, useGitStatusStore } from '@/stores/git-status-store';
 import { useProjectStore } from '@/stores/project-store';
 import { useThreadStore } from '@/stores/thread-store';
+import { useUIStore } from '@/stores/ui-store';
 
 import { FileTree } from './FileTree';
-import { ExpandedDiffDialog } from './tool-cards/ExpandedDiffDialog';
+import { ExpandedDiffView } from './tool-cards/ExpandedDiffDialog';
 
 // ── Types ──
 
@@ -62,12 +64,6 @@ interface CommitFile {
 const PAGE_SIZE = 50;
 const SELECTED_COMMIT_KEY = 'history_selected_commit';
 
-// ── Helpers ──
-
-function getFileName(filePath: string): string {
-  return filePath.split('/').pop() || filePath;
-}
-
 // ── Component ──
 
 interface CommitHistoryTabProps {
@@ -76,6 +72,7 @@ interface CommitHistoryTabProps {
 
 export function CommitHistoryTab({ visible }: CommitHistoryTabProps) {
   const { t } = useTranslation();
+  const reviewPaneWidth = useUIStore((s) => s.reviewPaneWidth);
   const selectedProjectId = useProjectStore((s) => s.selectedProjectId);
   // Use selectedThreadId for git requests — it updates immediately on click,
   // before the thread data finishes loading from the API.
@@ -299,6 +296,20 @@ export function CommitHistoryTab({ visible }: CommitHistoryTabProps) {
       setDiffLoading(false);
     },
     [selectedHash, hasGitContext, effectiveThreadId, projectModeId],
+  );
+
+  // Build a diffCache map from the single-file state for ExpandedDiffView
+  const historyDiffCache = useMemo(() => {
+    const m = new Map<string, string>();
+    if (expandedFile && diffContent) m.set(expandedFile, diffContent);
+    return m;
+  }, [expandedFile, diffContent]);
+
+  const handleOverlayFileSelect = useCallback(
+    (path: string) => {
+      handleFileClick(path);
+    },
+    [handleFileClick],
   );
 
   // ── Convert commit files to FileDiffSummary for FileTree ──
@@ -828,25 +839,31 @@ export function CommitHistoryTab({ visible }: CommitHistoryTabProps) {
         )}
       </div>
 
-      {/* Expanded diff dialog */}
-      {expandedFile && (
-        <ExpandedDiffDialog
-          open={!!expandedFile}
-          onOpenChange={(open) => {
-            if (!open) {
-              setExpandedFile(null);
-              setDiffContent(null);
-            }
-          }}
-          filePath={expandedFile}
-          oldValue={diffContent ? parseDiffOld(diffContent) : ''}
-          newValue={diffContent ? parseDiffNew(diffContent) : ''}
-          loading={diffLoading}
-          description={
-            selectedCommit ? `${selectedCommit.shortHash}: ${getFileName(expandedFile)}` : undefined
-          }
-        />
-      )}
+      {/* Diff viewer overlay — portal to body so it escapes contain:strict ancestors */}
+      {expandedFile &&
+        createPortal(
+          <div
+            className="fixed inset-0 z-40 bg-background"
+            style={{ right: `${reviewPaneWidth}vw` }}
+            data-testid="history-expanded-diff-overlay"
+          >
+            <ExpandedDiffView
+              filePath={expandedFile}
+              oldValue={diffContent ? parseDiffOld(diffContent) : ''}
+              newValue={diffContent ? parseDiffNew(diffContent) : ''}
+              loading={diffLoading}
+              rawDiff={diffContent ?? undefined}
+              files={treeFiles}
+              onFileSelect={handleOverlayFileSelect}
+              diffCache={historyDiffCache}
+              onClose={() => {
+                setExpandedFile(null);
+                setDiffContent(null);
+              }}
+            />
+          </div>,
+          document.body,
+        )}
 
       {/* Create PR dialog */}
       <Dialog

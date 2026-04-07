@@ -71,6 +71,7 @@ export function getSummary(
     case 'Grep':
       return (parsed.pattern as string) ?? null;
     case 'Task':
+    case 'Agent':
       return (parsed.description as string) ?? null;
     case 'WebSearch':
       return (parsed.query as string) ?? null;
@@ -117,6 +118,7 @@ export function getToolLabel(name: string, t: (key: string) => string): string {
     WebFetch: t('tools.fetchUrl'),
     WebSearch: t('tools.webSearch'),
     Task: t('tools.subagent'),
+    Agent: t('tools.subagent'),
     TodoWrite: t('tools.todos'),
     NotebookEdit: t('tools.editNotebook'),
     AskUserQuestion: t('tools.question'),

@@ -13,6 +13,7 @@ import {
   PanelRightClose,
 } from 'lucide-react';
 import { useState, useEffect, useRef, useMemo, useCallback } from 'react';
+import { createPortal } from 'react-dom';
 import { useTranslation } from 'react-i18next';
 import { toast } from 'sonner';
 
@@ -31,7 +32,7 @@ import { useReviewPaneStore } from '@/stores/review-pane-store';
 import { useThreadStore } from '@/stores/thread-store';
 import { useUIStore } from '@/stores/ui-store';
 
-import { ExpandedDiffDialog } from './tool-cards/ExpandedDiffDialog';
+import { ExpandedDiffView } from './tool-cards/ExpandedDiffDialog';
 
 // ─── Constants ────────────────────────────────────────────
 
@@ -82,8 +83,8 @@ function useRunningAgents(): RunningAgent[] {
 
     const running: RunningAgent[] = [];
     for (const tc of allToolCalls) {
-      // Only Task tool calls = sub-agents, still running (no output)
-      if (tc.name === 'Task' && !tc.output) {
+      // Task/Agent tool calls = sub-agents, still running (no output)
+      if ((tc.name === 'Task' || tc.name === 'Agent') && !tc.output) {
         const parsed = formatInput(tc.input);
         const description =
           (parsed.description as string) ?? (parsed.prompt as string) ?? 'Sub-agent';
@@ -401,6 +402,7 @@ function EmptyState({ message }: { message: string }) {
 
 export function ActivityPane() {
   const { t } = useTranslation();
+  const reviewPaneWidth = useUIStore((s) => s.reviewPaneWidth);
 
   // Agents & todos grouped by agent
   const runningAgents = useRunningAgents();
@@ -611,47 +613,42 @@ export function ActivityPane() {
         </div>
       </ScrollArea>
 
-      {/* Expanded diff dialog */}
-      {(() => {
-        const expandedSummary = expandedFile
-          ? files.find((s) => s.path === expandedFile)
-          : undefined;
-        const expandedDiffContent = expandedFile ? diffCache.get(expandedFile) : undefined;
-        const ExpandedIcon = expandedSummary
-          ? fileStatusIcons[expandedSummary.status] || FileCode
-          : FileCode;
-        return (
-          <ExpandedDiffDialog
-            open={!!expandedFile}
-            onOpenChange={(open) => {
-              if (!open) setExpandedFile(null);
-            }}
-            filePath={expandedSummary?.path || ''}
-            oldValue={expandedDiffContent ? parseDiffOld(expandedDiffContent) : ''}
-            newValue={expandedDiffContent ? parseDiffNew(expandedDiffContent) : ''}
-            icon={ExpandedIcon}
-            loading={loadingDiff === expandedFile}
-            description={
-              expandedSummary
-                ? t('review.diffFor', {
-                    file: expandedSummary.path,
-                    defaultValue: `Diff for ${expandedSummary.path}`,
-                  })
-                : undefined
-            }
-            files={files}
-            onFileSelect={(path) => {
-              setSelectedFile(path);
-              setExpandedFile(path);
-            }}
-            diffCache={diffCache}
-            loadingDiffPath={loadingDiff}
-            onRevertFile={handleRevertFile}
-            basePath={basePath}
-            onRequestFullDiff={requestFullDiff}
-          />
-        );
-      })()}
+      {/* Diff viewer overlay — portal to body so it escapes contain:strict ancestors */}
+      {expandedFile &&
+        createPortal(
+          <div
+            className="fixed inset-0 z-40 bg-background"
+            style={{ right: `${reviewPaneWidth}vw` }}
+            data-testid="activity-expanded-diff-overlay"
+          >
+            {(() => {
+              const expandedSummary = files.find((s) => s.path === expandedFile);
+              const expandedDiffContent = diffCache.get(expandedFile);
+              const ExpandedIcon = expandedSummary
+                ? fileStatusIcons[expandedSummary.status] || FileCode
+                : FileCode;
+              return (
+                <ExpandedDiffView
+                  filePath={expandedSummary?.path || expandedFile}
+                  oldValue={expandedDiffContent ? parseDiffOld(expandedDiffContent) : ''}
+                  newValue={expandedDiffContent ? parseDiffNew(expandedDiffContent) : ''}
+                  icon={ExpandedIcon}
+                  loading={loadingDiff === expandedFile}
+                  rawDiff={expandedDiffContent}
+                  files={files}
+                  onFileSelect={(path) => {
+                    setSelectedFile(path);
+                    setExpandedFile(path);
+                  }}
+                  diffCache={diffCache}
+                  onClose={() => setExpandedFile(null)}
+                  onRequestFullDiff={requestFullDiff}
+                />
+              );
+            })()}
+          </div>,
+          document.body,
+        )}
     </div>
   );
 }

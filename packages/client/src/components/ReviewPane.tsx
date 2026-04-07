@@ -63,6 +63,13 @@ import {
 } from '@/components/ui/dropdown-menu';
 import { HighlightText } from '@/components/ui/highlight-text';
 import { Input } from '@/components/ui/input';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { useAutoRefreshDiff } from '@/hooks/use-auto-refresh-diff';
@@ -77,6 +84,7 @@ import { useDraftStore } from '@/stores/draft-store';
 import { useGitStatusStore, useGitStatusForThread } from '@/stores/git-status-store';
 import { usePRDetail } from '@/stores/pr-detail-store';
 import { useProjectStore } from '@/stores/project-store';
+import { useReviewPaneStore } from '@/stores/review-pane-store';
 import { useSettingsStore, deriveToolLists } from '@/stores/settings-store';
 import { editorLabels } from '@/stores/settings-store';
 import { useThreadStore } from '@/stores/thread-store';
@@ -190,7 +198,11 @@ export function ReviewPane() {
     },
     [draftId, setCommitDraft],
   );
-  const [generatingMsg, setGeneratingMsg] = useState(false);
+  const generatingMsg = useReviewPaneStore((s) =>
+    draftId ? (s.generatingCommitMsg[draftId] ?? false) : false,
+  );
+  const setGeneratingCommitMsg = useReviewPaneStore((s) => s.setGeneratingCommitMsg);
+  const generateAbortRef = useRef<AbortController | null>(null);
   const [selectedAction, setSelectedAction] = useState<
     'commit' | 'commit-push' | 'commit-pr' | 'commit-merge' | 'amend'
   >('commit');
@@ -251,6 +263,11 @@ export function ReviewPane() {
   const [pushInProgress, setPushInProgress] = useState(false);
   const [prInProgress, setPrInProgress] = useState(false);
   const [prDialog, setPrDialog] = useState<{ title: string; body: string } | null>(null);
+  const [mergeDialog, setMergeDialog] = useState<{
+    targetBranch: string;
+    branches: string[];
+    loading: boolean;
+  } | null>(null);
   const [hasRebaseConflict, setHasRebaseConflict] = useState(false);
   const commitLockRef = useRef(false);
 
@@ -283,11 +300,10 @@ export function ReviewPane() {
       justCompletedWorkflowRef.current = true;
       // Refresh diffs and git status
       refresh();
-      if (effectiveThreadId && prev.action === 'commit-merge') {
+      if (effectiveThreadId && (prev.action === 'commit-merge' || prev.action === 'merge')) {
+        // Refresh both active thread and sidebar thread list
         useThreadStore.getState().refreshActiveThread();
-      }
-      if (effectiveThreadId && prev.action === 'merge') {
-        useThreadStore.getState().refreshActiveThread();
+        useThreadStore.getState().refreshAllLoadedThreads();
       }
       return;
     }
@@ -340,8 +356,14 @@ export function ReviewPane() {
       const action = commitEntry.action;
       if (action === 'push') {
         // handled in use-ws.ts
-      } else if (action === 'merge') {
-        toast.success(t('review.mergeSuccess', 'Merged successfully'));
+      } else if (action === 'merge' || action === 'commit-merge') {
+        toast.success(
+          t('review.mergeSuccess', {
+            branch: threadBranch || 'branch',
+            target: baseBranch || 'base',
+            defaultValue: `Merged "${threadBranch || 'branch'}" into "${baseBranch || 'base'}" successfully`,
+          }),
+        );
       } else if (action === 'create-pr') {
         toast.success(t('review.prSuccess', 'Pull request created'));
       } else {
@@ -561,6 +583,9 @@ export function ReviewPane() {
     // This is the key fix for progressive slowdown: without this, each thread
     // switch piles up 5-6 git requests that saturate the server's process pool.
     abortRef.current?.abort();
+    // Also abort any in-flight commit message generation so it doesn't write
+    // stale results back to local state after the thread switch.
+    generateAbortRef.current?.abort();
 
     setSummaries([]);
     setDiffCache(new Map());
@@ -698,17 +723,49 @@ export function ReviewPane() {
 
   const handleGenerateCommitMsg = async () => {
     if (!hasGitContext || generatingMsg) return;
-    setGeneratingMsg(true);
-    const result = effectiveThreadId
-      ? await api.generateCommitMessage(effectiveThreadId, true)
-      : await api.projectGenerateCommitMessage(projectModeId!, true);
-    if (result.isOk()) {
-      setCommitTitle(result.value.title);
-      setCommitBody(result.value.body);
-    } else {
-      toast.error(t('review.generateFailed', { message: result.error.message }));
+
+    // Capture identity at invocation time so the result always writes to the
+    // correct thread/project, even if the user switches away during the await.
+    const capturedDraftId = draftId;
+    const capturedThreadId = effectiveThreadId;
+    const capturedProjectModeId = projectModeId;
+    if (!capturedDraftId) return;
+
+    // Abort any previous in-flight generation for this draft
+    generateAbortRef.current?.abort();
+    const ac = new AbortController();
+    generateAbortRef.current = ac;
+
+    setGeneratingCommitMsg(capturedDraftId, true);
+    try {
+      const result = capturedThreadId
+        ? await api.generateCommitMessage(capturedThreadId, true, ac.signal)
+        : await api.projectGenerateCommitMessage(capturedProjectModeId!, true, ac.signal);
+
+      if (ac.signal.aborted) return;
+
+      if (result.isOk()) {
+        // Always persist to the draft store with the captured ID
+        useDraftStore
+          .getState()
+          .setCommitDraft(capturedDraftId, result.value.title, result.value.body);
+        // Only update local state if the user is still on the same thread/project
+        const currentDraftId =
+          useThreadStore.getState().selectedThreadId ||
+          useProjectStore.getState().selectedProjectId;
+        if (currentDraftId === capturedDraftId) {
+          setCommitTitleRaw(result.value.title);
+          setCommitBodyRaw(result.value.body);
+        }
+      } else if (!ac.signal.aborted) {
+        toast.error(t('review.generateFailed', { message: result.error.message }));
+      }
+    } finally {
+      setGeneratingCommitMsg(capturedDraftId, false);
+      if (generateAbortRef.current === ac) {
+        generateAbortRef.current = null;
+      }
     }
-    setGeneratingMsg(false);
   };
 
   const handleCommitAction = async () => {
@@ -827,6 +884,142 @@ export function ReviewPane() {
     }
   };
 
+  const handleResolveConflict = useCallback(
+    async (blockId: number, resolution: 'ours' | 'theirs' | 'both') => {
+      const filePath = expandedFile || selectedFile;
+      if (!filePath || !hasGitContext) return;
+
+      const resolutionLabel =
+        resolution === 'ours' ? 'current' : resolution === 'theirs' ? 'incoming' : 'both';
+      const result = effectiveThreadId
+        ? await api.resolveConflict(effectiveThreadId, filePath, blockId, resolution)
+        : await api.projectResolveConflict(projectModeId!, filePath, blockId, resolution);
+
+      if (result.isErr()) {
+        toast.error(`Failed to resolve conflict: ${result.error.message}`);
+      } else {
+        toast.success(
+          `Conflict ${blockId + 1} resolved (${resolutionLabel})` +
+            (result.value.remainingConflicts > 0
+              ? ` — ${result.value.remainingConflicts} remaining`
+              : ' — file resolved'),
+        );
+        // Clear cached diff so it reloads
+        setDiffCache((prev) => {
+          const next = new Map(prev);
+          next.delete(filePath);
+          return next;
+        });
+        // Reload the diff for this file
+        loadDiffForFile(filePath);
+        await refresh();
+      }
+    },
+    [
+      expandedFile,
+      selectedFile,
+      hasGitContext,
+      effectiveThreadId,
+      projectModeId,
+      refresh,
+      loadDiffForFile,
+    ],
+  );
+
+  const handleStageFile = async (path: string) => {
+    if (!hasGitContext) return;
+    const result = effectiveThreadId
+      ? await api.stageFiles(effectiveThreadId, [path])
+      : await api.projectStageFiles(projectModeId!, [path]);
+    if (result.isErr()) {
+      toast.error(t('review.stageFailed', { path, defaultValue: 'Failed to stage {{path}}' }));
+    } else {
+      toast.success(t('review.stageSuccess', { path, defaultValue: '{{path}} staged' }));
+      await refresh();
+    }
+  };
+
+  const handleUnstageFile = async (path: string) => {
+    if (!hasGitContext) return;
+    const result = effectiveThreadId
+      ? await api.unstageFiles(effectiveThreadId, [path])
+      : await api.projectUnstageFiles(projectModeId!, [path]);
+    if (result.isErr()) {
+      toast.error(t('review.unstageFailed', { path, defaultValue: 'Failed to unstage {{path}}' }));
+    } else {
+      toast.success(t('review.unstageSuccess', { path, defaultValue: '{{path}} unstaged' }));
+      await refresh();
+    }
+  };
+
+  const handleStageSelected = async () => {
+    if (!hasGitContext) return;
+    const paths =
+      checkedFiles.size > 0
+        ? Array.from(checkedFiles).filter((p) => {
+            const s = summaries.find((f) => f.path === p);
+            return s && !s.staged;
+          })
+        : summaries.filter((f) => !f.staged).map((f) => f.path);
+    if (paths.length === 0) {
+      toast.info(t('review.allAlreadyStaged', { defaultValue: 'All files already staged' }));
+      return;
+    }
+    const result = effectiveThreadId
+      ? await api.stageFiles(effectiveThreadId, paths)
+      : await api.projectStageFiles(projectModeId!, paths);
+    if (result.isErr()) {
+      toast.error(
+        t('review.stageFailed', {
+          path: `${paths.length} files`,
+          defaultValue: 'Failed to stage {{path}}',
+        }),
+      );
+    } else {
+      toast.success(
+        t('review.stageSelectedSuccess', {
+          count: paths.length,
+          defaultValue: '{{count}} file(s) staged',
+        }),
+      );
+      await refresh();
+    }
+  };
+
+  const handleUnstageAll = async () => {
+    if (!hasGitContext) return;
+    const paths =
+      checkedFiles.size > 0
+        ? Array.from(checkedFiles).filter((p) => {
+            const s = summaries.find((f) => f.path === p);
+            return s && s.staged;
+          })
+        : summaries.filter((f) => f.staged).map((f) => f.path);
+    if (paths.length === 0) {
+      toast.info(t('review.noneStaged', { defaultValue: 'No staged files to unstage' }));
+      return;
+    }
+    const result = effectiveThreadId
+      ? await api.unstageFiles(effectiveThreadId, paths)
+      : await api.projectUnstageFiles(projectModeId!, paths);
+    if (result.isErr()) {
+      toast.error(
+        t('review.unstageFailed', {
+          path: `${paths.length} files`,
+          defaultValue: 'Failed to unstage {{path}}',
+        }),
+      );
+    } else {
+      toast.success(
+        t('review.unstageSelectedSuccess', {
+          count: paths.length,
+          defaultValue: '{{count}} file(s) unstaged',
+        }),
+      );
+      await refresh();
+    }
+  };
+
   const handleIgnore = async (pattern: string) => {
     if (!hasGitContext) return;
     const result = effectiveThreadId
@@ -855,18 +1048,50 @@ export function ReviewPane() {
     // pushInProgress will be cleared by the useEffect watching commitEntry
   };
 
-  const handleMergeOnly = async () => {
-    if (!hasGitContext || mergeInProgress) return;
+  const openMergeDialog = async () => {
+    const pid = threadProjectId ?? selectedProjectId ?? '';
+    if (!pid) return;
+
+    setMergeDialog({ targetBranch: baseBranch || '', branches: [], loading: true });
+
+    const result = await api.listBranches(pid);
+    if (result.isOk()) {
+      const data = result.value;
+      const branches = data.branches.filter((b) => b !== currentBranch);
+      const defaultTarget =
+        baseBranch && branches.includes(baseBranch)
+          ? baseBranch
+          : data.defaultBranch && branches.includes(data.defaultBranch)
+            ? data.defaultBranch
+            : branches[0] || '';
+      setMergeDialog((prev) =>
+        prev ? { ...prev, targetBranch: defaultTarget, branches, loading: false } : null,
+      );
+    } else {
+      setMergeDialog(null);
+      toastError(result.error);
+    }
+  };
+
+  const handleMergeWithTarget = async () => {
+    if (!hasGitContext || mergeInProgress || !mergeDialog?.targetBranch) return;
     setMergeInProgress(true);
 
+    const params: import('@funny/shared').GitWorkflowRequest = {
+      action: 'merge',
+      cleanup: true,
+      targetBranch: mergeDialog.targetBranch,
+    };
+
     const result = effectiveThreadId
-      ? await api.startWorkflow(effectiveThreadId, { action: 'merge', cleanup: true })
-      : await api.projectStartWorkflow(projectModeId!, { action: 'merge', cleanup: true });
+      ? await api.startWorkflow(effectiveThreadId, params)
+      : await api.projectStartWorkflow(projectModeId!, params);
 
     if (result.isErr()) {
       toastError(result.error);
       setMergeInProgress(false);
     }
+    setMergeDialog(null);
     // mergeInProgress will be cleared by the useEffect watching commitEntry
   };
 
@@ -1191,6 +1416,7 @@ export function ReviewPane() {
               onClose={() => setExpandedFile(null)}
               prReviewThreads={prThreads}
               onRequestFullDiff={requestFullDiff}
+              onResolveConflict={handleResolveConflict}
             />
           </div>,
           document.body,
@@ -1327,13 +1553,13 @@ export function ReviewPane() {
                     testIdPrefix="review"
                   />
                 )}
-                {isOnDifferentBranch && !gitStatus?.isMergedIntoBase && (
+                {!!threadBranch && (
                   <Tooltip>
                     <TooltipTrigger asChild>
                       <Button
                         variant="ghost"
                         size="icon-sm"
-                        onClick={handleMergeOnly}
+                        onClick={openMergeDialog}
                         disabled={mergeInProgress || summaries.length > 0}
                         className="text-muted-foreground"
                         data-testid="review-merge-toolbar"
@@ -1346,7 +1572,7 @@ export function ReviewPane() {
                         ? t('review.commitFirst', 'Commit changes before merging')
                         : t('review.mergeIntoBranch', {
                             target: baseBranch || 'base',
-                            defaultValue: `Merge into ${baseBranch || 'base'}`,
+                            defaultValue: `Merge into branch`,
                           })}
                     </TooltipContent>
                   </Tooltip>
@@ -1406,6 +1632,52 @@ export function ReviewPane() {
                               branch: threadBranch,
                               target: baseBranch || 'base',
                             })}
+                    </TooltipContent>
+                  </Tooltip>
+                )}
+                {summaries.length > 0 && (
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <Button
+                        variant="ghost"
+                        size="icon-sm"
+                        onClick={handleStageSelected}
+                        disabled={!!actionInProgress || !!isAgentRunning}
+                        className="text-muted-foreground"
+                        data-testid="review-stage-selected"
+                      >
+                        <Archive className="icon-base" />
+                      </Button>
+                    </TooltipTrigger>
+                    <TooltipContent side="top">
+                      {isAgentRunning
+                        ? t('review.agentRunningTooltip')
+                        : checkedFiles.size > 0
+                          ? t('review.stageSelected', { defaultValue: 'Stage selected' })
+                          : t('review.stageAll', { defaultValue: 'Stage all' })}
+                    </TooltipContent>
+                  </Tooltip>
+                )}
+                {summaries.some((f) => f.staged) && (
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <Button
+                        variant="ghost"
+                        size="icon-sm"
+                        onClick={handleUnstageAll}
+                        disabled={!!actionInProgress || !!isAgentRunning}
+                        className="text-muted-foreground"
+                        data-testid="review-unstage-selected"
+                      >
+                        <ArchiveRestore className="icon-base" />
+                      </Button>
+                    </TooltipTrigger>
+                    <TooltipContent side="top">
+                      {isAgentRunning
+                        ? t('review.agentRunningTooltip')
+                        : checkedFiles.size > 0
+                          ? t('review.unstageSelected', { defaultValue: 'Unstage selected' })
+                          : t('review.unstageAll', { defaultValue: 'Unstage all' })}
                     </TooltipContent>
                   </Tooltip>
                 )}
@@ -1701,6 +1973,29 @@ export function ReviewPane() {
                                   {t('review.openInEditor', { editor: getEditorLabel() })}
                                 </DropdownMenuItem>
                                 <DropdownMenuSeparator />
+                                {f.staged ? (
+                                  <DropdownMenuItem
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      handleUnstageFile(f.path);
+                                    }}
+                                    data-testid={`review-unstage-file-${f.path}`}
+                                  >
+                                    <ArchiveRestore />
+                                    {t('review.unstageFile', { defaultValue: 'Unstage file' })}
+                                  </DropdownMenuItem>
+                                ) : (
+                                  <DropdownMenuItem
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      handleStageFile(f.path);
+                                    }}
+                                    data-testid={`review-stage-file-${f.path}`}
+                                  >
+                                    <Archive />
+                                    {t('review.stageFile', { defaultValue: 'Stage file' })}
+                                  </DropdownMenuItem>
+                                )}
                                 <DropdownMenuItem
                                   onClick={(e) => {
                                     e.stopPropagation();
@@ -2326,6 +2621,80 @@ export function ReviewPane() {
                   <GitPullRequest className="icon-sm mr-1.5" />
                 )}
                 {t('review.createPR')}
+              </Button>
+            </div>
+          </DialogContent>
+        </Dialog>
+
+        {/* Merge into branch dialog */}
+        <Dialog
+          open={!!mergeDialog}
+          onOpenChange={(open) => {
+            if (!open) setMergeDialog(null);
+          }}
+        >
+          <DialogContent className="max-w-sm">
+            <DialogHeader>
+              <DialogTitle>
+                {t('review.mergeIntoBranch', { target: '', defaultValue: 'Merge into branch' })}
+              </DialogTitle>
+              <DialogDescription>
+                {t('review.mergeDescription', {
+                  source: currentBranch,
+                  defaultValue: `Merge ${currentBranch} into the selected target branch.`,
+                })}
+              </DialogDescription>
+            </DialogHeader>
+            <div className="space-y-2">
+              <label className="text-xs font-medium text-muted-foreground">
+                {t('review.targetBranch', 'Target branch')}
+              </label>
+              {mergeDialog?.loading ? (
+                <div className="flex items-center gap-2 py-2 text-xs text-muted-foreground">
+                  <Loader2 className="icon-sm animate-spin" />
+                  {t('common.loading', 'Loading...')}
+                </div>
+              ) : (
+                <Select
+                  value={mergeDialog?.targetBranch}
+                  onValueChange={(v) =>
+                    setMergeDialog((prev) => (prev ? { ...prev, targetBranch: v } : null))
+                  }
+                >
+                  <SelectTrigger className="h-8 text-xs" data-testid="review-merge-target-select">
+                    <SelectValue placeholder={t('review.selectBranch', 'Select branch')} />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {mergeDialog?.branches.map((b) => (
+                      <SelectItem key={b} value={b} className="text-xs">
+                        {b}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              )}
+            </div>
+            <div className="mt-2 flex justify-end gap-2">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setMergeDialog(null)}
+                data-testid="review-merge-cancel"
+              >
+                {t('common.cancel', 'Cancel')}
+              </Button>
+              <Button
+                size="sm"
+                disabled={!mergeDialog?.targetBranch || mergeDialog?.loading || mergeInProgress}
+                onClick={handleMergeWithTarget}
+                data-testid="review-merge-confirm"
+              >
+                {mergeInProgress ? (
+                  <Loader2 className="icon-sm mr-1.5 animate-spin" />
+                ) : (
+                  <GitMerge className="icon-sm mr-1.5" />
+                )}
+                {t('review.merge', 'Merge')}
               </Button>
             </div>
           </DialogContent>

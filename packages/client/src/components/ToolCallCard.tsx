@@ -139,7 +139,7 @@ export const ToolCallCard = memo(
           displayTime={displayTime}
         />
       );
-    if (name === 'Task')
+    if (name === 'Task' || name === 'Agent')
       return (
         <TaskCard
           parsed={parsed}

@@ -17,6 +17,9 @@ const MAX_SPLIT = 90;
 
 export function TestRunnerPane() {
   const selectedProjectId = useProjectStore((s) => s.selectedProjectId);
+  const projectPath = useProjectStore(
+    (s) => s.projects.find((p) => p.id === s.selectedProjectId)?.path,
+  );
   const {
     files,
     isRunning,
@@ -168,6 +171,7 @@ export function TestRunnerPane() {
             specsLoading={specsLoading}
             isRunning={isRunning}
             isLoading={isLoading}
+            projectPath={projectPath}
             onRunFile={handleRunFile}
             onRunSpec={handleRunSpec}
             onExpandFile={handleExpandFile}

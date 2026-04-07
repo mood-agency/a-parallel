@@ -180,6 +180,12 @@ export const stageFilesSchema = z.object({
   paths: z.array(z.string()).min(1, 'paths must not be empty'),
 });
 
+export const resolveConflictSchema = z.object({
+  filePath: z.string().min(1, 'filePath is required'),
+  blockIndex: z.number().int().min(0, 'blockIndex must be non-negative'),
+  resolution: z.enum(['ours', 'theirs', 'both']),
+});
+
 export const commitSchema = z.object({
   message: z.string().min(1, 'message is required').max(50_000),
   amend: z.boolean().optional().default(false),

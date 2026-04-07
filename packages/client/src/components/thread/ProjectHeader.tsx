@@ -27,6 +27,7 @@ import {
 } from 'lucide-react';
 import { memo, useState, useEffect, useCallback, useRef, startTransition } from 'react';
 import { useTranslation } from 'react-i18next';
+import { useLocation } from 'react-router-dom';
 import { toast } from 'sonner';
 import { useShallow } from 'zustand/react/shallow';
 
@@ -553,6 +554,7 @@ const StageSelectorBadge = memo(function StageSelectorBadge({
 export const ProjectHeader = memo(function ProjectHeader() {
   const { t } = useTranslation();
   const navigate = useStableNavigate();
+  const location = useLocation();
   const {
     activeThreadId,
     activeThreadProjectId,
@@ -628,6 +630,25 @@ export const ProjectHeader = memo(function ProjectHeader() {
       setTimeout(() => setEditorTooltipBlocked(false), 150);
     }
   }, []);
+
+  /** Update the ?panel= query param in the URL without a full navigation. */
+  const updatePanelParam = useCallback(
+    (panel: string | null) => {
+      const params = new URLSearchParams(location.search);
+      if (panel) {
+        params.set('panel', panel);
+      } else {
+        params.delete('panel');
+      }
+      // Also clear tab param when closing review
+      if (!panel || panel !== 'review') {
+        params.delete('tab');
+      }
+      const search = params.toString();
+      navigate(`${location.pathname}${search ? `?${search}` : ''}`, { replace: true });
+    },
+    [location.pathname, location.search, navigate],
+  );
 
   if (!selectedProjectId) return null;
 
@@ -857,8 +878,10 @@ export const ProjectHeader = memo(function ProjectHeader() {
                     startTransition(() => {
                       if (reviewPaneOpen && rightPaneTab === 'review') {
                         setReviewPaneOpen(false);
+                        updatePanelParam(null);
                       } else {
                         setReviewPaneOpen(true);
+                        updatePanelParam('review');
                       }
                     })
                   }
@@ -888,7 +911,9 @@ export const ProjectHeader = memo(function ProjectHeader() {
                   size="icon-sm"
                   onClick={() =>
                     startTransition(() => {
-                      setTestRunnerOpen(!testRunnerOpen);
+                      const opening = !testRunnerOpen;
+                      setTestRunnerOpen(opening);
+                      updatePanelParam(opening ? 'tests' : null);
                     })
                   }
                   data-testid="header-toggle-tests"

@@ -18,7 +18,7 @@ function parseStatusLine(line: string): {
   status: FileDiff['status'];
   path: string;
 } | null {
-  const match = line.match(/^([MADR?])\s+(.+)$/);
+  const match = line.match(/^([MADR?U])\s+(.+)$/);
   if (!match) return null;
 
   const statusMap: Record<string, FileDiff['status']> = {
@@ -27,6 +27,7 @@ function parseStatusLine(line: string): {
     D: 'deleted',
     R: 'renamed',
     '?': 'added',
+    U: 'conflicted',
   };
 
   return {

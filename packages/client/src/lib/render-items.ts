@@ -142,7 +142,7 @@ export function buildGroupedRenderItems(
         tc._planText = lastWrittenPlanContent || msg.content?.trim() || undefined;
       }
       // Attach child tool calls to Task tools for nested rendering
-      if (tc.name === 'Task' && childrenByParent.has(tc.id)) {
+      if ((tc.name === 'Task' || tc.name === 'Agent') && childrenByParent.has(tc.id)) {
         tc._childToolCalls = childrenByParent.get(tc.id);
       }
       flat.push({ type: 'toolcall', tc });

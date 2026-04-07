@@ -96,6 +96,12 @@ let drawToolbar: HTMLDivElement;
 let drawPromptInput: HTMLTextAreaElement;
 const DRAW_COLORS = ['#ef4444', '#f59e0b', '#22c55e', '#3b82f6', '#ffffff'] as const;
 
+// Test ID label overlay state
+let testIdLabelsVisible = false;
+let testIdContainer: HTMLDivElement;
+let testIdObserver: MutationObserver | null = null;
+let testIdScrollHandler: (() => void) | null = null;
+
 // Multi-select state (Ctrl+click)
 let multiSelectElements: Element[] = [];
 let multiSelectOverlays: AnnotationOverlay[] = [];
@@ -172,6 +178,10 @@ async function createShadowHost() {
   // History panel (hidden by default)
   historyPanel = createHistoryPanel();
   shadowRoot.appendChild(historyPanel);
+
+  // Test ID labels container
+  testIdContainer = createElement('div', 'testid-container');
+  shadowRoot.appendChild(testIdContainer);
 
   // Drawing canvas (full-screen, hidden by default)
   drawingCanvas = document.createElement('canvas');
@@ -1126,6 +1136,13 @@ function createToolbar(): HTMLDivElement {
         <circle cx="12" cy="12" r="3"></circle>
       </svg>
     </button>
+    <button class="toolbar-btn" data-action="show-testids" title="Show data-testid labels">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <path d="M4 7V4h16v3"></path>
+        <path d="M9 20h6"></path>
+        <path d="M12 4v16"></path>
+      </svg>
+    </button>
     <button class="toolbar-btn" data-action="copy" title="Copy as markdown">
       <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
         <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
@@ -1265,6 +1282,9 @@ function handleToolbarAction(action: string) {
       renderAnnotations();
       updateVisibilityButton();
       break;
+    case 'show-testids':
+      toggleTestIdLabels();
+      break;
     case 'copy':
       copyAsMarkdown();
       break;
@@ -1340,6 +1360,95 @@ function toggleBrowseMode() {
   } else {
     btn.classList.remove('toolbar-btn-active');
     btn.title = 'Browse mode — navigate the page';
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Test ID label overlay
+// ---------------------------------------------------------------------------
+
+function toggleTestIdLabels() {
+  testIdLabelsVisible = !testIdLabelsVisible;
+  const btn = toolbarEl.querySelector('[data-action="show-testids"]') as HTMLButtonElement;
+
+  if (testIdLabelsVisible) {
+    btn.classList.add('toolbar-btn-active');
+    btn.title = 'Hide data-testid labels';
+    renderTestIdLabels();
+    // Watch for DOM changes to re-render labels
+    testIdObserver = new MutationObserver(() => {
+      if (testIdLabelsVisible) renderTestIdLabels();
+    });
+    testIdObserver.observe(document.body, {
+      childList: true,
+      subtree: true,
+      attributes: true,
+      attributeFilter: ['data-testid'],
+    });
+    // Re-position labels on scroll/resize
+    testIdScrollHandler = () => {
+      if (testIdLabelsVisible) renderTestIdLabels();
+    };
+    window.addEventListener('scroll', testIdScrollHandler, true);
+    window.addEventListener('resize', testIdScrollHandler);
+  } else {
+    btn.classList.remove('toolbar-btn-active');
+    btn.title = 'Show data-testid labels';
+    clearTestIdLabels();
+  }
+}
+
+function renderTestIdLabels() {
+  testIdContainer.innerHTML = '';
+  const elements = document.querySelectorAll('[data-testid]');
+
+  elements.forEach((el) => {
+    const testId = el.getAttribute('data-testid');
+    if (!testId) return;
+
+    const rect = el.getBoundingClientRect();
+    // Skip elements that are not visible or have zero size
+    if (rect.width === 0 && rect.height === 0) return;
+
+    // Create the label overlay
+    const label = document.createElement('div');
+    label.className = 'testid-label';
+    label.textContent = testId;
+    label.title = testId;
+
+    // Position at the top-left corner of the element
+    // Clamp max-width to the element's width so labels don't overflow small elements
+    label.style.position = 'fixed';
+    label.style.left = `${rect.left}px`;
+    label.style.top = `${rect.top}px`;
+    label.style.maxWidth = `${Math.min(120, rect.width)}px`;
+    label.style.pointerEvents = 'none';
+
+    // Create a subtle border highlight around the element
+    const highlight = document.createElement('div');
+    highlight.className = 'testid-highlight';
+    highlight.style.position = 'fixed';
+    highlight.style.left = `${rect.left}px`;
+    highlight.style.top = `${rect.top}px`;
+    highlight.style.width = `${rect.width}px`;
+    highlight.style.height = `${rect.height}px`;
+    highlight.style.pointerEvents = 'none';
+
+    testIdContainer.appendChild(highlight);
+    testIdContainer.appendChild(label);
+  });
+}
+
+function clearTestIdLabels() {
+  testIdContainer.innerHTML = '';
+  if (testIdObserver) {
+    testIdObserver.disconnect();
+    testIdObserver = null;
+  }
+  if (testIdScrollHandler) {
+    window.removeEventListener('scroll', testIdScrollHandler, true);
+    window.removeEventListener('resize', testIdScrollHandler);
+    testIdScrollHandler = null;
   }
 }
 
@@ -2560,6 +2669,12 @@ function deactivate() {
   // Exit draw mode if active
   if (isDrawing) toggleDrawMode();
   clearDrawing();
+
+  // Clear test-id labels if visible
+  if (testIdLabelsVisible) {
+    testIdLabelsVisible = false;
+    clearTestIdLabels();
+  }
 
   // Resume animations if paused
   if (isPaused) {

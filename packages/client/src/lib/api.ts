@@ -533,6 +533,16 @@ export const api = {
       method: 'POST',
       body: JSON.stringify({ paths }),
     }),
+  resolveConflict: (
+    threadId: string,
+    filePath: string,
+    blockIndex: number,
+    resolution: 'ours' | 'theirs' | 'both',
+  ) =>
+    request<{ ok: boolean; remainingConflicts: number }>(`/git/${threadId}/conflict/resolve`, {
+      method: 'POST',
+      body: JSON.stringify({ filePath, blockIndex, resolution }),
+    }),
   commit: (threadId: string, message: string, amend?: boolean, noVerify?: boolean) =>
     request<{ ok: boolean; output?: string }>(`/git/${threadId}/commit`, {
       method: 'POST',
@@ -555,10 +565,11 @@ export const api = {
       method: 'POST',
       body: JSON.stringify(opts ?? {}),
     }),
-  generateCommitMessage: (threadId: string, includeUnstaged?: boolean) =>
+  generateCommitMessage: (threadId: string, includeUnstaged?: boolean, signal?: AbortSignal) =>
     request<{ title: string; body: string }>(`/git/${threadId}/generate-commit-message`, {
       method: 'POST',
       body: JSON.stringify({ includeUnstaged: includeUnstaged ?? false }),
+      signal,
     }),
   addToGitignore: (threadId: string, pattern: string) =>
     request<{ ok: boolean }>(`/git/${threadId}/gitignore`, {
@@ -670,6 +681,19 @@ export const api = {
       method: 'POST',
       body: JSON.stringify({ paths }),
     }),
+  projectResolveConflict: (
+    projectId: string,
+    filePath: string,
+    blockIndex: number,
+    resolution: 'ours' | 'theirs' | 'both',
+  ) =>
+    request<{ ok: boolean; remainingConflicts: number }>(
+      `/git/project/${projectId}/conflict/resolve`,
+      {
+        method: 'POST',
+        body: JSON.stringify({ filePath, blockIndex, resolution }),
+      },
+    ),
   projectCommit: (projectId: string, message: string, amend?: boolean, noVerify?: boolean) =>
     request<{ ok: boolean; output?: string }>(`/git/project/${projectId}/commit`, {
       method: 'POST',
@@ -753,10 +777,15 @@ export const api = {
     ),
   projectCommitBody: (projectId: string, hash: string) =>
     request<{ body: string }>(`/git/project/${projectId}/commit/${hash}/body`),
-  projectGenerateCommitMessage: (projectId: string, includeUnstaged?: boolean) =>
+  projectGenerateCommitMessage: (
+    projectId: string,
+    includeUnstaged?: boolean,
+    signal?: AbortSignal,
+  ) =>
     request<{ title: string; body: string }>(`/git/project/${projectId}/generate-commit-message`, {
       method: 'POST',
       body: JSON.stringify({ includeUnstaged: includeUnstaged ?? false }),
+      signal,
     }),
   projectAddToGitignore: (projectId: string, pattern: string) =>
     request<{ ok: boolean }>(`/git/project/${projectId}/gitignore`, {

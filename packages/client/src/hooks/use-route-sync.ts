@@ -462,9 +462,22 @@ export function useRouteSync() {
         projectStore.selectProject(projectId);
       }
 
+      // Sync ?panel= query param → review pane / test runner
+      const searchParams = new URLSearchParams(location.search);
+      const panelParam = searchParams.get('panel');
+      if (panelParam === 'review') {
+        if (!uiStore.reviewPaneOpen || uiStore.rightPaneTab !== 'review') {
+          uiStore.setReviewPaneOpen(true);
+        }
+      } else if (panelParam === 'tests') {
+        if (!uiStore.testRunnerOpen) {
+          uiStore.setTestRunnerOpen(true);
+        }
+      }
+
       // Sync ?tab= query param → review sub-tab
       const validTabs: ReviewSubTab[] = ['changes', 'history', 'stash', 'prs'];
-      const tabParam = new URLSearchParams(location.search).get('tab') as ReviewSubTab | null;
+      const tabParam = searchParams.get('tab') as ReviewSubTab | null;
       if (tabParam && validTabs.includes(tabParam) && tabParam !== uiStore.reviewSubTab) {
         uiStore.setReviewSubTab(tabParam);
         // Also ensure the right pane is open on the review tab
@@ -478,6 +491,19 @@ export function useRouteSync() {
       }
       if (projectId !== projectStore.selectedProjectId) {
         projectStore.selectProject(projectId);
+      }
+
+      // Sync ?panel= for project-level views too
+      const searchParams = new URLSearchParams(location.search);
+      const panelParam = searchParams.get('panel');
+      if (panelParam === 'review') {
+        if (!uiStore.reviewPaneOpen || uiStore.rightPaneTab !== 'review') {
+          uiStore.setReviewPaneOpen(true);
+        }
+      } else if (panelParam === 'tests') {
+        if (!uiStore.testRunnerOpen) {
+          uiStore.setTestRunnerOpen(true);
+        }
       }
     } else {
       // Root path — clear selection (only if something is selected to avoid no-op state updates)

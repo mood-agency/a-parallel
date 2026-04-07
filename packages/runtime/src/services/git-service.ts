@@ -28,6 +28,7 @@ import {
   removeBranch,
   type GitIdentityOptions,
 } from '@funny/core/git';
+import type { WSEvent } from '@funny/shared';
 import type { DomainError } from '@funny/shared/errors';
 import { badRequest, internal, notFound } from '@funny/shared/errors';
 import { type Result, ResultAsync, err, errAsync, ok } from 'neverthrow';
@@ -354,6 +355,18 @@ export function merge(params: MergeParams): ResultAsync<string, DomainError> {
                 branch: null,
                 mode: 'local',
                 mergedAt: new Date().toISOString(),
+              });
+
+              // Notify sidebar/client that thread structure changed
+              wsBroker.emitToUser(params.userId, {
+                type: 'thread:updated',
+                threadId: params.threadId,
+                data: {
+                  branch: null,
+                  worktreePath: null,
+                  mode: 'local',
+                  mergedAt: new Date().toISOString(),
+                },
               });
 
               // Calculate actual unpushed commits on the target branch after merge

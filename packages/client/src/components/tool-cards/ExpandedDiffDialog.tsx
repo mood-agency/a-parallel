@@ -35,7 +35,7 @@ import { cn } from '@/lib/utils';
 
 import { DiffCommentThread } from '../DiffCommentThread';
 import { FileTree } from '../FileTree';
-import { type DiffViewMode, VirtualDiff } from '../VirtualDiff';
+import { type DiffViewMode, type ConflictResolution, VirtualDiff } from '../VirtualDiff';
 import { getFileName } from './utils';
 
 /* ── Helpers ── */
@@ -145,6 +145,7 @@ export interface ExpandedDiffViewProps {
   diffCache?: Map<string, string>;
   onClose: () => void;
   prReviewThreads?: PRReviewThread[];
+  onResolveConflict?: (blockId: number, resolution: ConflictResolution) => void;
   onRequestFullDiff?: (
     filePath: string,
   ) => Promise<{ oldValue: string; newValue: string; rawDiff?: string } | null>;
@@ -165,6 +166,7 @@ function DiffContent({
   searchQuery,
   currentMatchIndex,
   onMatchCount,
+  onResolveConflict,
 }: {
   filePath: string;
   /** @deprecated Use viewMode instead */
@@ -180,6 +182,7 @@ function DiffContent({
   searchQuery?: string;
   currentMatchIndex?: number;
   onMatchCount?: (count: number) => void;
+  onResolveConflict?: (blockId: number, resolution: ConflictResolution) => void;
 }) {
   // Compute unified diff from old/new if rawDiff is not provided
   const unifiedDiff = useMemo(() => {
@@ -213,6 +216,7 @@ function DiffContent({
       searchQuery={searchQuery}
       currentMatchIndex={currentMatchIndex}
       onMatchCount={onMatchCount}
+      onResolveConflict={onResolveConflict}
       className="h-full"
       data-testid="expanded-diff-viewer"
     />
@@ -600,6 +604,7 @@ export function ExpandedDiffView({
   diffCache,
   onClose,
   prReviewThreads,
+  onResolveConflict,
   onRequestFullDiff,
 }: ExpandedDiffViewProps) {
   const [userViewMode, setUserViewMode] = useState<DiffViewMode>('three-pane');
@@ -889,6 +894,7 @@ export function ExpandedDiffView({
             searchQuery={showSearch ? searchQuery : undefined}
             currentMatchIndex={currentMatchIndex}
             onMatchCount={handleMatchCount}
+            onResolveConflict={onResolveConflict}
           />
         </div>
         {fileThreads.length > 0 && (

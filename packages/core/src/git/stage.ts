@@ -124,6 +124,112 @@ export function revertFiles(cwd: string, paths: string[]): ResultAsync<void, Dom
 }
 
 /**
+ * Resolve a specific conflict block in a file.
+ * Reads the file, finds the Nth conflict block, applies the resolution, and writes back.
+ * If no conflicts remain after resolution, stages the file with `git add`.
+ */
+export function resolveFileConflict(
+  cwd: string,
+  filePath: string,
+  blockIndex: number,
+  resolution: 'ours' | 'theirs' | 'both',
+): ResultAsync<{ remainingConflicts: number }, DomainError> {
+  return ResultAsync.fromPromise(
+    (async () => {
+      const fullPath = join(cwd, filePath);
+      if (!existsSync(fullPath)) {
+        throw new Error(`File not found: ${filePath}`);
+      }
+
+      const content = readFileSync(fullPath, 'utf-8');
+      const lines = content.split('\n');
+
+      // Find all conflict blocks
+      const MARKER_START = /^<{7}\s?/;
+      const MARKER_SEP = /^={7}$/;
+      const MARKER_END = /^>{7}\s?/;
+
+      interface Block {
+        startLine: number;
+        sepLine: number;
+        endLine: number;
+      }
+
+      const blocks: Block[] = [];
+      let i = 0;
+
+      while (i < lines.length) {
+        if (MARKER_START.test(lines[i])) {
+          const startLine = i;
+          let sepLine = -1;
+          let endLine = -1;
+
+          for (let j = startLine + 1; j < lines.length; j++) {
+            if (MARKER_SEP.test(lines[j]) && sepLine === -1) {
+              sepLine = j;
+            } else if (sepLine !== -1 && MARKER_END.test(lines[j])) {
+              endLine = j;
+              break;
+            }
+          }
+
+          if (sepLine !== -1 && endLine !== -1) {
+            blocks.push({ startLine, sepLine, endLine });
+            i = endLine + 1;
+            continue;
+          }
+        }
+        i++;
+      }
+
+      if (blockIndex < 0 || blockIndex >= blocks.length) {
+        throw new Error(
+          `Conflict block ${blockIndex} not found (file has ${blocks.length} conflict${blocks.length === 1 ? '' : 's'})`,
+        );
+      }
+
+      const block = blocks[blockIndex];
+      const oursLines = lines.slice(block.startLine + 1, block.sepLine);
+      const theirsLines = lines.slice(block.sepLine + 1, block.endLine);
+
+      let replacement: string[];
+      switch (resolution) {
+        case 'ours':
+          replacement = oursLines;
+          break;
+        case 'theirs':
+          replacement = theirsLines;
+          break;
+        case 'both':
+          replacement = [...oursLines, ...theirsLines];
+          break;
+      }
+
+      // Replace the conflict block (startLine through endLine inclusive) with the resolution
+      const resolved = [
+        ...lines.slice(0, block.startLine),
+        ...replacement,
+        ...lines.slice(block.endLine + 1),
+      ];
+
+      writeFileSync(fullPath, resolved.join('\n'), 'utf-8');
+
+      // Count remaining conflicts in the resolved content
+      const remainingConflicts = blocks.length - 1;
+
+      // If no conflicts remain, stage the file
+      if (remainingConflicts === 0) {
+        const addResult = await git(['add', '--', filePath], cwd);
+        if (addResult.isErr()) throw addResult.error;
+      }
+
+      return { remainingConflicts };
+    })(),
+    toDomainError,
+  );
+}
+
+/**
  * Add a pattern to .gitignore. Creates the file if it doesn't exist.
  * Avoids adding duplicate entries.
  */

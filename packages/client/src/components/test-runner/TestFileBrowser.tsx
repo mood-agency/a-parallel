@@ -9,13 +9,22 @@ import {
   CheckCircle2,
   XCircle,
   Circle,
+  MoreHorizontal,
+  ExternalLink,
 } from 'lucide-react';
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { Button } from '@/components/ui/button';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
 import { Input } from '@/components/ui/input';
 import { TooltipIconButton } from '@/components/ui/tooltip-icon-button';
+import { openFileInExternalEditor, getEditorLabel } from '@/lib/editor-utils';
 import { FileExtensionIcon } from '@/lib/file-icons';
 import { cn } from '@/lib/utils';
 
@@ -118,6 +127,7 @@ interface TreeItemProps {
   fileSpecs: Record<string, TestSpec[]>;
   specsLoading: Record<string, boolean>;
   isRunning: boolean;
+  projectPath?: string;
   onRunFile: (file: string) => void;
   onRunSpec: (file: string, line: number) => void;
   onExpandFile: (file: string) => void;
@@ -134,6 +144,7 @@ function TreeItem({
   fileSpecs,
   specsLoading,
   isRunning,
+  projectPath,
   onRunFile,
   onRunSpec,
   onExpandFile,
@@ -176,6 +187,7 @@ function TreeItem({
               fileSpecs={fileSpecs}
               specsLoading={specsLoading}
               isRunning={isRunning}
+              projectPath={projectPath}
               onRunFile={onRunFile}
               onRunSpec={onRunSpec}
               onExpandFile={onExpandFile}
@@ -186,10 +198,12 @@ function TreeItem({
   }
 
   // File node — expandable to show individual specs
+  const { t } = useTranslation();
   const status = fileStatuses[node.path];
   const isFileExpanded = expandedFiles.has(node.path);
   const specs = fileSpecs[node.path];
   const isSpecsLoading = specsLoading[node.path];
+  const [menuOpen, setMenuOpen] = useState(false);
 
   const handleToggleFile = () => {
     toggleFile(node.path);
@@ -243,6 +257,34 @@ function TreeItem({
         >
           <Play className="icon-xs" />
         </Button>
+        <DropdownMenu open={menuOpen} onOpenChange={setMenuOpen}>
+          <DropdownMenuTrigger asChild>
+            <button
+              data-testid={`test-file-menu-${node.path}`}
+              className={cn(
+                'flex h-5 w-5 flex-shrink-0 items-center justify-center rounded-sm hover:bg-sidebar-accent',
+                menuOpen ? 'opacity-100' : 'opacity-0 group-hover:opacity-100',
+              )}
+              onClick={(e) => e.stopPropagation()}
+              onPointerDown={(e) => e.stopPropagation()}
+            >
+              <MoreHorizontal className="icon-xs" />
+            </button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end" className="min-w-[180px]">
+            <DropdownMenuItem
+              data-testid={`test-file-open-editor-${node.path}`}
+              onClick={(e) => {
+                e.stopPropagation();
+                const fullPath = projectPath ? `${projectPath}/${node.path}` : node.path;
+                openFileInExternalEditor(fullPath);
+              }}
+            >
+              <ExternalLink className="icon-xs" />
+              {t('review.openInEditor', { editor: getEditorLabel() })}
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
       </div>
 
       {/* Expanded specs */}
@@ -286,6 +328,7 @@ interface TestFileBrowserProps {
   specsLoading: Record<string, boolean>;
   isRunning: boolean;
   isLoading: boolean;
+  projectPath?: string;
   onRunFile: (file: string) => void;
   onRunSpec: (file: string, line: number) => void;
   onExpandFile: (file: string) => void;
@@ -300,6 +343,7 @@ export function TestFileBrowser({
   specsLoading,
   isRunning,
   isLoading,
+  projectPath,
   onRunFile,
   onRunSpec,
   onExpandFile,
@@ -309,6 +353,7 @@ export function TestFileBrowser({
   const [search, setSearch] = useState('');
   const [expandedFolders, setExpandedFolders] = useState<Set<string>>(new Set());
   const [expandedFiles, setExpandedFiles] = useState<Set<string>>(new Set());
+  const initializedRef = useRef(false);
 
   const filteredFiles = useMemo(() => {
     if (!search) return files;
@@ -318,9 +363,27 @@ export function TestFileBrowser({
 
   const tree = useMemo(() => buildTree(filteredFiles), [filteredFiles]);
 
-  // Auto-expand all folders when searching or when there are few files
+  // Auto-expand all folders on initial load when there are few files
+  useEffect(() => {
+    if (!initializedRef.current && files.length > 0 && files.length <= 20) {
+      initializedRef.current = true;
+      const all = new Set<string>();
+      const collectFolders = (nodes: TreeNode[]) => {
+        for (const node of nodes) {
+          if (node.isFolder) {
+            all.add(node.path);
+            collectFolders(node.children);
+          }
+        }
+      };
+      collectFolders(tree);
+      setExpandedFolders(all);
+    }
+  }, [files.length, tree]);
+
+  // Force-expand all folders when actively searching
   const effectiveExpanded = useMemo(() => {
-    if (search || filteredFiles.length <= 20) {
+    if (search) {
       const all = new Set<string>();
       const collectFolders = (nodes: TreeNode[]) => {
         for (const node of nodes) {
@@ -334,7 +397,7 @@ export function TestFileBrowser({
       return all;
     }
     return expandedFolders;
-  }, [search, filteredFiles.length, tree, expandedFolders]);
+  }, [search, tree, expandedFolders]);
 
   const toggleFolder = (path: string) => {
     setExpandedFolders((prev) => {
@@ -420,6 +483,7 @@ export function TestFileBrowser({
               fileSpecs={fileSpecs}
               specsLoading={specsLoading}
               isRunning={isRunning}
+              projectPath={projectPath}
               onRunFile={onRunFile}
               onRunSpec={onRunSpec}
               onExpandFile={onExpandFile}

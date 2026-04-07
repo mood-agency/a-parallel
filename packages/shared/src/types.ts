@@ -690,8 +690,10 @@ export interface WSCommentDeletedData {
 export interface WSThreadUpdatedData {
   status?: string;
   archived?: number;
-  branch?: string;
-  worktreePath?: string;
+  branch?: string | null;
+  worktreePath?: string | null;
+  mode?: string;
+  mergedAt?: string;
 }
 
 export interface WSThreadDeletedData {

@@ -292,8 +292,8 @@ function dispatchEvent(type: string, threadId: string, data: any): void {
       if (data.archived) {
         store2.refreshAllLoadedThreads();
       }
-      if (data.branch || data.worktreePath || data.containerUrl) {
-        // Update the thread in the sidebar list
+      if (data.branch || data.worktreePath || data.containerUrl || data.mergedAt || data.mode) {
+        // Update the thread in the sidebar list (includes post-merge cleanup)
         store2.refreshAllLoadedThreads();
         if (store2.activeThread?.id === threadId) {
           store2.refreshActiveThread();
