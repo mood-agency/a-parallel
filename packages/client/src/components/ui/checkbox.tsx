@@ -6,16 +6,16 @@ import { cn } from '@/lib/utils';
 
 const sizeClasses = {
   default: {
-    root: 'h-4 w-4',
-    icon: 'h-4 w-4',
+    root: 'h-3.5 w-3.5',
+    icon: 'h-3 w-3',
   },
   sm: {
-    root: 'h-3.5 w-3.5',
-    icon: 'h-3.5 w-3.5',
-  },
-  xs: {
     root: 'h-3 w-3',
-    icon: 'h-3 w-3',
+    icon: 'h-2.5 w-2.5',
+  },
+  lg: {
+    root: 'h-4 w-4',
+    icon: 'h-3.5 w-3.5',
   },
 } as const;
 
@@ -28,7 +28,7 @@ const Checkbox = React.forwardRef<
   <CheckboxPrimitive.Root
     ref={ref}
     className={cn(
-      'grid place-content-center peer shrink-0 rounded-sm border border-primary focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring/50 disabled:cursor-not-allowed disabled:opacity-50 data-[state=checked]:bg-primary data-[state=checked]:text-primary-foreground',
+      'grid place-content-center peer shrink-0 rounded-sm border border-input shadow-xs focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring/50 disabled:cursor-not-allowed disabled:opacity-50 data-[state=checked]:border-primary data-[state=checked]:bg-primary data-[state=checked]:text-primary-foreground',
       sizeClasses[size].root,
       className,
     )}
