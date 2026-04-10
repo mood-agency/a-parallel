@@ -1,10 +1,6 @@
 import type { Meta, StoryObj } from '@storybook/react-vite';
-import { useState } from 'react';
 
-import { Button } from '@/components/ui/button';
 import { VirtualDiff } from '@/components/VirtualDiff';
-
-import { ExpandedDiffDialog } from './ExpandedDiffDialog';
 
 /* -------------------------------------------------------------------------- */
 /*  Sample diff content                                                       */
@@ -146,10 +142,18 @@ function DiffViewerWrapper({
   oldValue,
   newValue,
   splitView = false,
+  viewMode,
+  showMinimap = false,
+  wordWrap = false,
+  codeFolding = true,
 }: {
   oldValue: string;
   newValue: string;
   splitView?: boolean;
+  viewMode?: 'unified' | 'split' | 'three-pane';
+  showMinimap?: boolean;
+  wordWrap?: boolean;
+  codeFolding?: boolean;
 }) {
   const unifiedDiff = computeUnifiedDiff(oldValue, newValue);
   return (
@@ -157,8 +161,11 @@ function DiffViewerWrapper({
       <VirtualDiff
         unifiedDiff={unifiedDiff}
         splitView={splitView}
+        viewMode={viewMode}
         filePath="example.tsx"
-        codeFolding={true}
+        codeFolding={codeFolding}
+        showMinimap={showMinimap}
+        wordWrap={wordWrap}
         className="h-full"
         data-testid="story-diff-viewer"
       />
@@ -219,24 +226,33 @@ export const NoChanges: Story = {
   args: { oldValue: OLD_SIMPLE, newValue: OLD_SIMPLE, splitView: false },
 };
 
-export const ExpandedDiffDialogStory: Story = {
-  name: 'Expanded Diff Dialog',
-  args: { oldValue: OLD_MULTILINE, newValue: NEW_MULTILINE },
-  render: () => {
-    const [open, setOpen] = useState(false);
-    return (
-      <div>
-        <Button data-testid="diff-open-dialog" onClick={() => setOpen(true)}>
-          Open Expanded Diff Dialog
-        </Button>
-        <ExpandedDiffDialog
-          open={open}
-          onOpenChange={setOpen}
-          filePath="packages/client/src/components/Card.tsx"
-          oldValue={OLD_MULTILINE}
-          newValue={NEW_MULTILINE}
-        />
-      </div>
-    );
+export const ThreePane: Story = {
+  name: 'Three-pane View',
+  args: { oldValue: OLD_MULTILINE, newValue: NEW_MULTILINE, viewMode: 'three-pane' },
+};
+
+export const WithMinimap: Story = {
+  name: 'With Minimap',
+  args: {
+    oldValue: OLD_MULTILINE,
+    newValue: NEW_MULTILINE,
+    splitView: false,
+    showMinimap: true,
+    codeFolding: false,
+  },
+};
+
+export const WithWordWrap: Story = {
+  name: 'Word Wrap Enabled',
+  args: { oldValue: OLD_MULTILINE, newValue: NEW_MULTILINE, splitView: false, wordWrap: true },
+};
+
+export const ThreePaneWordWrap: Story = {
+  name: 'Three-pane + Word Wrap',
+  args: {
+    oldValue: OLD_MULTILINE,
+    newValue: NEW_MULTILINE,
+    viewMode: 'three-pane',
+    wordWrap: true,
   },
 };

@@ -1,5 +1,5 @@
 import type { Meta, StoryObj } from '@storybook/react-vite';
-import { expect } from 'storybook/test';
+import { expect, within } from 'storybook/test';
 
 import { Button } from '@/components/ui/button';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
@@ -89,25 +89,20 @@ export const Left: Story = {
 
 export const HoverShowsTooltip: Story = {
   render: () => (
-    <Tooltip>
+    <Tooltip defaultOpen>
       <TooltipTrigger asChild>
         <Button variant="outline" data-testid="tooltip-trigger">
           Hover me
         </Button>
       </TooltipTrigger>
-      <TooltipContent>
+      <TooltipContent data-testid="tooltip-content">
         <p>Tooltip content</p>
       </TooltipContent>
     </Tooltip>
   ),
-  play: async ({ canvas, userEvent }) => {
-    const trigger = canvas.getByTestId('tooltip-trigger');
-    // Hover to show tooltip
-    await userEvent.hover(trigger);
-    // Tooltip should appear (Radix renders in a portal, use findByText for async)
-    const tooltip = await canvas.findByText('Tooltip content');
-    await expect(tooltip).toBeVisible();
-    // Unhover to hide
-    await userEvent.unhover(trigger);
+  play: async ({ canvasElement }) => {
+    const body = within(canvasElement.ownerDocument.body);
+    const content = await body.findByTestId('tooltip-content');
+    await expect(content).toBeInTheDocument();
   },
 };

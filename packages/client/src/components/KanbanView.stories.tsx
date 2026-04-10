@@ -209,15 +209,7 @@ export const FilteredByProject: Story = {
         makeProject({ id: 'proj-1', name: 'funny', color: '#3b82f6' }),
         makeProject({ id: 'proj-2', name: 'api-server', color: '#ef4444' }),
       ]);
-      return (
-        <MemoryRouter>
-          <TooltipProvider>
-            <div className="h-[600px] w-full bg-background">
-              <Story />
-            </div>
-          </TooltipProvider>
-        </MemoryRouter>
-      );
+      return <Story />;
     },
   ],
   args: {
@@ -236,15 +228,7 @@ export const MultiProject: Story = {
         makeProject({ id: 'proj-2', name: 'api-server', color: '#ef4444' }),
         makeProject({ id: 'proj-3', name: 'design-system', color: '#a855f7' }),
       ]);
-      return (
-        <MemoryRouter>
-          <TooltipProvider>
-            <div className="h-[600px] w-full bg-background">
-              <Story />
-            </div>
-          </TooltipProvider>
-        </MemoryRouter>
-      );
+      return <Story />;
     },
   ],
   args: {
@@ -298,15 +282,7 @@ export const WithGitStatus: Story = {
       };
       seedStores();
       useGitStatusStore.setState({ statusByBranch });
-      return (
-        <MemoryRouter>
-          <TooltipProvider>
-            <div className="h-[600px] w-full bg-background">
-              <Story />
-            </div>
-          </TooltipProvider>
-        </MemoryRouter>
-      );
+      return <Story />;
     },
   ],
   args: {

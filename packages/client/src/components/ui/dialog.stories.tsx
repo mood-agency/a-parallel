@@ -1,5 +1,5 @@
 import type { Meta, StoryObj } from '@storybook/react-vite';
-import { expect, within } from 'storybook/test';
+import { expect, waitFor, within } from 'storybook/test';
 
 import { Button } from '@/components/ui/button';
 import {
@@ -214,7 +214,9 @@ export const OpenAndClose: Story = {
     await userEvent.click(trigger);
 
     const body = within(canvasElement.ownerDocument.body);
-    const content = body.getByTestId('dialog-content');
-    await expect(content).toBeVisible();
+    await waitFor(() => {
+      const content = body.getByTestId('dialog-content');
+      expect(content).toBeVisible();
+    });
   },
 };
