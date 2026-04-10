@@ -255,6 +255,31 @@ export interface PRReviewThread {
   comments: PRThreadComment[];
 }
 
+// ─── PR Files (changed files in a PR) ───────────────────
+
+export interface PRFile {
+  sha: string;
+  filename: string;
+  status: 'added' | 'removed' | 'modified' | 'renamed' | 'copied' | 'changed' | 'unchanged';
+  additions: number;
+  deletions: number;
+  changes: number;
+  patch?: string;
+  previous_filename?: string;
+}
+
+// ─── PR Commits ─────────────────────────────────────────
+
+export interface PRCommit {
+  sha: string;
+  message: string;
+  author: {
+    login: string;
+    avatar_url: string;
+  } | null;
+  date: string;
+}
+
 export interface CloneRepoRequest {
   cloneUrl: string;
   destinationPath: string;
