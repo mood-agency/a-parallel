@@ -1,4 +1,5 @@
 import '../src/globals.css';
+import './storybook.css';
 import '../src/i18n/config';
 import type { Preview } from '@storybook/react-vite';
 import { ThemeProvider } from 'next-themes';
@@ -18,9 +19,7 @@ const preview: Preview = {
     (Story) => (
       <ThemeProvider attribute="class" defaultTheme="one-dark">
         <TooltipProvider>
-          <div className="dark bg-background p-8 font-sans text-foreground">
-            <Story />
-          </div>
+          <Story />
         </TooltipProvider>
       </ThemeProvider>
     ),

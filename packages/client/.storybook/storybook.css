@@ -1,0 +1,7 @@
+/* Storybook iframe inherits theme from ThemeProvider (sets .dark on html).
+   Apply base colors to body so all stories have a consistent background. */
+body {
+  background: hsl(var(--background));
+  color: hsl(var(--foreground));
+  font-family: var(--font-sans);
+}
