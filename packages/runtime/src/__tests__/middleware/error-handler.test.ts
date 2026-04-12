@@ -13,7 +13,7 @@ describe('handleError', () => {
     return app;
   }
 
-  test('returns 400 with stderr message for ProcessExecutionError', async () => {
+  test('returns 400 with generic message for ProcessExecutionError', async () => {
     const error = new Error('git checkout failed');
     error.name = 'ProcessExecutionError';
     (error as any).command = 'git checkout main';
@@ -24,7 +24,8 @@ describe('handleError', () => {
 
     expect(res.status).toBe(400);
     const body = await res.json();
-    expect(body).toEqual({ error: 'error: pathspec not found' });
+    // stderr is NOT leaked to client — generic message returned instead
+    expect(body).toEqual({ error: 'Command execution failed' });
   });
 
   test('returns 500 with generic message for generic Error', async () => {
@@ -66,8 +67,8 @@ describe('handleError', () => {
 
     expect(res.status).toBe(400);
     const body = await res.json();
-    // No stderr set, falls back to error.message
-    expect(body).toEqual({ error: 'command not found' });
+    // Generic message returned — error.message is NOT leaked to client
+    expect(body).toEqual({ error: 'Command execution failed' });
   });
 
   test('returns 500 for TypeError', async () => {
