@@ -449,6 +449,22 @@
     "next": "Next",
     "continue": "Continue"
   },
+  "plan": {
+    "reviewPlan": "Review plan",
+    "reviewTitle": "Review plan",
+    "reviewDescription": "Select text to leave comments",
+    "editPlan": "Edit",
+    "editDescription": "Edit the plan markdown directly",
+    "showPreview": "Preview",
+    "comment": "Comment",
+    "addComment": "Add comment...",
+    "commentPlaceholder": "Comment on this section...",
+    "yourComments": "Your comments",
+    "approveAndStart": "Approve plan and start coding",
+    "approveWithComments": "Approve plan and send {{count}} comment(s)",
+    "tellClaude": "Tell the agent what to do instead",
+    "customPlaceholder": "Describe what you want instead..."
+  },
   "allThreads": {
     "title": "All threads",
     "threads": "threads",

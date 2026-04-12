@@ -621,9 +621,12 @@ export const ProjectHeader = memo(function ProjectHeader() {
   const kanbanContext = useUIStore((s) => s.kanbanContext);
   const { openPreview, isTauri } = usePreviewWindow();
   const toggleTerminalPanel = useTerminalStore((s) => s.togglePanel);
-  const terminalPanelVisible = useTerminalStore((s) => s.panelVisible);
+  const panelVisibleByProject = useTerminalStore((s) => s.panelVisibleByProject);
   const setPanelVisible = useTerminalStore((s) => s.setPanelVisible);
   const addTab = useTerminalStore((s) => s.addTab);
+  const terminalPanelVisible = selectedProjectId
+    ? (panelVisibleByProject[selectedProjectId] ?? false)
+    : false;
   const gitStatus = useGitStatusForThread(activeThreadId ?? undefined);
   const projectGitStatus = useGitStatusStore((s) =>
     !activeThreadId && selectedProjectId ? s.statusByProject[selectedProjectId] : undefined,
@@ -890,9 +893,9 @@ export const ProjectHeader = memo(function ProjectHeader() {
                         projectId: selectedProjectId,
                         type: isTauri ? undefined : 'pty',
                       });
-                      setPanelVisible(true);
+                      setPanelVisible(selectedProjectId, true);
                     } else {
-                      toggleTerminalPanel();
+                      toggleTerminalPanel(selectedProjectId);
                     }
                   }}
                   data-testid="header-toggle-terminal"

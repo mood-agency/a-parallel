@@ -35,7 +35,8 @@ const pendingPtyData = new Map<string, string[]>();
 interface TerminalState {
   tabs: TerminalTab[];
   activeTabId: string | null;
-  panelVisible: boolean;
+  /** Per-project panel visibility (keyed by projectId) */
+  panelVisibleByProject: Record<string, boolean>;
   /** Output buffer per commandId for server-managed commands */
   commandOutput: Record<string, string>;
   /** PTY data callbacks: ptyId -> callback function */
@@ -49,8 +50,8 @@ interface TerminalState {
   markExited: (id: string) => void;
   markAlive: (id: string) => void;
   respawnTab: (id: string) => void;
-  setPanelVisible: (visible: boolean) => void;
-  togglePanel: () => void;
+  setPanelVisible: (projectId: string, visible: boolean) => void;
+  togglePanel: (projectId: string) => void;
   appendCommandOutput: (commandId: string, data: string) => void;
   markCommandExited: (commandId: string) => void;
   setTabError: (ptyId: string, error: string) => void;
@@ -80,7 +81,7 @@ export const useTerminalStore = create<TerminalState>()(
     (set, get) => ({
       tabs: [],
       activeTabId: null,
-      panelVisible: false,
+      panelVisibleByProject: {},
       commandOutput: {},
       commandMetrics: {},
       ptyDataCallbacks: {},
@@ -90,7 +91,10 @@ export const useTerminalStore = create<TerminalState>()(
         set((state) => ({
           tabs: [...state.tabs, tab],
           activeTabId: tab.id,
-          panelVisible: true,
+          panelVisibleByProject: {
+            ...state.panelVisibleByProject,
+            [tab.projectId]: true,
+          },
         })),
 
       removeTab: (id) =>
@@ -104,10 +108,16 @@ export const useTerminalStore = create<TerminalState>()(
           // Clean up command output buffer
           const commandOutput = { ...state.commandOutput };
           if (tab?.commandId) delete commandOutput[tab.commandId];
+          // Hide panel for this project if no more tabs remain for it
+          const panelVisibleByProject = { ...state.panelVisibleByProject };
+          const projectId = tab?.projectId;
+          if (projectId && !remaining.some((t) => t.projectId === projectId)) {
+            panelVisibleByProject[projectId] = false;
+          }
           return {
             tabs: remaining,
             activeTabId,
-            panelVisible: remaining.length > 0 ? state.panelVisible : false,
+            panelVisibleByProject,
             commandOutput,
           };
         }),
@@ -135,9 +145,21 @@ export const useTerminalStore = create<TerminalState>()(
           ),
         })),
 
-      setPanelVisible: (visible) => set({ panelVisible: visible }),
+      setPanelVisible: (projectId, visible) =>
+        set((state) => ({
+          panelVisibleByProject: {
+            ...state.panelVisibleByProject,
+            [projectId]: visible,
+          },
+        })),
 
-      togglePanel: () => set((state) => ({ panelVisible: !state.panelVisible })),
+      togglePanel: (projectId) =>
+        set((state) => ({
+          panelVisibleByProject: {
+            ...state.panelVisibleByProject,
+            [projectId]: !(state.panelVisibleByProject[projectId] ?? false),
+          },
+        })),
 
       appendCommandOutput: (commandId, data) =>
         set((state) => ({
@@ -266,9 +288,18 @@ export const useTerminalStore = create<TerminalState>()(
             return { sessionsChecked: true };
           }
 
+          // Only show panels for projects with new tabs that don't already
+          // have an explicit visibility setting (respects user's previous close)
+          const panelVisibleByProject = { ...state.panelVisibleByProject };
+          for (const tab of newTabs) {
+            if (tab.projectId && panelVisibleByProject[tab.projectId] === undefined) {
+              panelVisibleByProject[tab.projectId] = true;
+            }
+          }
+
           return {
             tabs: [...tabs, ...newTabs],
-            panelVisible: newTabs.length > 0 ? true : state.panelVisible,
+            panelVisibleByProject,
             activeTabId: state.activeTabId ?? newTabs[0]?.id ?? tabs[0]?.id ?? null,
             // Mark sessionsChecked atomically with the tab update — avoids
             // intermediate state flickers that cancel in-flight spawn timers.
@@ -282,7 +313,7 @@ export const useTerminalStore = create<TerminalState>()(
       partialize: (state) => ({
         tabs: state.tabs.map((t) => ({ ...t, alive: false, initialCommand: undefined })), // Tabs are not "alive" until re-connected
         activeTabId: state.activeTabId,
-        panelVisible: state.panelVisible,
+        panelVisibleByProject: state.panelVisibleByProject,
       }),
     },
   ),

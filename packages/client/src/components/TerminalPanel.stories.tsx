@@ -94,7 +94,7 @@ function seedStores(
   opts: {
     tabs?: TerminalTab[];
     activeTabId?: string | null;
-    panelVisible?: boolean;
+    panelVisibleByProject?: Record<string, boolean>;
     commandOutput?: Record<string, string>;
     commandMetrics?: Record<
       string,
@@ -105,7 +105,7 @@ function seedStores(
   const {
     tabs = baseTabs,
     activeTabId = tabs[0]?.id ?? null,
-    panelVisible = true,
+    panelVisibleByProject = { [PROJECT_ID]: true },
     commandOutput = {},
     commandMetrics = {},
   } = opts;
@@ -150,7 +150,7 @@ function seedStores(
   useTerminalStore.setState({
     tabs,
     activeTabId,
-    panelVisible,
+    panelVisibleByProject,
     sessionsChecked: true,
     commandOutput,
     commandMetrics,

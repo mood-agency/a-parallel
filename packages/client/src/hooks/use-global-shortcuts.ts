@@ -51,7 +51,8 @@ export function useGlobalShortcuts(
         const { selectedProjectId, projects } = useProjectStore.getState();
         if (!selectedProjectId) return;
         const projectTabs = store.tabs.filter((t) => t.projectId === selectedProjectId);
-        if (projectTabs.length === 0 && !store.panelVisible) {
+        const isVisible = store.panelVisibleByProject[selectedProjectId] ?? false;
+        if (projectTabs.length === 0 && !isVisible) {
           const project = projects.find((p: any) => p.id === selectedProjectId);
           const cwd = project?.path ?? 'C:\\';
           store.addTab({
@@ -62,7 +63,7 @@ export function useGlobalShortcuts(
             projectId: selectedProjectId,
           });
         } else {
-          store.togglePanel();
+          store.togglePanel(selectedProjectId);
         }
       }
     };

@@ -189,6 +189,7 @@ function DiffContent({
   selectedLines,
   onLineToggle,
   onHunkToggle,
+  onDragSelect,
 }: {
   filePath: string;
   /** @deprecated Use viewMode instead */
@@ -209,6 +210,7 @@ function DiffContent({
   selectedLines?: Set<number>;
   onLineToggle?: (lineIdx: number) => void;
   onHunkToggle?: (hunkLineIndices: number[]) => void;
+  onDragSelect?: (startLineIdx: number, endLineIdx: number, select: boolean) => void;
 }) {
   // Compute unified diff from old/new if rawDiff is not provided
   const unifiedDiff = useMemo(() => {
@@ -247,6 +249,7 @@ function DiffContent({
       selectedLines={selectedLines}
       onLineToggle={onLineToggle}
       onHunkToggle={onHunkToggle}
+      onDragSelect={onDragSelect}
       className="h-full"
       data-testid="expanded-diff-viewer"
     />
@@ -727,6 +730,48 @@ export function ExpandedDiffView({
     });
   }, []);
 
+  // Snapshot of selectedLines at drag start — used to revert lines outside the drag range
+  const dragSnapshotRef = useRef<Set<number> | null>(null);
+
+  const handleDragSelect = useCallback(
+    (startLineIdx: number, endLineIdx: number, select: boolean) => {
+      // Save snapshot on first call of a drag (when snapshot is null)
+      if (!dragSnapshotRef.current) {
+        dragSnapshotRef.current = new Set(selectedLines);
+      }
+      const snapshot = dragSnapshotRef.current;
+      const lo = Math.min(startLineIdx, endLineIdx);
+      const hi = Math.max(startLineIdx, endLineIdx);
+
+      // Find changeable indices in the drag range
+      const inRange = new Set<number>();
+      for (const idx of allChangeableIndices) {
+        if (idx >= lo && idx <= hi) inRange.add(idx);
+      }
+
+      // Start from snapshot, apply mode only to lines in range
+      const next = new Set(snapshot);
+      for (const idx of inRange) {
+        if (select) {
+          next.add(idx);
+        } else {
+          next.delete(idx);
+        }
+      }
+      setSelectedLines(next);
+    },
+    [allChangeableIndices, selectedLines],
+  );
+
+  // Clear drag snapshot on mouseup
+  useEffect(() => {
+    const handler = () => {
+      dragSnapshotRef.current = null;
+    };
+    window.addEventListener('mouseup', handler);
+    return () => window.removeEventListener('mouseup', handler);
+  }, []);
+
   const handleHunkToggle = useCallback((hunkLineIndices: number[]) => {
     setSelectedLines((prev) => {
       const next = new Set(prev);
@@ -1056,6 +1101,7 @@ export function ExpandedDiffView({
             selectedLines={selectable ? selectedLines : undefined}
             onLineToggle={selectable ? handleLineToggle : undefined}
             onHunkToggle={selectable ? handleHunkToggle : undefined}
+            onDragSelect={selectable ? handleDragSelect : undefined}
           />
         </div>
         {fileThreads.length > 0 && (

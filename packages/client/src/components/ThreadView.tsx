@@ -785,19 +785,21 @@ export function ThreadView() {
             onVisibleMessageChange={setVisibleMessageId}
             prefersReducedMotion={prefersReducedMotion}
             footer={
-              <PromptInput
-                onSubmit={handleSend}
-                onStop={handleStop}
-                onPhaseTransition={handlePhaseTransition}
-                loading={sending}
-                running={isRunning && !isExternal}
-                threadId={activeThread.id}
-                isQueueMode={isQueueMode}
-                queuedCount={activeThread.queuedCount ?? 0}
-                queuedNextMessage={activeThread.queuedNextMessage}
-                setPromptRef={setPromptRef}
-                placeholder={t('thread.nextPrompt')}
-              />
+              activeThread.waitingReason === 'plan' ? null : (
+                <PromptInput
+                  onSubmit={handleSend}
+                  onStop={handleStop}
+                  onPhaseTransition={handlePhaseTransition}
+                  loading={sending}
+                  running={isRunning && !isExternal}
+                  threadId={activeThread.id}
+                  isQueueMode={isQueueMode}
+                  queuedCount={activeThread.queuedCount ?? 0}
+                  queuedNextMessage={activeThread.queuedNextMessage}
+                  setPromptRef={setPromptRef}
+                  placeholder={t('thread.nextPrompt')}
+                />
+              )
             }
           />
         </div>

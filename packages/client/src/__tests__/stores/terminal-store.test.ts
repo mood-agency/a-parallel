@@ -20,7 +20,7 @@ describe('useTerminalStore', () => {
     useTerminalStore.setState({
       tabs: [],
       activeTabId: null,
-      panelVisible: false,
+      panelVisibleByProject: {},
       commandOutput: {},
       ptyDataCallbacks: {},
     });
@@ -35,8 +35,8 @@ describe('useTerminalStore', () => {
       expect(useTerminalStore.getState().activeTabId).toBeNull();
     });
 
-    test('has panelVisible false', () => {
-      expect(useTerminalStore.getState().panelVisible).toBe(false);
+    test('has empty panelVisibleByProject', () => {
+      expect(useTerminalStore.getState().panelVisibleByProject).toEqual({});
     });
 
     test('has empty commandOutput', () => {
@@ -62,10 +62,10 @@ describe('useTerminalStore', () => {
       expect(useTerminalStore.getState().activeTabId).toBe('tab-1');
     });
 
-    test('shows the panel', () => {
-      const tab = makeTab({ id: 'tab-1' });
+    test('shows the panel for the tab project', () => {
+      const tab = makeTab({ id: 'tab-1', projectId: 'project-1' });
       useTerminalStore.getState().addTab(tab);
-      expect(useTerminalStore.getState().panelVisible).toBe(true);
+      expect(useTerminalStore.getState().panelVisibleByProject['project-1']).toBe(true);
     });
 
     test('adding multiple tabs keeps the last one active', () => {
@@ -120,13 +120,13 @@ describe('useTerminalStore', () => {
       expect(useTerminalStore.getState().activeTabId).toBe('tab-3');
     });
 
-    test('removing the last tab hides the panel', () => {
-      const tab = makeTab({ id: 'tab-1' });
+    test('removing the last tab for a project hides the panel for that project', () => {
+      const tab = makeTab({ id: 'tab-1', projectId: 'project-1' });
       useTerminalStore.getState().addTab(tab);
-      expect(useTerminalStore.getState().panelVisible).toBe(true);
+      expect(useTerminalStore.getState().panelVisibleByProject['project-1']).toBe(true);
 
       useTerminalStore.getState().removeTab('tab-1');
-      expect(useTerminalStore.getState().panelVisible).toBe(false);
+      expect(useTerminalStore.getState().panelVisibleByProject['project-1']).toBe(false);
       expect(useTerminalStore.getState().activeTabId).toBeNull();
     });
 
@@ -151,14 +151,25 @@ describe('useTerminalStore', () => {
       expect(useTerminalStore.getState().commandOutput['cmd-1']).toBe('output');
     });
 
-    test('removing non-last tab keeps panel visible', () => {
-      const tab1 = makeTab({ id: 'tab-1' });
-      const tab2 = makeTab({ id: 'tab-2' });
+    test('removing non-last tab for a project keeps panel visible for that project', () => {
+      const tab1 = makeTab({ id: 'tab-1', projectId: 'project-1' });
+      const tab2 = makeTab({ id: 'tab-2', projectId: 'project-1' });
       useTerminalStore.getState().addTab(tab1);
       useTerminalStore.getState().addTab(tab2);
 
       useTerminalStore.getState().removeTab('tab-1');
-      expect(useTerminalStore.getState().panelVisible).toBe(true);
+      expect(useTerminalStore.getState().panelVisibleByProject['project-1']).toBe(true);
+    });
+
+    test('removing last tab for one project does not affect another project panel', () => {
+      const tab1 = makeTab({ id: 'tab-1', projectId: 'project-1' });
+      const tab2 = makeTab({ id: 'tab-2', projectId: 'project-2' });
+      useTerminalStore.getState().addTab(tab1);
+      useTerminalStore.getState().addTab(tab2);
+
+      useTerminalStore.getState().removeTab('tab-1');
+      expect(useTerminalStore.getState().panelVisibleByProject['project-1']).toBe(false);
+      expect(useTerminalStore.getState().panelVisibleByProject['project-2']).toBe(true);
     });
   });
 
@@ -204,28 +215,35 @@ describe('useTerminalStore', () => {
   });
 
   describe('setPanelVisible / togglePanel', () => {
-    test('setPanelVisible sets the value', () => {
-      useTerminalStore.getState().setPanelVisible(true);
-      expect(useTerminalStore.getState().panelVisible).toBe(true);
+    test('setPanelVisible sets the value for a project', () => {
+      useTerminalStore.getState().setPanelVisible('project-1', true);
+      expect(useTerminalStore.getState().panelVisibleByProject['project-1']).toBe(true);
 
-      useTerminalStore.getState().setPanelVisible(false);
-      expect(useTerminalStore.getState().panelVisible).toBe(false);
+      useTerminalStore.getState().setPanelVisible('project-1', false);
+      expect(useTerminalStore.getState().panelVisibleByProject['project-1']).toBe(false);
     });
 
-    test('togglePanel flips the value', () => {
-      expect(useTerminalStore.getState().panelVisible).toBe(false);
+    test('togglePanel flips the value for a project', () => {
+      expect(useTerminalStore.getState().panelVisibleByProject['project-1']).toBeUndefined();
 
-      useTerminalStore.getState().togglePanel();
-      expect(useTerminalStore.getState().panelVisible).toBe(true);
+      useTerminalStore.getState().togglePanel('project-1');
+      expect(useTerminalStore.getState().panelVisibleByProject['project-1']).toBe(true);
 
-      useTerminalStore.getState().togglePanel();
-      expect(useTerminalStore.getState().panelVisible).toBe(false);
+      useTerminalStore.getState().togglePanel('project-1');
+      expect(useTerminalStore.getState().panelVisibleByProject['project-1']).toBe(false);
     });
 
     test('togglePanel works after setPanelVisible', () => {
-      useTerminalStore.getState().setPanelVisible(true);
-      useTerminalStore.getState().togglePanel();
-      expect(useTerminalStore.getState().panelVisible).toBe(false);
+      useTerminalStore.getState().setPanelVisible('project-1', true);
+      useTerminalStore.getState().togglePanel('project-1');
+      expect(useTerminalStore.getState().panelVisibleByProject['project-1']).toBe(false);
+    });
+
+    test('per-project visibility is independent', () => {
+      useTerminalStore.getState().setPanelVisible('project-1', true);
+      useTerminalStore.getState().setPanelVisible('project-2', false);
+      expect(useTerminalStore.getState().panelVisibleByProject['project-1']).toBe(true);
+      expect(useTerminalStore.getState().panelVisibleByProject['project-2']).toBe(false);
     });
   });
 

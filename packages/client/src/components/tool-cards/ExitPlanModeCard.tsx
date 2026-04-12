@@ -9,6 +9,7 @@ import {
   Mic,
   MicOff,
   Loader2,
+  Maximize2,
 } from 'lucide-react';
 import { useState, useRef, useEffect, useCallback, memo } from 'react';
 import { useTranslation } from 'react-i18next';
@@ -26,6 +27,7 @@ import { createClientLogger } from '@/lib/client-logger';
 import { cn } from '@/lib/utils';
 import { useProfileStore } from '@/stores/profile-store';
 
+import { PlanReviewDialog, type PlanComment } from './PlanReviewDialog';
 import { useCurrentProjectPath } from './utils';
 
 const cardLog = createClientLogger('ExitPlanMode');
@@ -44,6 +46,20 @@ export const ExitPlanModeCard = memo(function ExitPlanModeCard({
   const { t } = useTranslation();
   const [copied, setCopied] = useState(false);
   const alreadyAnswered = !!output;
+  const [reviewOpen, setReviewOpen] = useState(false);
+  const [planComments, setPlanComments] = useState<PlanComment[]>([]);
+
+  const handleAddComment = useCallback((selectedText: string, comment: string) => {
+    setPlanComments((prev) => [...prev, { selectedText, comment }]);
+  }, []);
+
+  const handleAddEmoji = useCallback((selectedText: string, emoji: string) => {
+    setPlanComments((prev) => [...prev, { selectedText, emoji, comment: '' }]);
+  }, []);
+
+  const handleRemoveComment = useCallback((index: number) => {
+    setPlanComments((prev) => prev.filter((_, i) => i !== index));
+  }, []);
 
   const handleCopy = async () => {
     if (!plan) return;
@@ -140,6 +156,17 @@ export const ExitPlanModeCard = memo(function ExitPlanModeCard({
     setSubmitted(true);
   };
 
+  const handleDialogRespond = useCallback(
+    (answer: string) => {
+      if (!onRespond || submitted) return;
+      cardLog.info('dialog response', { responsePreview: answer.slice(0, 200) });
+      onRespond(answer);
+      setSubmitted(true);
+      setReviewOpen(false);
+    },
+    [onRespond, submitted],
+  );
+
   return (
     <div className="max-w-full overflow-hidden rounded-lg border border-border text-sm">
       <div className="flex items-center gap-2 px-3 py-1.5 text-xs">
@@ -158,19 +185,35 @@ export const ExitPlanModeCard = memo(function ExitPlanModeCard({
             </span>
           )}
           {plan && (
-            <Button
-              variant="ghost"
-              size="icon"
-              className="h-5 w-5"
-              onClick={handleCopy}
-              data-testid="plan-copy-button"
-            >
-              {copied ? (
-                <Check className="icon-xs text-green-500" />
-              ) : (
-                <Copy className="icon-xs text-muted-foreground" />
-              )}
-            </Button>
+            <>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="h-5 w-5"
+                    onClick={() => setReviewOpen(true)}
+                    data-testid="plan-expand-button"
+                  >
+                    <Maximize2 className="icon-xs text-muted-foreground" />
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent>{t('plan.reviewPlan', 'Review plan')}</TooltipContent>
+              </Tooltip>
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-5 w-5"
+                onClick={handleCopy}
+                data-testid="plan-copy-button"
+              >
+                {copied ? (
+                  <Check className="icon-xs text-green-500" />
+                ) : (
+                  <Copy className="icon-xs text-muted-foreground" />
+                )}
+              </Button>
+            </>
           )}
         </span>
       </div>
@@ -281,6 +324,19 @@ export const ExitPlanModeCard = memo(function ExitPlanModeCard({
             </div>
           </div>
         </div>
+      )}
+
+      {/* Plan review dialog */}
+      {plan && (
+        <PlanReviewDialog
+          open={reviewOpen}
+          onOpenChange={setReviewOpen}
+          plan={plan}
+          planComments={planComments}
+          onAddComment={handleAddComment}
+          onAddEmoji={handleAddEmoji}
+          onRemoveComment={handleRemoveComment}
+        />
       )}
     </div>
   );

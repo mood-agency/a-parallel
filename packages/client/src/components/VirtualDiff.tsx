@@ -112,6 +112,8 @@ export interface VirtualDiffProps {
   onLineToggle?: (lineIdx: number) => void;
   /** Called when user toggles a hunk header checkbox. Receives the start/end line indices of the hunk. */
   onHunkToggle?: (hunkLineIndices: number[]) => void;
+  /** Called during drag-select with the range of line indices (start, current) and mode (select/deselect). */
+  onDragSelect?: (startLineIdx: number, endLineIdx: number, select: boolean) => void;
   className?: string;
   'data-testid'?: string;
 }
@@ -629,23 +631,29 @@ const UnifiedRow = memo(function UnifiedRow({
     <div
       className={cn('flex font-mono text-[11px]', wrap ? 'items-start' : 'items-center')}
       style={wrap ? { minHeight: ROW_HEIGHT, ...bgStyle } : { height: ROW_HEIGHT, ...bgStyle }}
+      {...(selectable && isChangeLine && lineIdx != null ? { 'data-line-idx': lineIdx } : {})}
     >
       {selectable && (
-        <span className="flex w-5 flex-shrink-0 items-center justify-center">
+        <span className="flex w-5 flex-shrink-0 items-center justify-center" data-gutter>
           {isChangeLine && (
             <TriCheckbox
               state={selected ? 'checked' : 'unchecked'}
               onToggle={() => lineIdx != null && onToggle?.(lineIdx)}
-              size="sm"
               data-testid={`diff-line-checkbox-${lineIdx}`}
             />
           )}
         </span>
       )}
-      <span className="w-11 flex-shrink-0 select-none pr-1 pt-px text-right text-muted-foreground/40">
+      <span
+        className="w-11 flex-shrink-0 select-none pr-1 pt-px text-right text-muted-foreground/40"
+        data-gutter
+      >
         {line.oldNo ?? ''}
       </span>
-      <span className="w-11 flex-shrink-0 select-none pr-1 pt-px text-right text-muted-foreground/40">
+      <span
+        className="w-11 flex-shrink-0 select-none pr-1 pt-px text-right text-muted-foreground/40"
+        data-gutter
+      >
         {line.newNo ?? ''}
       </span>
       <span className={cn('w-4 flex-shrink-0 select-none pt-px text-center', textClass)}>
@@ -1244,6 +1252,7 @@ export const VirtualDiff = memo(function VirtualDiff({
   selectedLines,
   onLineToggle,
   onHunkToggle,
+  onDragSelect,
   className,
   ...props
 }: VirtualDiffProps) {
@@ -1693,6 +1702,101 @@ export const VirtualDiff = memo(function VirtualDiff({
     );
   }
 
+  // ── Drag-select (GitHub Desktop-style click+drag on checkboxes) ──
+  const dragRef = useRef<{
+    active: boolean;
+    mode: boolean;
+    startLineIdx: number;
+  }>({ active: false, mode: true, startLineIdx: -1 });
+
+  const getLineIdxFromEvent = useCallback((e: React.MouseEvent | MouseEvent): number | null => {
+    const el = (e.target as HTMLElement).closest('[data-line-idx]');
+    if (!el) return null;
+    const v = Number(el.getAttribute('data-line-idx'));
+    return Number.isFinite(v) ? v : null;
+  }, []);
+
+  const handleDragMouseDown = useCallback(
+    (e: React.MouseEvent) => {
+      if (!selectable || !onDragSelect || e.button !== 0) return;
+      // Only start drag when clicking on the gutter area (checkbox / line numbers)
+      const target = e.target as HTMLElement;
+      if (!target.closest('[data-gutter]')) return;
+      const lineIdx = getLineIdxFromEvent(e);
+      if (lineIdx == null) return;
+      const willSelect = !selectedLines?.has(lineIdx);
+      dragRef.current = { active: true, mode: willSelect, startLineIdx: lineIdx };
+      onDragSelect(lineIdx, lineIdx, willSelect);
+      e.preventDefault();
+    },
+    [selectable, onDragSelect, selectedLines, getLineIdxFromEvent],
+  );
+
+  const handleDragMouseMove = useCallback(
+    (e: React.MouseEvent) => {
+      if (!dragRef.current.active || !onDragSelect) return;
+      const lineIdx = getLineIdxFromEvent(e);
+      if (lineIdx == null) return;
+      onDragSelect(dragRef.current.startLineIdx, lineIdx, dragRef.current.mode);
+    },
+    [onDragSelect, getLineIdxFromEvent],
+  );
+
+  const handleDragMouseUp = useCallback(() => {
+    dragRef.current = { active: false, mode: true, startLineIdx: -1 };
+  }, []);
+
+  useEffect(() => {
+    if (!selectable) return;
+    const handler = () => {
+      dragRef.current = { active: false, mode: true, startLineIdx: -1 };
+    };
+    window.addEventListener('mouseup', handler);
+    return () => window.removeEventListener('mouseup', handler);
+  }, [selectable]);
+
+  // ── Sticky hunk header ──
+  // Build sorted list of hunk row indices so we can find which one to stick
+  const hunkRowPositions = useMemo(() => {
+    const positions: { index: number; text: string; hunkStartIdx?: number }[] = [];
+    for (let i = 0; i < renderRows.length; i++) {
+      const row = renderRows[i];
+      if (row.type === 'hunk') {
+        positions.push({ index: i, text: row.text, hunkStartIdx: row.hunkStartIdx });
+      }
+    }
+    return positions;
+  }, [renderRows]);
+
+  const [stickyHunk, setStickyHunk] = useState<{
+    text: string;
+    hunkStartIdx?: number;
+  } | null>(null);
+
+  // Update sticky hunk on scroll — use virtualizer range to find the stuck header
+  useEffect(() => {
+    const el = scrollRef.current;
+    if (!el || hunkRowPositions.length === 0) return;
+    const onScroll = () => {
+      const scrollTop = el.scrollTop;
+      // Only show sticky when scrolled past the hunk header (not when it's still visible)
+      let found: (typeof hunkRowPositions)[0] | null = null;
+      for (const hp of hunkRowPositions) {
+        const item = virtualizer.measurementsCache[hp.index];
+        const rowTop = item ? item.start : hp.index * ROW_HEIGHT;
+        if (rowTop + ROW_HEIGHT <= scrollTop) {
+          found = hp;
+        } else {
+          break;
+        }
+      }
+      setStickyHunk(found);
+    };
+    onScroll();
+    el.addEventListener('scroll', onScroll, { passive: true });
+    return () => el.removeEventListener('scroll', onScroll);
+  }, [hunkRowPositions, virtualizer]);
+
   const gutterWidth = viewMode !== 'unified' ? 'w-[54px]' : 'w-[88px]';
 
   const diffContent = (
@@ -1704,10 +1808,48 @@ export const VirtualDiff = memo(function VirtualDiff({
       <div
         ref={scrollCallbackRef}
         className={cn(
-          'flex-1 min-h-0',
+          'flex-1 min-h-0 relative',
           needsHScroll ? 'overflow-y-auto overflow-x-hidden' : 'overflow-auto',
         )}
+        onMouseDown={selectable ? handleDragMouseDown : undefined}
+        onMouseMove={selectable ? handleDragMouseMove : undefined}
+        onMouseUp={selectable ? handleDragMouseUp : undefined}
       >
+        {/* Sticky hunk header overlay */}
+        {stickyHunk && (
+          <div
+            className={cn(
+              'sticky top-0 z-10 flex select-none items-center bg-accent/95 font-mono text-[11px] text-muted-foreground backdrop-blur-sm border-b border-border/50',
+              selectable ? 'pr-2' : 'px-2',
+            )}
+            style={{ height: ROW_HEIGHT, marginBottom: -ROW_HEIGHT }}
+            data-testid="diff-sticky-hunk"
+          >
+            {selectable && stickyHunk.hunkStartIdx != null ? (
+              (() => {
+                const indices = hunkLineMap.get(stickyHunk.hunkStartIdx!) ?? [];
+                const count = indices.filter((idx) => selectedLines?.has(idx)).length;
+                const allChecked = indices.length > 0 && count === indices.length;
+                const isPartial = count > 0 && count < indices.length;
+                return (
+                  <span className="flex w-5 flex-shrink-0 items-center justify-center">
+                    <TriCheckbox
+                      state={isPartial ? 'indeterminate' : allChecked ? 'checked' : 'unchecked'}
+                      onToggle={() => {
+                        if (indices.length > 0) onHunkToggle?.(indices);
+                      }}
+                      data-testid="diff-sticky-hunk-checkbox"
+                    />
+                  </span>
+                );
+              })()
+            ) : selectable ? (
+              <span className="w-5 flex-shrink-0" />
+            ) : null}
+            <span className={cn(gutterWidth, 'flex-shrink-0')} />
+            <span className="truncate">{stickyHunk.text}</span>
+          </div>
+        )}
         <div
           style={{
             height: virtualizer.getTotalSize(),

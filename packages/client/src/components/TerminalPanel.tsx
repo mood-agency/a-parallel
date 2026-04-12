@@ -724,7 +724,7 @@ export function TerminalPanel() {
   const {
     tabs,
     activeTabId,
-    panelVisible,
+    panelVisibleByProject,
     sessionsChecked,
     addTab,
     removeTab,
@@ -734,7 +734,7 @@ export function TerminalPanel() {
     useShallow((s) => ({
       tabs: s.tabs,
       activeTabId: s.activeTabId,
-      panelVisible: s.panelVisible,
+      panelVisibleByProject: s.panelVisibleByProject,
       sessionsChecked: s.sessionsChecked,
       addTab: s.addTab,
       removeTab: s.removeTab,
@@ -744,6 +744,9 @@ export function TerminalPanel() {
   );
   const projects = useProjectStore((s) => s.projects);
   const selectedProjectId = useProjectStore((s) => s.selectedProjectId);
+  const panelVisible = selectedProjectId
+    ? (panelVisibleByProject[selectedProjectId] ?? false)
+    : false;
   const activeThreadWorktreePath = useThreadStore((s) => s.activeThread?.worktreePath);
   const availableShells = useSettingsStore((s) => s.availableShells);
   const fetchAvailableShells = useSettingsStore((s) => s.fetchAvailableShells);
@@ -877,7 +880,7 @@ export function TerminalPanel() {
                 key={tab.id}
                 onClick={() => {
                   setActiveTab(tab.id);
-                  if (!panelVisible) togglePanel();
+                  if (!panelVisible && selectedProjectId) togglePanel(selectedProjectId);
                 }}
                 className={cn(
                   'flex items-center gap-1 px-2 py-0.5 rounded text-xs transition-colors whitespace-nowrap',
@@ -983,7 +986,12 @@ export function TerminalPanel() {
 
           <Tooltip>
             <TooltipTrigger asChild>
-              <Button variant="ghost" size="icon-xs" className="ml-auto" onClick={togglePanel}>
+              <Button
+                variant="ghost"
+                size="icon-xs"
+                className="ml-auto"
+                onClick={() => selectedProjectId && togglePanel(selectedProjectId)}
+              >
                 <X className="icon-sm" />
               </Button>
             </TooltipTrigger>

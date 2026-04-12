@@ -440,6 +440,22 @@
     "next": "Próximo",
     "continue": "Continuar"
   },
+  "plan": {
+    "reviewPlan": "Revisar plano",
+    "reviewTitle": "Revisar plano",
+    "reviewDescription": "Selecione texto para deixar comentários",
+    "editPlan": "Editar",
+    "editDescription": "Edite o markdown do plano diretamente",
+    "showPreview": "Visualizar",
+    "comment": "Comentar",
+    "addComment": "Adicionar comentário...",
+    "commentPlaceholder": "Comente sobre esta seção...",
+    "yourComments": "Seus comentários",
+    "approveAndStart": "Aprovar plano e começar a programar",
+    "approveWithComments": "Aprovar plano e enviar {{count}} comentário(s)",
+    "tellClaude": "Dizer ao agente o que fazer em vez disso",
+    "customPlaceholder": "Descreva o que você quer em vez disso..."
+  },
   "allThreads": {
     "title": "Todas as threads",
     "threads": "threads",
