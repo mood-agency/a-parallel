@@ -295,8 +295,16 @@ type Story = StoryObj<typeof meta>;
 
 // ── Stories ──────────────────────────────────────────────────────────────────
 
+const DUMMY_ARGS = {
+  open: false,
+  onOpenChange: () => {},
+  projectId: 'proj-1',
+  pr: MOCK_PR,
+};
+
 /** Default open PR with multiple files and commits. */
 export const Default: Story = {
+  args: DUMMY_ARGS,
   render: () => (
     <PRDetailDialogTrigger pr={MOCK_PR} projectId="proj-1" setupMocks={() => mockApi()} />
   ),
@@ -304,6 +312,7 @@ export const Default: Story = {
 
 /** Merged PR. */
 export const Merged: Story = {
+  args: DUMMY_ARGS,
   render: () => (
     <PRDetailDialogTrigger
       pr={MOCK_PR_MERGED}
@@ -316,6 +325,7 @@ export const Merged: Story = {
 
 /** Draft PR. */
 export const Draft: Story = {
+  args: DUMMY_ARGS,
   render: () => (
     <PRDetailDialogTrigger
       pr={MOCK_PR_DRAFT}
@@ -328,6 +338,7 @@ export const Draft: Story = {
 
 /** Single file changed. */
 export const SingleFile: Story = {
+  args: DUMMY_ARGS,
   render: () => (
     <PRDetailDialogTrigger
       pr={MOCK_PR}
@@ -340,6 +351,7 @@ export const SingleFile: Story = {
 
 /** Loading state — API never resolves. */
 export const Loading: Story = {
+  args: DUMMY_ARGS,
   render: () => (
     <PRDetailDialogTrigger
       pr={MOCK_PR}
@@ -355,6 +367,7 @@ export const Loading: Story = {
 
 /** Error state. */
 export const Error: Story = {
+  args: DUMMY_ARGS,
   render: () => (
     <PRDetailDialogTrigger
       pr={MOCK_PR}
@@ -370,6 +383,7 @@ export const Error: Story = {
 
 /** No files changed. */
 export const NoFilesChanged: Story = {
+  args: DUMMY_ARGS,
   render: () => (
     <PRDetailDialogTrigger
       pr={MOCK_PR}
@@ -382,6 +396,7 @@ export const NoFilesChanged: Story = {
 
 /** Many files (stress test for file tree). */
 export const ManyFiles: Story = {
+  args: DUMMY_ARGS,
   render: () => {
     const manyFiles: PRFile[] = Array.from({ length: 40 }, (_, i) => ({
       sha: `sha-${i}`,

@@ -42,7 +42,7 @@ export function useOpenSpecTasks(
   const arcIdRef = useRef(arcId);
   const hasFetchedRef = useRef(false);
 
-  // Reset when arcId changes
+  // Fetch arc name + tasks in a single effect (avoids render-cycle waterfall)
   useEffect(() => {
     if (arcId !== arcIdRef.current) {
       arcIdRef.current = arcId;
@@ -50,35 +50,35 @@ export function useOpenSpecTasks(
       setContent(null);
       setArcName(null);
     }
-  }, [arcId]);
 
-  // Fetch arc name
-  useEffect(() => {
-    if (!arcId) return;
-    let cancelled = false;
-    api.getArc(arcId).then((result) => {
-      if (!cancelled && result.isOk()) {
-        setArcName(result.value.name);
-      }
-    });
-    return () => {
-      cancelled = true;
-    };
-  }, [arcId]);
-
-  // Fetch tasks content + poll while running
-  useEffect(() => {
-    if (!arcId || !arcName || !projectId) return;
+    if (!arcId || !projectId) return;
 
     let cancelled = false;
+    // Cache resolved name in a local variable to avoid waiting for state update
+    let resolvedName = arcName;
 
     const fetchTasks = async () => {
       if (!hasFetchedRef.current) setLoading(true);
-      const result = await api.getArcArtifacts(arcId, arcName, projectId);
+
+      // Resolve arc name if we don't have it yet
+      if (!resolvedName) {
+        const arcResult = await api.getArc(arcId);
+        if (cancelled) return;
+        if (arcResult.isOk()) {
+          resolvedName = arcResult.value.name;
+          setArcName(resolvedName);
+        } else {
+          setLoading(false);
+          return;
+        }
+      }
+
+      // Fetch tasks immediately — no re-render needed between name and tasks
+      const tasksResult = await api.getArcArtifacts(arcId, resolvedName, projectId);
       if (cancelled) return;
-      if (result.isOk()) {
+      if (tasksResult.isOk()) {
         hasFetchedRef.current = true;
-        setContent(result.value.artifacts.tasks ?? null);
+        setContent(tasksResult.value.artifacts.tasks ?? null);
       }
       setLoading(false);
     };

@@ -71,6 +71,38 @@ const FONT_SIZE_VALUES: Record<FontSize, string> = {
   large: '16px',
 };
 
+/** Monospace code font size (px) — used for diffs, terminal, and editors. */
+export const CODE_FONT_SIZE_PX: Record<FontSize, number> = {
+  small: 11,
+  default: 11,
+  large: 13,
+};
+
+/** Monospace code row/line height (px). */
+export const CODE_LINE_HEIGHT_PX: Record<FontSize, number> = {
+  small: 20,
+  default: 20,
+  large: 24,
+};
+
+/** Prose font size (px) — used for chat messages. */
+export const PROSE_FONT_SIZE_PX: Record<FontSize, number> = {
+  small: 13,
+  default: 14,
+  large: 16,
+};
+
+/** Prose line height (px) — leading-relaxed ratio ≈ 1.625×. */
+export const PROSE_LINE_HEIGHT_PX: Record<FontSize, number> = {
+  small: 21.1,
+  default: 22.75,
+  large: 26,
+};
+
+// Backwards-compatible aliases
+export const DIFF_FONT_SIZE_PX = CODE_FONT_SIZE_PX;
+export const DIFF_ROW_HEIGHT_PX = CODE_LINE_HEIGHT_PX;
+
 function getStoredFontSize(): FontSize {
   try {
     const stored = localStorage.getItem(FONT_SIZE_KEY);
@@ -81,6 +113,11 @@ function getStoredFontSize(): FontSize {
 
 function applyFontSize(size: FontSize) {
   document.documentElement.style.fontSize = FONT_SIZE_VALUES[size];
+  const codePx = CODE_FONT_SIZE_PX[size];
+  const codeRowPx = CODE_LINE_HEIGHT_PX[size];
+  document.documentElement.style.setProperty('--diff-font-size', `${codePx}px`);
+  document.documentElement.style.setProperty('--diff-row-height', `${codeRowPx}px`);
+  document.documentElement.style.setProperty('--code-font-size', `${codePx}px`);
 }
 
 interface SettingsState {

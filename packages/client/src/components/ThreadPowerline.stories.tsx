@@ -25,17 +25,29 @@ function mockThread(overrides: Partial<Thread> = {}): Thread {
 }
 
 const gitDirty: GitStatusInfo = {
+  threadId: 'thread-1',
+  branchKey: 'main',
   state: 'dirty',
   linesAdded: 142,
   linesDeleted: 37,
   dirtyFileCount: 5,
+  unpushedCommitCount: 2,
+  unpulledCommitCount: 0,
+  hasRemoteBranch: true,
+  isMergedIntoBase: false,
 };
 
 const gitClean: GitStatusInfo = {
+  threadId: 'thread-1',
+  branchKey: 'main',
   state: 'clean',
   linesAdded: 0,
   linesDeleted: 0,
   dirtyFileCount: 0,
+  unpushedCommitCount: 0,
+  unpulledCommitCount: 0,
+  hasRemoteBranch: true,
+  isMergedIntoBase: false,
 };
 
 const meta = {
@@ -153,12 +165,26 @@ export const SmallDiffStats: Story = {
     }),
     projectName: 'frontend',
     projectColor: '#ef4444',
-    gitStatus: { state: 'dirty', linesAdded: 12, linesDeleted: 3, dirtyFileCount: 2 },
+    gitStatus: {
+      threadId: 'thread-1',
+      branchKey: 'main',
+      state: 'dirty',
+      linesAdded: 12,
+      linesDeleted: 3,
+      dirtyFileCount: 2,
+      unpushedCommitCount: 0,
+      unpulledCommitCount: 0,
+      hasRemoteBranch: true,
+      isMergedIntoBase: false,
+    },
     diffStatsSize: 'xxs',
   },
 };
 
 export const MultipleExamples: Story = {
+  args: {
+    thread: mockThread({ mode: 'local', baseBranch: 'main' }),
+  },
   render: () => (
     <div className="flex flex-col gap-3">
       <ThreadPowerline
@@ -176,7 +202,18 @@ export const MultipleExamples: Story = {
         thread={mockThread({ mode: 'worktree', baseBranch: 'develop', branch: 'fix/hotfix' })}
         projectName="infra"
         projectColor="#f59e0b"
-        gitStatus={{ state: 'dirty', linesAdded: 5, linesDeleted: 80, dirtyFileCount: 1 }}
+        gitStatus={{
+          threadId: 'thread-1',
+          branchKey: 'develop',
+          state: 'dirty',
+          linesAdded: 5,
+          linesDeleted: 80,
+          dirtyFileCount: 1,
+          unpushedCommitCount: 0,
+          unpulledCommitCount: 0,
+          hasRemoteBranch: true,
+          isMergedIntoBase: false,
+        }}
       />
       <ThreadPowerline
         thread={mockThread({ mode: 'local', baseBranch: 'release/v2' })}

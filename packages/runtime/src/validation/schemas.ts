@@ -362,8 +362,33 @@ export const updateRunTriageSchema = z.object({
 
 // ── GitHub ──────────────────────────────────────────────────────
 
+/** Allowed git hosting domains for clone operations. */
+const ALLOWED_CLONE_HOSTS = new Set([
+  'github.com',
+  'gitlab.com',
+  'bitbucket.org',
+  'dev.azure.com',
+  'ssh.dev.azure.com',
+]);
+
 export const cloneRepoSchema = z.object({
-  cloneUrl: z.string().url('Valid clone URL required'),
+  cloneUrl: z
+    .string()
+    .url('Valid clone URL required')
+    .refine(
+      (url) => {
+        try {
+          const host = new URL(url).hostname;
+          return ALLOWED_CLONE_HOSTS.has(host);
+        } catch {
+          return false;
+        }
+      },
+      {
+        message:
+          'Clone URL must be from a supported git hosting provider (GitHub, GitLab, Bitbucket, Azure DevOps)',
+      },
+    ),
   destinationPath: z.string().min(1, 'Destination path is required'),
   name: z.string().optional(),
 });

@@ -1,10 +1,7 @@
-import { Editor, type BeforeMount } from '@monaco-editor/react';
 import { BookOpen, Code, MessageSquare, Pencil } from 'lucide-react';
 import { useTheme } from 'next-themes';
-import { useState, useRef, useEffect, useCallback, useMemo } from 'react';
+import { Suspense, lazy, useState, useRef, useEffect, useCallback, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
-import ReactMarkdown from 'react-markdown';
-import remarkGfm from 'remark-gfm';
 
 import { Button } from '@/components/ui/button';
 import {
@@ -16,12 +13,20 @@ import {
 } from '@/components/ui/dialog';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { createClientLogger } from '@/lib/client-logger';
+import { remarkPlugins } from '@/lib/markdown-components';
 import { parsePlanSections, type PlanSection } from '@/lib/parse-plan-sections';
 import { cn } from '@/lib/utils';
+import { useSettingsStore, CODE_FONT_SIZE_PX } from '@/stores/settings-store';
 
 import { AnnotatableContent } from './AnnotatableContent';
 
-const log = createClientLogger('PlanReviewDialog');
+const LazyEditor = lazy(() =>
+  import('@monaco-editor/react').then((mod) => ({ default: mod.Editor })),
+);
+
+const LazyReactMarkdown = lazy(() => import('react-markdown'));
+
+const _log = createClientLogger('PlanReviewDialog');
 
 const PROSE_CLASSES =
   'prose prose-xs prose-invert prose-headings:text-foreground prose-headings:font-semibold prose-h1:text-xs prose-h1:mb-1.5 prose-h1:mt-0 prose-h2:text-xs prose-h2:mb-1 prose-h2:mt-2.5 prose-h3:text-sm prose-h3:mb-1 prose-h3:mt-2 prose-p:text-xs prose-p:text-muted-foreground prose-p:leading-relaxed prose-p:my-0.5 prose-li:text-sm prose-li:text-muted-foreground prose-li:leading-relaxed prose-li:my-0 prose-ul:my-0.5 prose-ol:my-0.5 prose-code:text-xs prose-code:bg-background/80 prose-code:px-1 prose-code:py-0.5 prose-code:rounded prose-code:text-foreground prose-pre:bg-background/80 prose-pre:rounded prose-pre:p-2 prose-pre:my-1 prose-strong:text-foreground max-w-none';
@@ -98,9 +103,17 @@ function PlanMarkdownWithAnchors({ plan, sections }: { plan: string; sections: P
   );
 
   return (
-    <ReactMarkdown remarkPlugins={[remarkGfm]} components={components}>
-      {plan}
-    </ReactMarkdown>
+    <Suspense
+      fallback={
+        <pre className="whitespace-pre-wrap break-all font-mono text-xs leading-relaxed text-muted-foreground">
+          {plan}
+        </pre>
+      }
+    >
+      <LazyReactMarkdown remarkPlugins={remarkPlugins} components={components}>
+        {plan}
+      </LazyReactMarkdown>
+    </Suspense>
   );
 }
 
@@ -478,6 +491,7 @@ export function PlanReviewDialog({
 }) {
   const { t } = useTranslation();
   const { resolvedTheme } = useTheme();
+  const codeFontSizePx = CODE_FONT_SIZE_PX[useSettingsStore((s) => s.fontSize)];
 
   // ── Edit mode ──
   const [isEditing, setIsEditing] = useState(false);
@@ -495,7 +509,7 @@ export function PlanReviewDialog({
 
   const monacoTheme = resolvedTheme === 'monochrome' ? 'vs' : 'funny-dark';
 
-  const handleBeforeMount: BeforeMount = (monaco) => {
+  const handleBeforeMount = (monaco: any) => {
     monaco.editor.defineTheme('funny-dark', {
       base: 'vs-dark',
       inherit: true,
@@ -596,23 +610,31 @@ export function PlanReviewDialog({
         {/* ── Body: editor or outline + content ── */}
         {isEditing ? (
           <div className="min-h-0 flex-1 overflow-hidden" data-testid="plan-review-editor">
-            <Editor
-              height="100%"
-              language="markdown"
-              theme={monacoTheme}
-              beforeMount={handleBeforeMount}
-              value={editablePlan}
-              onChange={(value) => setEditablePlan(value || '')}
-              options={{
-                minimap: { enabled: false },
-                fontSize: 13,
-                fontFamily: "'JetBrains Mono', ui-monospace, monospace",
-                lineNumbers: 'on',
-                automaticLayout: true,
-                scrollBeyondLastLine: false,
-                wordWrap: 'on',
-              }}
-            />
+            <Suspense
+              fallback={
+                <div className="flex h-full items-center justify-center text-sm text-muted-foreground">
+                  Loading editor...
+                </div>
+              }
+            >
+              <LazyEditor
+                height="100%"
+                language="markdown"
+                theme={monacoTheme}
+                beforeMount={handleBeforeMount}
+                value={editablePlan}
+                onChange={(value: string | undefined) => setEditablePlan(value || '')}
+                options={{
+                  minimap: { enabled: false },
+                  fontSize: codeFontSizePx,
+                  fontFamily: "'JetBrains Mono', ui-monospace, monospace",
+                  lineNumbers: 'on',
+                  automaticLayout: true,
+                  scrollBeyondLastLine: false,
+                  wordWrap: 'on',
+                }}
+              />
+            </Suspense>
           </div>
         ) : (
           <div className="flex min-h-0 flex-1 overflow-hidden">

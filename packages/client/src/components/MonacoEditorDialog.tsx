@@ -20,6 +20,7 @@ import { ScrollArea } from '@/components/ui/scroll-area';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { api } from '@/lib/api';
 import { cn } from '@/lib/utils';
+import { useSettingsStore, CODE_FONT_SIZE_PX } from '@/stores/settings-store';
 
 interface MonacoEditorDialogProps {
   open: boolean;
@@ -36,6 +37,7 @@ export function MonacoEditorDialog({
 }: MonacoEditorDialogProps) {
   const { t } = useTranslation();
   const { resolvedTheme } = useTheme();
+  const codeFontSizePx = CODE_FONT_SIZE_PX[useSettingsStore((s) => s.fontSize)];
   const [content, setContent] = useState<string>('');
   const [originalContent, setOriginalContent] = useState<string>('');
   const [showMinimap, setShowMinimap] = useState(true);
@@ -264,7 +266,7 @@ export function MonacoEditorDialog({
               onChange={(value) => setContent(value || '')}
               options={{
                 minimap: { enabled: showMinimap },
-                fontSize: 13,
+                fontSize: codeFontSizePx,
                 fontFamily: "'JetBrains Mono', ui-monospace, monospace",
                 lineNumbers: 'on',
                 automaticLayout: true,

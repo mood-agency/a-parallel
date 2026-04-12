@@ -14,10 +14,10 @@ import {
   layoutSync,
   prepareBatch,
   ensurePretextLoaded,
-  MONO_FONT,
-  MONO_LINE_HEIGHT,
+  makeMonoFont,
 } from '@/hooks/use-pretext';
 import { cn } from '@/lib/utils';
+import { useSettingsStore, DIFF_FONT_SIZE_PX, DIFF_ROW_HEIGHT_PX } from '@/stores/settings-store';
 
 /* ── Types ── */
 
@@ -412,7 +412,6 @@ function buildThreePaneTriples(
 
 /* ── Highlight cache ── */
 
-const ROW_HEIGHT = 20;
 const highlightCache = new Map<string, string>();
 
 function getCachedHighlight(text: string, lang: string): string {
@@ -532,8 +531,8 @@ const ConflictActionBar = memo(function ConflictActionBar({
 
   return (
     <div
-      className="flex items-center gap-1.5 px-2 py-0.5 font-sans text-[11px]"
-      style={{ height: ROW_HEIGHT, backgroundColor: 'hsl(210 80% 55% / 0.10)' }}
+      className="flex items-center gap-1.5 px-2 py-0.5 font-sans text-[length:var(--diff-font-size)]"
+      style={{ height: 'var(--diff-row-height)', backgroundColor: 'hsl(210 80% 55% / 0.10)' }}
       data-testid={`conflict-actions-${block.id}`}
     >
       <span className="mr-1 font-medium text-muted-foreground">Conflict {block.id + 1}:</span>
@@ -629,8 +628,15 @@ const UnifiedRow = memo(function UnifiedRow({
 
   return (
     <div
-      className={cn('flex font-mono text-[11px]', wrap ? 'items-start' : 'items-center')}
-      style={wrap ? { minHeight: ROW_HEIGHT, ...bgStyle } : { height: ROW_HEIGHT, ...bgStyle }}
+      className={cn(
+        'flex font-mono text-[length:var(--diff-font-size)]',
+        wrap ? 'items-start' : 'items-center',
+      )}
+      style={
+        wrap
+          ? { minHeight: 'var(--diff-row-height)', ...bgStyle }
+          : { height: 'var(--diff-row-height)', ...bgStyle }
+      }
       {...(selectable && isChangeLine && lineIdx != null ? { 'data-line-idx': lineIdx } : {})}
     >
       {selectable && (
@@ -725,8 +731,8 @@ const SplitRow = memo(function SplitRow({
     rightConflictBg ?? (right?.type === 'add' ? GUTTER_BG_ADDED : GUTTER_BG_CARD);
   return (
     <div
-      className="flex font-mono text-[11px]"
-      style={wrap ? { minHeight: ROW_HEIGHT } : { height: ROW_HEIGHT }}
+      className="flex font-mono text-[length:var(--diff-font-size)]"
+      style={wrap ? { minHeight: 'var(--diff-row-height)' } : { height: 'var(--diff-row-height)' }}
     >
       {/* Left (old) */}
       <div
@@ -854,8 +860,8 @@ const ThreePaneRow = memo(function ThreePaneRow({
     rightConflictBg ?? (right?.type === 'add' ? GUTTER_BG_ADDED : GUTTER_BG_CARD);
   return (
     <div
-      className="flex font-mono text-[11px]"
-      style={wrap ? { minHeight: ROW_HEIGHT } : { height: ROW_HEIGHT }}
+      className="flex font-mono text-[length:var(--diff-font-size)]"
+      style={wrap ? { minHeight: 'var(--diff-row-height)' } : { height: 'var(--diff-row-height)' }}
     >
       {/* Left (old) */}
       <div
@@ -1257,6 +1263,11 @@ export const VirtualDiff = memo(function VirtualDiff({
   ...props
 }: VirtualDiffProps) {
   const viewMode: DiffViewMode = viewModeProp ?? (splitView ? 'split' : 'unified');
+  const fontSize = useSettingsStore((s) => s.fontSize);
+  const rowHeight = DIFF_ROW_HEIGHT_PX[fontSize];
+  const diffFontPx = DIFF_FONT_SIZE_PX[fontSize];
+  const monoFont = useMemo(() => makeMonoFont(diffFontPx), [diffFontPx]);
+  const monoLineHeight = rowHeight;
   const scrollRef = useRef<HTMLDivElement>(null);
   const hScrollBarRef = useRef<HTMLDivElement>(null);
   const [scrollElement, setScrollElement] = useState<HTMLDivElement | null>(null);
@@ -1310,11 +1321,11 @@ export const VirtualDiff = memo(function VirtualDiff({
       if (cancelled) return;
       const toPrepare = parsed.lines
         .map((l) => l.text)
-        .filter((t) => t.length > 0 && !getCachedPrepared(t, MONO_FONT));
+        .filter((t) => t.length > 0 && !getCachedPrepared(t, monoFont));
       // Deduplicate
       const unique = [...new Set(toPrepare)];
       if (unique.length > 0) {
-        prepareBatch(unique, MONO_FONT).then(() => {
+        prepareBatch(unique, monoFont).then(() => {
           if (!cancelled) setPretextReady(true);
         });
       } else {
@@ -1324,7 +1335,7 @@ export const VirtualDiff = memo(function VirtualDiff({
     return () => {
       cancelled = true;
     };
-  }, [wordWrap, parsed.lines]);
+  }, [wordWrap, parsed.lines, monoFont]);
 
   // ── Pane selection isolation: constrain text selection to a single pane ──
   useEffect(() => {
@@ -1593,17 +1604,17 @@ export const VirtualDiff = memo(function VirtualDiff({
       let maxLines = 1;
 
       if (row.type === 'unified-line') {
-        const prepared = getCachedPrepared(row.line.text, MONO_FONT);
+        const prepared = getCachedPrepared(row.line.text, monoFont);
         if (prepared) {
-          const { lineCount } = layoutSync(prepared, textWidth, MONO_LINE_HEIGHT);
+          const { lineCount } = layoutSync(prepared, textWidth, monoLineHeight);
           maxLines = Math.max(maxLines, lineCount);
         }
       } else if (row.type === 'split-pair') {
         for (const side of [row.pair.left, row.pair.right]) {
           if (side) {
-            const prepared = getCachedPrepared(side.text, MONO_FONT);
+            const prepared = getCachedPrepared(side.text, monoFont);
             if (prepared) {
-              const { lineCount } = layoutSync(prepared, textWidth, MONO_LINE_HEIGHT);
+              const { lineCount } = layoutSync(prepared, textWidth, monoLineHeight);
               maxLines = Math.max(maxLines, lineCount);
             }
           }
@@ -1611,9 +1622,9 @@ export const VirtualDiff = memo(function VirtualDiff({
       } else if (row.type === 'three-pane-triple') {
         for (const side of [row.triple.left, row.triple.center, row.triple.right]) {
           if (side) {
-            const prepared = getCachedPrepared(side.text, MONO_FONT);
+            const prepared = getCachedPrepared(side.text, monoFont);
             if (prepared) {
-              const { lineCount } = layoutSync(prepared, textWidth, MONO_LINE_HEIGHT);
+              const { lineCount } = layoutSync(prepared, textWidth, monoLineHeight);
               maxLines = Math.max(maxLines, lineCount);
             }
           }
@@ -1621,12 +1632,12 @@ export const VirtualDiff = memo(function VirtualDiff({
       }
 
       if (maxLines > 1) {
-        heights.set(i, maxLines * MONO_LINE_HEIGHT);
+        heights.set(i, maxLines * monoLineHeight);
       }
     }
 
     return heights;
-  }, [wordWrap, pretextReady, diffContainerWidth, viewMode, renderRows]);
+  }, [wordWrap, pretextReady, diffContainerWidth, viewMode, renderRows, monoFont, monoLineHeight]);
 
   const toggleFold = useCallback(
     (sectionIdx: number) => {
@@ -1645,14 +1656,14 @@ export const VirtualDiff = memo(function VirtualDiff({
   const virtualizer = useVirtualizer({
     count: renderRows.length,
     getScrollElement: () => scrollRef.current,
-    estimateSize: (index) => (rowHeightMap ? (rowHeightMap.get(index) ?? ROW_HEIGHT) : ROW_HEIGHT),
+    estimateSize: (index) => (rowHeightMap ? (rowHeightMap.get(index) ?? rowHeight) : rowHeight),
     overscan: 30,
   });
 
-  // Re-measure all rows when word-wrap is toggled off so heights reset to fixed ROW_HEIGHT
+  // Re-measure all rows when word-wrap is toggled off or font size changes
   useLayoutEffect(() => {
     virtualizer.measure();
-  }, [wordWrap, viewMode]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [wordWrap, viewMode, rowHeight]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Measure actual max content width using a canvas for accurate monospace measurement.
   // Used by split/three-pane for the custom horizontal scrollbar AND by unified mode
@@ -1677,15 +1688,16 @@ export const VirtualDiff = memo(function VirtualDiff({
       const canvas = document.createElement('canvas');
       const ctx = canvas.getContext('2d');
       if (ctx) {
-        ctx.font = '11px monospace';
+        ctx.font = `${diffFontPx}px monospace`;
         const measured = ctx.measureText(longestText);
         return Math.ceil(measured.width) + gutter;
       }
     } catch {
       /* fallback below */
     }
-    return Math.ceil(maxLen * 7.2) + gutter; // fallback estimate
-  }, [wordWrap, parsed.lines, viewMode]);
+    const charWidth = diffFontPx * 0.655; // fallback estimate
+    return Math.ceil(maxLen * charWidth) + gutter;
+  }, [wordWrap, parsed.lines, viewMode, diffFontPx]);
 
   // Single horizontal scrollbar for split/three-pane (only when not wrapping)
   const hSpacerWidth = useHorizontalScroll(scrollRef, hScrollBarRef, needsHScroll, maxContentWidth);
@@ -1783,8 +1795,8 @@ export const VirtualDiff = memo(function VirtualDiff({
       let found: (typeof hunkRowPositions)[0] | null = null;
       for (const hp of hunkRowPositions) {
         const item = virtualizer.measurementsCache[hp.index];
-        const rowTop = item ? item.start : hp.index * ROW_HEIGHT;
-        if (rowTop + ROW_HEIGHT <= scrollTop) {
+        const rowTop = item ? item.start : hp.index * rowHeight;
+        if (rowTop + rowHeight <= scrollTop) {
           found = hp;
         } else {
           break;
@@ -1795,7 +1807,7 @@ export const VirtualDiff = memo(function VirtualDiff({
     onScroll();
     el.addEventListener('scroll', onScroll, { passive: true });
     return () => el.removeEventListener('scroll', onScroll);
-  }, [hunkRowPositions, virtualizer]);
+  }, [hunkRowPositions, virtualizer, rowHeight]);
 
   const gutterWidth = viewMode !== 'unified' ? 'w-[54px]' : 'w-[88px]';
 
@@ -1819,10 +1831,10 @@ export const VirtualDiff = memo(function VirtualDiff({
         {stickyHunk && (
           <div
             className={cn(
-              'sticky top-0 z-10 flex select-none items-center bg-accent/95 font-mono text-[11px] text-muted-foreground backdrop-blur-sm border-b border-border/50',
+              'sticky top-0 z-10 flex select-none items-center bg-accent/95 font-mono text-[length:var(--diff-font-size)] text-muted-foreground backdrop-blur-sm border-b border-border/50',
               selectable ? 'pr-2' : 'px-2',
             )}
-            style={{ height: ROW_HEIGHT, marginBottom: -ROW_HEIGHT }}
+            style={{ height: rowHeight, marginBottom: -rowHeight }}
             data-testid="diff-sticky-hunk"
           >
             {selectable && stickyHunk.hunkStartIdx != null ? (
@@ -1865,7 +1877,7 @@ export const VirtualDiff = memo(function VirtualDiff({
           {virtualizer.getVirtualItems().map((vItem) => {
             const row = renderRows[vItem.index];
 
-            const rowH = rowHeightMap?.get(vItem.index) ?? ROW_HEIGHT;
+            const rowH = rowHeightMap?.get(vItem.index) ?? rowHeight;
             return (
               <div
                 key={vItem.index}
@@ -1886,10 +1898,10 @@ export const VirtualDiff = memo(function VirtualDiff({
                 ) : row.type === 'hunk' ? (
                   <div
                     className={cn(
-                      'flex select-none items-center bg-accent font-mono text-[11px] text-muted-foreground',
+                      'flex select-none items-center bg-accent font-mono text-[length:var(--diff-font-size)] text-muted-foreground',
                       selectable ? 'pr-2' : 'px-2',
                     )}
-                    style={{ height: ROW_HEIGHT }}
+                    style={{ height: rowHeight }}
                   >
                     {selectable && row.hunkStartIdx != null ? (
                       (() => {
@@ -1920,10 +1932,10 @@ export const VirtualDiff = memo(function VirtualDiff({
                 ) : row.type === 'fold' ? (
                   <button
                     className={cn(
-                      'flex w-full select-none items-center bg-muted/50 font-mono text-[11px] text-muted-foreground transition-colors hover:bg-accent/50 hover:text-foreground',
+                      'flex w-full select-none items-center bg-muted/50 font-mono text-[length:var(--diff-font-size)] text-muted-foreground transition-colors hover:bg-accent/50 hover:text-foreground',
                       selectable ? 'pr-2' : 'px-2',
                     )}
-                    style={{ height: ROW_HEIGHT }}
+                    style={{ height: rowHeight }}
                     onClick={() => toggleFold(row.sectionIdx)}
                     data-testid="diff-fold-toggle"
                   >

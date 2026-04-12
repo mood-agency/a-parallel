@@ -16,6 +16,7 @@ import { admin, bearer, username, organization } from 'better-auth/plugins';
 import { createAccessControl } from 'better-auth/plugins/access';
 
 import { db, dbDialect } from '../db/index.js';
+import { audit } from './audit.js';
 import { DATA_DIR } from './data-dir.js';
 import { log } from './logger.js';
 
@@ -77,12 +78,7 @@ const DEV_CLIENT_PORT = process.env.VITE_PORT || '5173';
 
 const corsOrigins = process.env.CORS_ORIGIN
   ? process.env.CORS_ORIGIN.split(',').map((s) => s.trim())
-  : [
-      `http://localhost:${DEV_CLIENT_PORT}`,
-      `http://127.0.0.1:${DEV_CLIENT_PORT}`,
-      'http://localhost:*',
-      'http://127.0.0.1:*',
-    ];
+  : [`http://localhost:${DEV_CLIENT_PORT}`, `http://127.0.0.1:${DEV_CLIENT_PORT}`];
 
 const PORT = parseInt(process.env.PORT || '3001', 10);
 
@@ -167,6 +163,7 @@ export async function initBetterAuth(): Promise<void> {
       defaultCookieAttributes: {
         sameSite: 'lax',
         secure: cookieOpts.secure,
+        httpOnly: true,
         path: '/',
       },
     },
@@ -213,6 +210,12 @@ export async function initBetterAuth(): Promise<void> {
         providerId: 'credential',
         accountId: created.id,
         password: hash,
+      });
+      audit({
+        action: 'user.create',
+        actorId: null,
+        detail: `Default admin account created: ${username}`,
+        meta: { userId: created.id, email },
       });
       if (isGeneratedPassword) {
         // Write password to stderr only (NOT to structured logging which may persist in Abbacchio)

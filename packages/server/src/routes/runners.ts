@@ -10,6 +10,7 @@ import type {
 } from '@funny/shared/runner-protocol';
 import { Hono } from 'hono';
 
+import { audit } from '../lib/audit.js';
 import { log } from '../lib/logger.js';
 import type { ServerEnv } from '../lib/types.js';
 import * as rm from '../services/runner-manager.js';
@@ -38,6 +39,12 @@ runnerRoutes.post('/register', async (c) => {
       return c.json({ error: 'Runner must be associated with a user' }, 400);
     }
     const result = await rm.registerRunner(body, userId);
+    audit({
+      action: 'runner.register',
+      actorId: userId,
+      detail: `Runner "${body.name}" registered`,
+      meta: { runnerId: result.runnerId, hostname: body.hostname, os: body.os },
+    });
     return c.json(result, 201);
   } catch (err: any) {
     const message = err?.message || String(err);
@@ -130,12 +137,24 @@ runnerRoutes.delete('/:runnerId', async (c) => {
 
   if (userRole === 'admin') {
     await rm.removeRunner(runnerId);
+    audit({
+      action: 'runner.remove',
+      actorId: userId ?? null,
+      detail: `Admin removed runner`,
+      meta: { runnerId },
+    });
     return c.json({ ok: true });
   }
 
   if (userId) {
     const removed = await rm.removeRunnerForUser(runnerId, userId);
     if (!removed) return c.json({ error: 'Runner not found or not owned by you' }, 404);
+    audit({
+      action: 'runner.remove',
+      actorId: userId,
+      detail: `User removed own runner`,
+      meta: { runnerId },
+    });
     return c.json({ ok: true });
   }
 

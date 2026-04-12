@@ -116,6 +116,12 @@ export const ManySegments: Story = {
 };
 
 export const VariantsComparison: Story = {
+  args: {
+    segments: [
+      { key: 'project', icon: Folder, label: 'funny', color: '#7CB9E8' },
+      { key: 'branch', icon: GitBranch, label: 'main', color: '#5A9BD5' },
+    ],
+  },
   render: () => {
     const segments = [
       { key: 'project', icon: Folder, label: 'funny', color: '#7CB9E8' },
@@ -146,6 +152,12 @@ export const VariantsComparison: Story = {
 };
 
 export const ColorPalettes: Story = {
+  args: {
+    segments: [
+      { key: 'project', icon: Folder, label: 'frontend', color: '#3b82f6' },
+      { key: 'branch', icon: GitBranch, label: 'main', color: '#2563eb' },
+    ],
+  },
   render: () => (
     <div className="flex flex-col gap-3">
       <PowerlineBar

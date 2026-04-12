@@ -49,6 +49,7 @@ export const SmallIndeterminate: Story = {
 };
 
 export const AllStates: Story = {
+  args: { state: 'unchecked' },
   render: () => (
     <div className="flex flex-col gap-6">
       <div className="flex items-center gap-6">
@@ -85,6 +86,7 @@ export const AllStates: Story = {
 
 /** Cycles through unchecked → checked → indeterminate → unchecked on each click */
 export const Interactive: Story = {
+  args: { state: 'unchecked' },
   render: () => {
     const cycle: Array<'unchecked' | 'checked' | 'indeterminate'> = [
       'unchecked',
@@ -109,6 +111,7 @@ export const Interactive: Story = {
 
 /** Simulates a file list with select-all header and individual items */
 export const FileListExample: Story = {
+  args: { state: 'checked' },
   render: () => {
     const files = ['index.ts', 'stage.ts', 'stash.ts', 'status.ts'];
     const [selected, setSelected] = useState<Set<string>>(new Set(files));
@@ -166,6 +169,7 @@ export const FileListExample: Story = {
 // --- Interaction Tests ---
 
 export const CycleStates: Story = {
+  args: { state: 'unchecked' },
   render: () => {
     const cycle: Array<'unchecked' | 'checked' | 'indeterminate'> = [
       'unchecked',

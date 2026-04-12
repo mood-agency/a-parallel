@@ -29,6 +29,16 @@ export const PROSE_FONT = '14px "Geist Sans", sans-serif';
 /** Monospace font used for code / diffs (text-[11px]) */
 export const MONO_FONT = '11px "JetBrains Mono", ui-monospace, monospace';
 
+/** Build a monospace canvas-font string for a given pixel size. */
+export function makeMonoFont(sizePx: number): string {
+  return `${sizePx}px "JetBrains Mono", ui-monospace, monospace`;
+}
+
+/** Build a prose canvas-font string for a given pixel size. */
+export function makeProseFont(sizePx: number): string {
+  return `${sizePx}px "Geist Sans", sans-serif`;
+}
+
 /** leading-relaxed = 1.625 × 14px */
 export const PROSE_LINE_HEIGHT = 22.75;
 /** Diff row height */

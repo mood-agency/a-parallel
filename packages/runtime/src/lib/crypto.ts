@@ -6,7 +6,7 @@
  */
 
 import { randomBytes, createCipheriv, createDecipheriv } from 'crypto';
-import { readFileSync, writeFileSync, existsSync } from 'fs';
+import { readFileSync, writeFileSync, existsSync, statSync } from 'fs';
 import { resolve } from 'path';
 
 import { DATA_DIR } from './data-dir.js';
@@ -23,10 +23,27 @@ function getKey(): Buffer {
   if (cachedKey) return cachedKey;
 
   if (existsSync(KEY_PATH)) {
+    // Validate file permissions — reject world-readable key files
+    const st = statSync(KEY_PATH);
+    if ((st.mode & 0o077) !== 0) {
+      throw new Error(
+        `Encryption key file has insecure permissions: ${(st.mode & 0o777).toString(8)}. Expected 0600.`,
+      );
+    }
     cachedKey = Buffer.from(readFileSync(KEY_PATH, 'utf-8').trim(), 'hex');
   } else {
     cachedKey = randomBytes(32);
-    writeFileSync(KEY_PATH, cachedKey.toString('hex'), { mode: 0o600 });
+    try {
+      // Atomic creation — fail if another process created it first
+      writeFileSync(KEY_PATH, cachedKey.toString('hex'), { mode: 0o600, flag: 'wx' });
+    } catch (err: any) {
+      if (err.code === 'EEXIST') {
+        // Another process created it — read that one instead
+        cachedKey = null;
+        return getKey();
+      }
+      throw err;
+    }
   }
 
   return cachedKey;

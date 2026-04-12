@@ -129,11 +129,14 @@ export function createWorktree(
       }
 
       const base = await getWorktreeBase(projectPath);
-      // Sanitize branch name: allow only safe characters, strip path traversal attempts
-      const safeBranchDir = branchName
-        .replace(/\.\./g, '') // Remove path traversal
-        .replace(/[^a-zA-Z0-9._\-/]/g, '-') // Keep only safe chars
-        .replace(/\//g, '-'); // Replace slashes with hyphens
+      // Sanitize branch name: strict whitelist, reject traversal attempts entirely
+      if (/\.\./.test(branchName)) {
+        throw badRequest('Branch name must not contain path traversal sequences (..)');
+      }
+      const safeBranchDir = branchName.replace(/[^a-zA-Z0-9._-]/g, '-'); // Keep only safe chars (no slashes)
+      if (!safeBranchDir || safeBranchDir === '.' || safeBranchDir === '..') {
+        throw badRequest('Invalid branch name after sanitization');
+      }
       const worktreePath = resolve(base, safeBranchDir);
 
       if (existsSync(worktreePath)) {
@@ -334,10 +337,7 @@ export function previewWorktree(
   return ResultAsync.fromPromise(
     (async () => {
       const base = getWorktreeBasePath(projectPath);
-      const safeBranchDir = branchName
-        .replace(/\.\./g, '')
-        .replace(/[^a-zA-Z0-9._\-/]/g, '-')
-        .replace(/\//g, '-');
+      const safeBranchDir = branchName.replace(/[^a-zA-Z0-9._-]/g, '-');
       const worktreePath = resolve(base, safeBranchDir);
       return {
         sanitizedBranchDir: safeBranchDir,

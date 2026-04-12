@@ -8,7 +8,7 @@
  * - gitRemote()  — authenticated remote commands (push, pull, fetch)
  */
 
-import { mkdirSync, writeFileSync, rmSync } from 'fs';
+import { mkdtempSync, writeFileSync, rmSync } from 'fs';
 import { tmpdir } from 'os';
 import { dirname, join } from 'path';
 
@@ -18,7 +18,7 @@ import { ResultAsync } from 'neverthrow';
 
 import { toDomainError } from './errors.js';
 import { validatePath, validatePathSync } from './path-validation.js';
-import { gitRead, gitWrite, execute, executeSync, ProcessExecutionError } from './process.js';
+import { gitRead, gitWrite, executeSync, ProcessExecutionError } from './process.js';
 
 /** Per-user git identity for multi-user mode. */
 export interface GitIdentityOptions {
@@ -113,9 +113,8 @@ export function gitRemote(
     // either the username (with any/empty password) or via the
     // x-access-token convention. By always echoing the token we cover
     // the "Username for ..." prompt that git issues first.
-    // Create askpass script in a private temporary directory with restrictive permissions
-    const askpassDir = join(tmpdir(), `funny-askpass-${crypto.randomUUID()}`);
-    mkdirSync(askpassDir, { mode: 0o700 });
+    // Create askpass script in a private temporary directory atomically
+    const askpassDir = mkdtempSync(join(tmpdir(), 'funny-askpass-'));
     askpassPath = join(askpassDir, 'askpass.sh');
     const safeToken = identity.githubToken.replace(/'/g, "'\\''");
     writeFileSync(askpassPath, `#!/bin/sh\necho '${safeToken}'\n`, { mode: 0o500 });

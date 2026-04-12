@@ -22,6 +22,30 @@ let io: SocketIOServer | null = null;
 let engine: BunEngine | null = null;
 let authInstance: any = null;
 
+// ── Per-socket rate limiter ─────────────────────────────
+
+/** Sliding window rate limiter keyed by socket ID. */
+const socketRateCounters = new Map<string, number[]>();
+
+/**
+ * Check whether a socket has exceeded its message rate limit.
+ * Returns true if the message should be dropped.
+ */
+function isRateLimited(socketId: string, maxPerWindow = 100, windowMs = 10_000): boolean {
+  const now = Date.now();
+  const timestamps = socketRateCounters.get(socketId) ?? [];
+  const valid = timestamps.filter((t) => now - t < windowMs);
+  if (valid.length >= maxPerWindow) return true;
+  valid.push(now);
+  socketRateCounters.set(socketId, valid);
+  return false;
+}
+
+/** Remove rate counter for a disconnected socket. */
+function clearSocketRate(socketId: string): void {
+  socketRateCounters.delete(socketId);
+}
+
 // ── Initialization ───────────────────────────────────────
 
 /**
@@ -145,6 +169,7 @@ function setupBrowserNamespace(): void {
     setupBrowserPtyHandlers(socket, userId);
 
     socket.on('disconnect', (reason) => {
+      clearSocketRate(socket.id);
       log.info('Browser client disconnected', {
         namespace: 'socketio',
         userId,
@@ -174,6 +199,8 @@ function setupBrowserPtyHandlers(socket: Socket, userId: string): void {
 
   for (const eventName of ptyEvents) {
     socket.on(eventName, async (data: unknown) => {
+      // Per-socket rate limiting
+      if (isRateLimited(socket.id)) return;
       // Basic schema validation: must be an object (or null/undefined)
       if (data != null && (typeof data !== 'object' || Array.isArray(data))) return;
       const payload = (data ?? {}) as Record<string, any>;
@@ -280,9 +307,25 @@ function setupRunnerNamespace(): void {
 
     // Handle agent events from runner → relay to browser
     socket.on('runner:agent_event', async (data: unknown) => {
+      if (isRateLimited(socket.id, 500, 10_000)) return;
       if (!data || typeof data !== 'object' || Array.isArray(data)) return;
       const msg = data as Record<string, any>;
       if (!msg.userId || typeof msg.userId !== 'string') return;
+
+      // Tenant validation: ensure this runner is authorized to relay events for this user.
+      // Each runner is associated with a specific userId — reject cross-tenant relays.
+      const rm = await import('./runner-manager.js');
+      const runner = await rm.getRunner(runnerId);
+      if (runner?.userId && runner.userId !== msg.userId) {
+        log.warn('Runner attempted cross-tenant event relay', {
+          namespace: 'socketio',
+          runnerId,
+          runnerUserId: runner.userId,
+          targetUserId: msg.userId,
+        });
+        return;
+      }
+
       wsRelay.relayToUser(msg.userId, msg.event);
 
       const threadRegistry = await import('./thread-registry.js');
@@ -297,10 +340,22 @@ function setupRunnerNamespace(): void {
     });
 
     // Handle browser relay from runner
-    socket.on('runner:browser_relay', (data: unknown) => {
+    socket.on('runner:browser_relay', async (data: unknown) => {
+      if (isRateLimited(socket.id, 500, 10_000)) return;
       if (!data || typeof data !== 'object' || Array.isArray(data)) return;
       const relay = data as Record<string, any>;
       if (relay.userId && typeof relay.userId === 'string') {
+        // Tenant validation: same as agent_event
+        const rm = await import('./runner-manager.js');
+        const runner = await rm.getRunner(runnerId);
+        if (runner?.userId && runner.userId !== relay.userId) {
+          log.warn('Runner attempted cross-tenant browser relay', {
+            namespace: 'socketio',
+            runnerId,
+            targetUserId: relay.userId,
+          });
+          return;
+        }
         wsRelay.relayToUser(relay.userId, relay.data);
       }
     });
@@ -318,6 +373,7 @@ function setupRunnerNamespace(): void {
     const OFFLINE_GRACE_MS = 15_000;
 
     socket.on('disconnect', (reason) => {
+      clearSocketRate(socket.id);
       log.warn('Runner disconnected from Socket.IO', {
         namespace: 'socketio',
         runnerId,
@@ -457,6 +513,7 @@ function setupRunnerDataHandlers(socket: Socket, runnerId: string): void {
 
   for (const eventName of dataEvents) {
     socket.on(eventName, async (data: any, ack?: (response: any) => void) => {
+      if (isRateLimited(socket.id, 200, 10_000)) return;
       const requestId = data?._requestId;
       // Validate requestId format to prevent event name injection
       if (requestId && (typeof requestId !== 'string' || !REQUEST_ID_RE.test(requestId))) {

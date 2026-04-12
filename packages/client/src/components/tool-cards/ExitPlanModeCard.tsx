@@ -12,10 +12,8 @@ import {
   Loader2,
   Maximize2,
 } from 'lucide-react';
-import { useState, useRef, useEffect, useCallback, memo } from 'react';
+import { Suspense, lazy, useState, useRef, useEffect, useCallback, memo } from 'react';
 import { useTranslation } from 'react-i18next';
-import ReactMarkdown from 'react-markdown';
-import remarkGfm from 'remark-gfm';
 import { toast } from 'sonner';
 
 import type { PromptEditorHandle } from '@/components/prompt-editor/PromptEditor';
@@ -25,10 +23,19 @@ import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip
 import { useDictation } from '@/hooks/use-dictation';
 import { api } from '@/lib/api';
 import { createClientLogger } from '@/lib/client-logger';
+import { remarkPlugins } from '@/lib/markdown-components';
 import { cn } from '@/lib/utils';
 import { useProfileStore } from '@/stores/profile-store';
 
 import { AnnotatableContent } from './AnnotatableContent';
+
+const LazyMarkdown = lazy(() =>
+  import('react-markdown').then(({ default: ReactMarkdown }) => ({
+    default: function ExitPlanMarkdown({ content }: { content: string }) {
+      return <ReactMarkdown remarkPlugins={remarkPlugins}>{content}</ReactMarkdown>;
+    },
+  })),
+);
 import { PlanReviewDialog, type PlanComment } from './PlanReviewDialog';
 import { useCurrentProjectPath } from './utils';
 
@@ -158,7 +165,7 @@ export const ExitPlanModeCard = memo(function ExitPlanModeCard({
     setSubmitted(true);
   };
 
-  const handleDialogRespond = useCallback(
+  const _handleDialogRespond = useCallback(
     (answer: string) => {
       if (!onRespond || submitted) return;
       cardLog.info('dialog response', { responsePreview: answer.slice(0, 200) });
@@ -229,7 +236,15 @@ export const ExitPlanModeCard = memo(function ExitPlanModeCard({
           onRemoveComment={handleRemoveComment}
         >
           <div className="prose prose-xs prose-invert prose-headings:text-foreground prose-headings:font-semibold prose-h1:text-xs prose-h1:mb-1.5 prose-h1:mt-0 prose-h2:text-xs prose-h2:mb-1 prose-h2:mt-2.5 prose-h3:text-sm prose-h3:mb-1 prose-h3:mt-2 prose-p:text-xs prose-p:text-muted-foreground prose-p:leading-relaxed prose-p:my-0.5 prose-li:text-sm prose-li:text-muted-foreground prose-li:leading-relaxed prose-li:my-0 prose-ul:my-0.5 prose-ol:my-0.5 prose-code:text-xs prose-code:bg-background/80 prose-code:px-1 prose-code:py-0.5 prose-code:rounded prose-code:text-foreground prose-pre:bg-background/80 prose-pre:rounded prose-pre:p-2 prose-pre:my-1 prose-strong:text-foreground max-w-none">
-            <ReactMarkdown remarkPlugins={[remarkGfm]}>{plan}</ReactMarkdown>
+            <Suspense
+              fallback={
+                <pre className="whitespace-pre-wrap break-all font-mono text-xs leading-relaxed text-muted-foreground">
+                  {plan}
+                </pre>
+              }
+            >
+              <LazyMarkdown content={plan} />
+            </Suspense>
           </div>
         </AnnotatableContent>
       )}

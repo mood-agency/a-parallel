@@ -8,12 +8,14 @@
  * and team mode to use the server's own auth (PG-only).
  */
 
+import { timingSafeEqual } from 'crypto';
+
 import type { Context, Next } from 'hono';
 
 import { log } from '../lib/logger.js';
 import type { ServerEnv } from '../lib/types.js';
 
-const PUBLIC_PATHS = new Set(['/api/health', '/api/bootstrap', '/api/setup/status']);
+const PUBLIC_PATHS = new Set(['/api/health', '/api/bootstrap']);
 
 const PUBLIC_PREFIXES = ['/api/invite-links/verify/', '/api/invite-links/register'];
 
@@ -69,7 +71,11 @@ export async function authMiddleware(c: Context<ServerEnv>, next: Next) {
   const RUNNER_AUTH_SECRET = process.env.RUNNER_AUTH_SECRET;
   if (RUNNER_AUTH_SECRET) {
     const runnerSecret = c.req.header('X-Runner-Auth');
-    if (runnerSecret === RUNNER_AUTH_SECRET) {
+    if (
+      runnerSecret &&
+      runnerSecret.length === RUNNER_AUTH_SECRET.length &&
+      timingSafeEqual(Buffer.from(runnerSecret), Buffer.from(RUNNER_AUTH_SECRET))
+    ) {
       c.set('isRunner', true);
 
       // For runner registration, associate the runner with the admin user

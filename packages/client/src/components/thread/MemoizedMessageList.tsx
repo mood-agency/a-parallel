@@ -20,9 +20,7 @@ import {
   isPretextReady,
   layoutSync,
   prepareBatch,
-  PROSE_FONT,
-  PROSE_LINE_HEIGHT,
-  MONO_LINE_HEIGHT,
+  makeProseFont,
   ensurePretextLoaded,
 } from '@/hooks/use-pretext';
 import { analyzeMarkdown } from '@/lib/markdown-to-plaintext';
@@ -33,6 +31,12 @@ import {
   type RenderItem,
 } from '@/lib/render-items';
 import { timeAgo } from '@/lib/thread-utils';
+import {
+  useSettingsStore,
+  PROSE_FONT_SIZE_PX,
+  PROSE_LINE_HEIGHT_PX,
+  CODE_LINE_HEIGHT_PX,
+} from '@/stores/settings-store';
 import type { CompactionEvent } from '@/stores/thread-store';
 
 import { ToolCallCard } from '../ToolCallCard';
@@ -49,27 +53,33 @@ const EXPAND_BATCH = 20;
 
 export const EMPTY_MESSAGES: any[] = [];
 
+interface FontConfig {
+  proseFont: string;
+  proseLineHeight: number;
+  codeLineHeight: number;
+}
+
 /**
  * Estimate item height. For assistant messages, uses pretext measurements when
  * available for much more accurate estimates than the flat 120px fallback.
  * containerWidth = 0 means "use flat fallback" (pretext not ready or width unknown).
  */
-function estimateItemHeight(item: RenderItem, containerWidth = 0): number {
+function estimateItemHeight(item: RenderItem, containerWidth = 0, fonts?: FontConfig): number {
   if (item.type === 'message') {
     if (item.msg.role === 'user') return 80;
 
     // Try pretext-based measurement for assistant messages
     const content = item.msg.content?.trim();
-    if (content && containerWidth > 100 && isPretextReady()) {
+    if (content && containerWidth > 100 && isPretextReady() && fonts) {
       const analysis = analyzeMarkdown(content);
-      const prepared = getCachedPrepared(analysis.plainText, PROSE_FONT);
+      const prepared = getCachedPrepared(analysis.plainText, fonts.proseFont);
       if (prepared) {
         // Effective text width: container minus avatar(32) + gap(8) + copyBtn(32) + gap(8) + padding(32)
         const textWidth = containerWidth - 112;
-        const { height: proseHeight } = layoutSync(prepared, textWidth, PROSE_LINE_HEIGHT);
+        const { height: proseHeight } = layoutSync(prepared, textWidth, fonts.proseLineHeight);
         // Code blocks: monospace lines + padding per block
         const codeHeight =
-          analysis.codeBlockLines * MONO_LINE_HEIGHT + analysis.codeBlockCount * 16;
+          analysis.codeBlockLines * fonts.codeLineHeight + analysis.codeBlockCount * 16;
         // Fixed chrome: timestamp(20px) + gap(8px)
         const totalHeight = proseHeight + codeHeight + analysis.extraHeightPx + 28;
         return Math.max(totalHeight, 60);
@@ -168,6 +178,17 @@ export const MemoizedMessageList = memo(
     ref,
   ) {
     const { t } = useTranslation();
+
+    // ── Font config: dynamic based on global font size setting ──
+    const globalFontSize = useSettingsStore((s) => s.fontSize);
+    const fontConfig = useMemo<FontConfig>(
+      () => ({
+        proseFont: makeProseFont(PROSE_FONT_SIZE_PX[globalFontSize]),
+        proseLineHeight: PROSE_LINE_HEIGHT_PX[globalFontSize],
+        codeLineHeight: CODE_LINE_HEIGHT_PX[globalFontSize],
+      }),
+      [globalFontSize],
+    );
 
     // Use a ref for threadStatus so renderToolItem's identity stays stable
     // across non-waiting status changes (running→running, etc.)
@@ -325,6 +346,7 @@ export const MemoizedMessageList = memo(
     const pretextReadyRef = useRef(false);
     useEffect(() => {
       let cancelled = false;
+      const { proseFont } = fontConfig;
 
       // Ensure pretext is loaded, then prepare all uncached assistant messages
       ensurePretextLoaded().then(() => {
@@ -335,14 +357,14 @@ export const MemoizedMessageList = memo(
         for (const item of groupedItems) {
           if (item.type === 'message' && item.msg.role === 'assistant' && item.msg.content) {
             const analysis = analyzeMarkdown(item.msg.content.trim());
-            if (analysis.plainText && !getCachedPrepared(analysis.plainText, PROSE_FONT)) {
+            if (analysis.plainText && !getCachedPrepared(analysis.plainText, proseFont)) {
               toPrepare.push(analysis.plainText);
             }
           }
         }
 
         if (toPrepare.length > 0) {
-          prepareBatch(toPrepare, PROSE_FONT, {
+          prepareBatch(toPrepare, proseFont, {
             signal: cancelled ? AbortSignal.abort() : undefined,
           });
         }
@@ -351,7 +373,7 @@ export const MemoizedMessageList = memo(
       return () => {
         cancelled = true;
       };
-    }, [groupedItems]);
+    }, [groupedItems, fontConfig]);
 
     // ── Scroll anchor: capture/restore for jank-free scroll preservation ──
     const scrollAnchorRef = useRef<{
@@ -407,11 +429,11 @@ export const MemoizedMessageList = memo(
       const cache = heightCacheRef.current;
       for (let i = 0; i < windowStart; i++) {
         const key = getItemKey(groupedItems[i]);
-        h += cache.get(key) ?? estimateItemHeight(groupedItems[i], containerWidth);
+        h += cache.get(key) ?? estimateItemHeight(groupedItems[i], containerWidth, fontConfig);
         if (i < windowStart - 1) h += 16; // space-y-4 gap
       }
       return h;
-    }, [groupedItems, windowStart, containerWidth]);
+    }, [groupedItems, windowStart, containerWidth, fontConfig]);
 
     // Refs so the scroll listener always reads fresh values without re-attaching
     const spacerHeightRef = useRef(spacerHeight);
@@ -592,7 +614,7 @@ export const MemoizedMessageList = memo(
 
         if (item.type === 'message') {
           const msg = item.msg;
-          const estimatedH = estimateItemHeight(item, containerWidth);
+          const estimatedH = estimateItemHeight(item, containerWidth, fontConfig);
           return (
             <div
               key={key}
@@ -704,7 +726,7 @@ export const MemoizedMessageList = memo(
 
         return null;
       },
-      [renderToolItem, t],
+      [renderToolItem, t, containerWidth, fontConfig],
     );
 
     const renderUserMessage = useCallback(

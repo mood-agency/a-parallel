@@ -20,6 +20,7 @@ import { nanoid } from 'nanoid';
 
 import { db } from '../db/index.js';
 import { inviteLinks } from '../db/schema.js';
+import { audit } from '../lib/audit.js';
 import { auth } from '../lib/auth.js';
 import { log } from '../lib/logger.js';
 import type { ServerEnv } from '../lib/types.js';
@@ -137,6 +138,21 @@ inviteLinkPublicRoutes.post('/register', async (c) => {
     return c.json({ error: 'Token, username, and password are required' }, 400);
   }
 
+  // Enforce password strength
+  if (body.password.length < 10) {
+    return c.json({ error: 'Password must be at least 10 characters long' }, 400);
+  }
+  if (
+    !/[A-Z]/.test(body.password) ||
+    !/[a-z]/.test(body.password) ||
+    !/[0-9]/.test(body.password)
+  ) {
+    return c.json(
+      { error: 'Password must contain uppercase, lowercase, and numeric characters' },
+      400,
+    );
+  }
+
   const result = await validateToken(body.token);
   if ('error' in result) return c.json({ error: result.error }, result.status);
 
@@ -188,6 +204,19 @@ inviteLinkPublicRoutes.post('/register', async (c) => {
       .update(inviteLinks)
       .set({ useCount: String(useCount + 1) })
       .where(eq(inviteLinks.id, link.id));
+
+    audit({
+      action: 'user.create',
+      actorId: null,
+      detail: `User "${body.username}" registered via invite link`,
+      meta: { orgId: link.organizationId, userId: user.id },
+    });
+    audit({
+      action: 'invite.accept',
+      actorId: user.id,
+      detail: `Joined org via invite link`,
+      meta: { orgId: link.organizationId },
+    });
 
     log.info('User registered and joined via invite link', {
       namespace: 'invite',
@@ -263,6 +292,12 @@ inviteLinkRoutes.post('/', async (c) => {
 
   await db.insert(inviteLinks).values(link);
 
+  audit({
+    action: 'invite.create',
+    actorId: userId,
+    detail: `Created invite link for org`,
+    meta: { orgId, role, expiresAt: link.expiresAt },
+  });
   log.info('Invite link created', { namespace: 'invite', orgId, role });
 
   return c.json({
@@ -304,11 +339,19 @@ inviteLinkRoutes.delete('/:id', async (c) => {
   const orgId = c.get('organizationId');
   if (!orgId) return c.json({ error: 'No active organization' }, 400);
 
+  const userId = c.get('userId');
   const linkId = c.req.param('id');
   await db
     .update(inviteLinks)
     .set({ revoked: '1' })
     .where(and(eq(inviteLinks.id, linkId), eq(inviteLinks.organizationId, orgId)));
+
+  audit({
+    action: 'invite.revoke',
+    actorId: userId,
+    detail: `Revoked invite link`,
+    meta: { linkId, orgId },
+  });
 
   return c.json({ ok: true });
 });

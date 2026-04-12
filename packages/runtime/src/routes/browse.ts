@@ -19,12 +19,31 @@ import { resultToResponse } from '../utils/result-response.js';
 const app = new Hono<HonoEnv>();
 
 /**
- * Validate that a path exists and is accessible.
+ * Validate that a path exists, is accessible, and does not contain
+ * path traversal sequences.
  * Browse routes list directories only — no file content is exposed.
  * File read/write security is enforced separately in files.ts (project-scoped).
  */
 async function checkAllowedPath(path: string, _userId: string): Promise<Response | null> {
+  // Reject paths containing traversal sequences before normalization
+  if (path.includes('..')) {
+    return new Response(JSON.stringify({ error: 'Path traversal not allowed' }), {
+      status: 400,
+      headers: { 'Content-Type': 'application/json' },
+    });
+  }
+
   const normalizedTarget = normalize(resolve(path));
+
+  // Block access to sensitive system directories
+  const blockedPrefixes = ['/etc', '/proc', '/sys', '/dev', '/run', '/boot'];
+  if (blockedPrefixes.some((p) => normalizedTarget === p || normalizedTarget.startsWith(p + '/'))) {
+    return new Response(JSON.stringify({ error: 'Access denied' }), {
+      status: 403,
+      headers: { 'Content-Type': 'application/json' },
+    });
+  }
+
   if (!existsSync(normalizedTarget)) {
     return new Response(JSON.stringify({ error: 'Directory does not exist' }), {
       status: 404,

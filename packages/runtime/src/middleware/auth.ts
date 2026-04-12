@@ -12,17 +12,14 @@
  * 3. **Better Auth** — local session fallback
  */
 
+import { timingSafeEqual } from 'crypto';
+
 import type { Context, Next } from 'hono';
 
 import { log } from '../lib/logger.js';
 
 /** Paths that skip authentication entirely */
-const PUBLIC_PATHS = new Set([
-  '/api/health',
-  '/api/auth/mode',
-  '/api/bootstrap',
-  '/api/setup/status',
-]);
+const PUBLIC_PATHS = new Set(['/api/health', '/api/auth/mode', '/api/bootstrap']);
 
 const TEAM_SERVER_URL = process.env.TEAM_SERVER_URL;
 const WS_TUNNEL_ONLY = process.env.WS_TUNNEL_ONLY === 'true' || process.env.WS_TUNNEL_ONLY === '1';
@@ -32,7 +29,7 @@ const sessionCache = new Map<
   string,
   { userId: string; role: string; orgId: string | null; expiresAt: number }
 >();
-const SESSION_CACHE_TTL = 60_000; // 1 minute
+const SESSION_CACHE_TTL = 15_000; // 15 seconds — balance between performance and session revocation freshness
 
 /**
  * Direct auth middleware — validates sessions without relying on forwarded headers.
@@ -48,7 +45,13 @@ export async function authMiddleware(c: Context, next: Next) {
 
   // ── Forwarded auth from server via shared secret ──
   const RUNNER_AUTH_SECRET = process.env.RUNNER_AUTH_SECRET;
-  if (RUNNER_AUTH_SECRET && c.req.header('X-Runner-Auth') === RUNNER_AUTH_SECRET) {
+  const runnerAuthHeader = c.req.header('X-Runner-Auth');
+  if (
+    RUNNER_AUTH_SECRET &&
+    runnerAuthHeader &&
+    runnerAuthHeader.length === RUNNER_AUTH_SECRET.length &&
+    timingSafeEqual(Buffer.from(runnerAuthHeader), Buffer.from(RUNNER_AUTH_SECRET))
+  ) {
     const userId = c.req.header('X-Forwarded-User');
     if (!userId) return c.json({ error: 'Unauthorized' }, 401);
     c.set('userId', userId);

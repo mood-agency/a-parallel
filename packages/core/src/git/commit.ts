@@ -94,7 +94,7 @@ function createHookWrapper(cwd: string): { dir: string; outputFile: string } | n
   }
   if (!originalHook) return null;
 
-  const id = `git-hook-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+  const id = `git-hook-${crypto.randomUUID()}`;
   const wrapperDir = join(tmpdir(), id);
   const outputFile = join(tmpdir(), `${id}-output.log`);
 

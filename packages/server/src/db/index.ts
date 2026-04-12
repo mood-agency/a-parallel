@@ -9,6 +9,7 @@
  * that import from this module require zero changes.
  */
 
+import { existsSync, writeFileSync, chmodSync } from 'fs';
 import { resolve } from 'path';
 
 import {
@@ -60,6 +61,16 @@ export function initDatabase(options?: {
     });
   } else {
     const dbPath = options?.sqlitePath ?? resolve(DATA_DIR, 'data.db');
+    // Ensure restrictive permissions on the database file (owner-only read/write)
+    if (!existsSync(dbPath)) {
+      writeFileSync(dbPath, '', { mode: 0o600 });
+    } else {
+      try {
+        chmodSync(dbPath, 0o600);
+      } catch {
+        // May fail on non-POSIX filesystems — best effort
+      }
+    }
     // Use the legacy wrapper so _legacyConnection stays populated
     _legacyConnection = createSqliteDatabase({ mode: 'sqlite', path: dbPath, log });
     _provider = {

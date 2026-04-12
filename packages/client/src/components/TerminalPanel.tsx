@@ -17,7 +17,7 @@ import { getActiveWS } from '@/hooks/use-ws';
 import { api } from '@/lib/api';
 import { cn } from '@/lib/utils';
 import { useProjectStore } from '@/stores/project-store';
-import { type TerminalShell, useSettingsStore } from '@/stores/settings-store';
+import { type TerminalShell, useSettingsStore, CODE_FONT_SIZE_PX } from '@/stores/settings-store';
 import { useTerminalStore } from '@/stores/terminal-store';
 import { useThreadStore } from '@/stores/thread-store';
 
@@ -123,6 +123,7 @@ function TauriTerminalTabContent({
 }) {
   const containerRef = useRef<HTMLDivElement>(null);
   const termRef = useRef<{ terminal: any; fitAddon: any } | null>(null);
+  const codeFontSizePx = CODE_FONT_SIZE_PX[useSettingsStore((s) => s.fontSize)];
   useThemeSync(termRef);
 
   useEffect(() => {
@@ -144,7 +145,7 @@ function TauriTerminalTabContent({
 
       const terminal = new Terminal({
         cursorBlink: true,
-        fontSize: 13,
+        fontSize: codeFontSizePx,
         fontFamily: '"JetBrains Mono", Menlo, Monaco, Consolas, "Courier New", monospace',
         theme: getTerminalTheme(),
         scrollback: 5000,
@@ -208,7 +209,15 @@ function TauriTerminalTabContent({
       isMounted = false;
       cleanup?.();
     };
-  }, [id, cwd]);
+  }, [id, cwd]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Sync font size when the setting changes
+  useEffect(() => {
+    if (termRef.current) {
+      termRef.current.terminal.options.fontSize = codeFontSizePx;
+      termRef.current.fitAddon.fit();
+    }
+  }, [codeFontSizePx]);
 
   return (
     <div
@@ -263,6 +272,7 @@ function WebTerminalTabContent({
   );
   // Track whether the initial command (startup commands) was sent to avoid re-sending
   const initialCommandSentRef = useRef(false);
+  const codeFontSizePx = CODE_FONT_SIZE_PX[useSettingsStore((s) => s.fontSize)];
   useThemeSync(termRef);
 
   useEffect(() => {
@@ -277,7 +287,7 @@ function WebTerminalTabContent({
 
       const terminal = new Terminal({
         cursorBlink: true,
-        fontSize: 13,
+        fontSize: codeFontSizePx,
         fontFamily: '"JetBrains Mono", Menlo, Monaco, Consolas, "Courier New", monospace',
         theme: getTerminalTheme(),
         scrollback: 5000,
@@ -525,6 +535,14 @@ function WebTerminalTabContent({
     label,
     shell,
   ]);
+
+  // Sync font size when the setting changes
+  useEffect(() => {
+    if (termRef.current) {
+      termRef.current.terminal.options.fontSize = codeFontSizePx;
+      termRef.current.fitAddon.fit();
+    }
+  }, [codeFontSizePx]);
 
   useEffect(() => {
     if (active && panelVisible && termRef.current) {
