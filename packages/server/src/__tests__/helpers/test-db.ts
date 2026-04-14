@@ -35,6 +35,7 @@ export function createTestDb() {
       user_id TEXT NOT NULL DEFAULT '',
       sort_order INTEGER NOT NULL DEFAULT 0,
       memory_enabled INTEGER NOT NULL DEFAULT 0,
+      default_agent_template_id TEXT,
       created_at TEXT NOT NULL
     )
   `);
@@ -65,6 +66,7 @@ export function createTestDb() {
       parent_thread_id TEXT,
       arc_id TEXT,
       purpose TEXT NOT NULL DEFAULT 'implement',
+      agent_template_id TEXT,
       runtime TEXT NOT NULL DEFAULT 'local',
       container_url TEXT,
       container_name TEXT,
