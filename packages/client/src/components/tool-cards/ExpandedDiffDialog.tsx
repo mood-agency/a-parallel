@@ -669,8 +669,8 @@ export function ExpandedDiffView({
   const currentFileStatus = files?.find((f) => f.path === filePath)?.status;
   const currentFileStaged = files?.find((f) => f.path === filePath)?.staged ?? false;
   const isOneSided = currentFileStatus === 'deleted' || currentFileStatus === 'added';
-  // Force unified view when selectable — line checkboxes only render in unified mode (like GitHub Desktop)
-  const viewMode: DiffViewMode = isOneSided || selectable ? 'unified' : userViewMode;
+  // Force unified view only when the file is fully added/deleted (one-sided)
+  const viewMode: DiffViewMode = isOneSided ? 'unified' : userViewMode;
 
   // ── Line selection state ──
   const [selectedLines, setSelectedLines] = useState<Set<number>>(new Set());
@@ -947,7 +947,7 @@ export function ExpandedDiffView({
           size="sm"
           value={viewMode}
           onValueChange={handleViewModeChange}
-          disabled={isPending || isOneSided || selectable}
+          disabled={isPending || isOneSided}
           className="flex-shrink-0 gap-0 rounded-md border border-border"
           data-testid="diff-view-view-mode-group"
         >
@@ -1097,11 +1097,11 @@ export function ExpandedDiffView({
             currentMatchIndex={currentMatchIndex}
             onMatchCount={handleMatchCount}
             onResolveConflict={onResolveConflict}
-            selectable={selectable}
-            selectedLines={selectable ? selectedLines : undefined}
-            onLineToggle={selectable ? handleLineToggle : undefined}
-            onHunkToggle={selectable ? handleHunkToggle : undefined}
-            onDragSelect={selectable ? handleDragSelect : undefined}
+            selectable={selectable && viewMode === 'unified'}
+            selectedLines={selectable && viewMode === 'unified' ? selectedLines : undefined}
+            onLineToggle={selectable && viewMode === 'unified' ? handleLineToggle : undefined}
+            onHunkToggle={selectable && viewMode === 'unified' ? handleHunkToggle : undefined}
+            onDragSelect={selectable && viewMode === 'unified' ? handleDragSelect : undefined}
           />
         </div>
         {fileThreads.length > 0 && (

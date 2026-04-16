@@ -2,7 +2,7 @@ import { useMemo } from 'react';
 
 function normalize(str: string) {
   return str
-    .normalize('NFD')
+    .normalize('NFKD')
     .replace(/[\u0300-\u036f]/g, '')
     .toLowerCase();
 }
@@ -18,22 +18,26 @@ export function HighlightText({ text, query, className }: HighlightTextProps) {
     if (!query.trim()) return [{ text, highlight: false }];
 
     const q = normalize(query);
+    // NFKC ensures fullwidth/compatibility chars map to standard forms
+    // and that each display char maps 1:1 with its normalized counterpart,
+    // keeping slice positions aligned.
+    const displayText = text.normalize('NFKC');
+    const normalizedText = normalize(displayText);
     const result: { text: string; highlight: boolean }[] = [];
-    const normalizedText = normalize(text);
     let pos = 0;
     let idx = normalizedText.indexOf(q, pos);
 
     while (idx !== -1) {
       if (idx > pos) {
-        result.push({ text: text.slice(pos, idx), highlight: false });
+        result.push({ text: displayText.slice(pos, idx), highlight: false });
       }
-      result.push({ text: text.slice(idx, idx + q.length), highlight: true });
+      result.push({ text: displayText.slice(idx, idx + q.length), highlight: true });
       pos = idx + q.length;
       idx = normalizedText.indexOf(q, pos);
     }
 
-    if (pos < text.length) {
-      result.push({ text: text.slice(pos), highlight: false });
+    if (pos < displayText.length) {
+      result.push({ text: displayText.slice(pos), highlight: false });
     }
 
     return result;
