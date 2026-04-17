@@ -315,6 +315,21 @@ async function pollTasks(): Promise<void> {
   }
 }
 
+// ── Local Projects Cache ─────────────────────────────────
+
+/**
+ * In-memory cache of projects assigned to this runner. Populated
+ * at startup by assignLocalProjects and kept in sync by
+ * assignProjectToRunner. Used by hot paths like pty:spawn cwd
+ * validation to avoid a server roundtrip on every request.
+ */
+let localProjectsCache: Project[] | null = null;
+
+/** Returns the locally cached projects, or null if not warmed yet. */
+export function getLocalProjects(): Project[] | null {
+  return localProjectsCache;
+}
+
 // ── Project Assignment ───────────────────────────────────
 
 async function assignLocalProjects(): Promise<void> {
@@ -322,6 +337,7 @@ async function assignLocalProjects(): Promise<void> {
 
   try {
     const projects = await getServices().projects.listProjects('');
+    localProjectsCache = projects;
 
     for (const project of projects) {
       try {
@@ -370,6 +386,11 @@ export async function assignProjectToRunner(project: Project): Promise<void> {
           localPath: project.path,
         }),
       });
+    }
+    if (localProjectsCache) {
+      const idx = localProjectsCache.findIndex((p) => p.id === project.id);
+      if (idx >= 0) localProjectsCache[idx] = project;
+      else localProjectsCache.push(project);
     }
     log.info('Assigned new project to runner', {
       namespace: 'runner',
@@ -525,7 +546,12 @@ function connectSocket(): void {
 
 function handleBrowserWSMessage(userId: string, data: unknown): void {
   if (!state.browserWSHandler) {
-    log.warn('No browser WS handler registered', { namespace: 'runner' });
+    const type = (data as { type?: string } | null)?.type ?? 'unknown';
+    log.warn('No browser WS handler registered — dropping message', {
+      namespace: 'runner',
+      type,
+      userId,
+    });
     return;
   }
 

@@ -390,15 +390,17 @@ export async function createRuntimeApp(options: RuntimeAppOptions): Promise<Runt
     }
     const { initTeamMode, setBrowserWSHandler, setLocalApp } =
       await import('./services/team-client.js');
-    await initTeamMode(process.env.TEAM_SERVER_URL!);
-    // Register the local app so tunnel:request messages can be forwarded to it
+    // Register the local app and browser WS handler BEFORE connecting so that
+    // any messages the server pushes immediately after the socket connects
+    // (e.g. the pty:list sync on runner reconnect) are not dropped with a
+    // "No browser WS handler registered" warning.
     setLocalApp(app);
-
     setBrowserWSHandler(async (userId, data, respond) => {
       const parsed = data as { type: string; data: any };
       if (!parsed?.type) return;
       handlePtyMessage(parsed.type, parsed.data, userId, (msg) => respond(msg));
     });
+    await initTeamMode(process.env.TEAM_SERVER_URL!);
 
     // Rehydrate git file watchers for existing threads
     rehydrateWatchers().catch((err) => {
@@ -492,46 +494,71 @@ export async function createRuntimeApp(options: RuntimeAppOptions): Promise<Runt
 function handlePtyMessage(type: string, data: any, userId: string, send: (msg: any) => void) {
   switch (type) {
     case 'pty:spawn': {
-      // Validate cwd against user projects
-      getServices()
-        .projects.listProjects(userId)
-        .then((userProjects) => {
-          const resolvedCwd = resolve(data.cwd);
-          const isAllowed = userProjects.some((p: any) => {
-            const projectPath = resolve(p.path);
-            if (resolvedCwd.startsWith(projectPath)) return true;
-            const worktreeBase = resolve(
-              dirname(projectPath),
-              WORKTREE_DIR_NAME,
-              basename(projectPath),
-            );
-            return resolvedCwd.startsWith(worktreeBase);
-          });
-          if (!isAllowed) {
-            log.warn(`PTY spawn denied: cwd not in user's projects`, {
-              namespace: 'ws',
-              cwd: data.cwd,
-              userId,
-            });
-            send({
-              type: 'pty:error',
-              data: {
-                ptyId: data.id,
-                error: 'Access denied: directory not in a registered project',
-              },
-            });
-            return;
-          }
-          ptyManager.spawnPty(
-            data.id,
-            data.cwd,
-            data.cols,
-            data.rows,
-            userId,
-            data.shell,
-            data.projectId,
-            data.label,
+      log.info('pty:spawn received', {
+        namespace: 'ws',
+        ptyId: data.id,
+        projectId: data.projectId,
+        userId,
+      });
+
+      const resolvedCwd = resolve(data.cwd);
+      const isCwdAllowed = (userProjects: Array<{ path: string }>) =>
+        userProjects.some((p) => {
+          const projectPath = resolve(p.path);
+          if (resolvedCwd.startsWith(projectPath)) return true;
+          const worktreeBase = resolve(
+            dirname(projectPath),
+            WORKTREE_DIR_NAME,
+            basename(projectPath),
           );
+          return resolvedCwd.startsWith(worktreeBase);
+        });
+
+      const denyAccess = () => {
+        log.warn(`PTY spawn denied: cwd not in user's projects`, {
+          namespace: 'ws',
+          cwd: data.cwd,
+          userId,
+        });
+        send({
+          type: 'pty:error',
+          data: {
+            ptyId: data.id,
+            error: 'Access denied: directory not in a registered project',
+          },
+        });
+      };
+
+      const doSpawn = () => {
+        ptyManager.spawnPty(
+          data.id,
+          data.cwd,
+          data.cols,
+          data.rows,
+          userId,
+          data.shell,
+          data.projectId,
+          data.label,
+        );
+      };
+
+      // Fast path: validate against runner-local project cache to avoid a
+      // slow (and sometimes flaky) data-channel roundtrip on every spawn.
+      import('./services/team-client.js')
+        .then(({ getLocalProjects }) => {
+          const cached = getLocalProjects();
+          if (cached) {
+            if (!isCwdAllowed(cached)) return denyAccess();
+            return doSpawn();
+          }
+
+          // Cache not warm yet — fall back to server lookup.
+          return getServices()
+            .projects.listProjects(userId)
+            .then((userProjects) => {
+              if (!isCwdAllowed(userProjects)) return denyAccess();
+              doSpawn();
+            });
         })
         .catch((err) => {
           log.error('PTY spawn failed: project validation error', {
