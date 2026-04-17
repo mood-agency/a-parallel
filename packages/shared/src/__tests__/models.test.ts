@@ -186,8 +186,9 @@ describe('getProviderModels', () => {
     expect(models).toContain('sonnet');
     expect(models).toContain('sonnet-4.6');
     expect(models).toContain('opus');
+    expect(models).toContain('opus-4.7');
     expect(models).toContain('haiku');
-    expect(models).toHaveLength(4);
+    expect(models).toHaveLength(5);
   });
 
   test('returns all codex models', () => {
