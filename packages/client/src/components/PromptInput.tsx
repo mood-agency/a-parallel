@@ -227,6 +227,18 @@ export const PromptInput = memo(function PromptInput({
     onError: handleDictationError,
   });
 
+  // When recording stops (mic released) without a final turn, reset the
+  // dictation range so the next push-to-talk starts at the current caret
+  // instead of replacing the previously-inserted partial.
+  const wasRecordingRef = useRef(false);
+  useEffect(() => {
+    if (wasRecordingRef.current && !isRecording) {
+      editorRef.current?.endDictation();
+      partialTextRef.current = '';
+    }
+    wasRecordingRef.current = isRecording;
+  }, [isRecording]);
+
   // Push-to-talk refs
   const pttActiveRef = useRef(false);
   const isRecordingRef = useRef(isRecording);

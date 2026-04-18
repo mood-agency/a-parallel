@@ -10,6 +10,7 @@ import {
   X,
   Plus,
   MessageSquareText,
+  FolderOpen,
 } from 'lucide-react';
 import { useState, useCallback, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
@@ -58,6 +59,7 @@ import { useUIStore } from '@/stores/ui-store';
 
 import { ArchivedThreadsSettings } from './ArchivedThreadsSettings';
 import { AutomationSettings } from './AutomationSettings';
+import { FolderPicker } from './FolderPicker';
 import { McpServerSettings } from './McpServerSettings';
 import { MemorySettings } from './MemorySettings';
 import { PipelineSettings } from './PipelineSettings';
@@ -199,6 +201,90 @@ const PASTEL_COLORS = [
   '#89D4CF', // pastel teal
   '#F9B97C', // pastel orange
 ];
+
+/* ── Project path editor ── */
+function ProjectPathSetting({
+  projectId,
+  currentPath,
+  onSave,
+}: {
+  projectId: string;
+  currentPath: string;
+  onSave: (projectId: string, data: { path: string }) => Promise<void>;
+}) {
+  const { t } = useTranslation();
+  const [value, setValue] = useState(currentPath);
+  const [pickerOpen, setPickerOpen] = useState(false);
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    setValue(currentPath);
+  }, [currentPath]);
+
+  const dirty = value.trim() !== currentPath && value.trim().length > 0;
+
+  const handleSave = async () => {
+    setSaving(true);
+    try {
+      await onSave(projectId, { path: value.trim() });
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <>
+      <div className="flex flex-col gap-2 border-b border-border/50 px-4 py-3.5 last:border-b-0">
+        <div className="min-w-0">
+          <p className="text-sm font-medium text-foreground">
+            {t('settings.projectPath', 'Project Path')}
+          </p>
+          <p className="mt-0.5 text-xs text-muted-foreground">
+            {t(
+              'settings.projectPathDesc',
+              'Absolute path to the git repository. Existing threads keep their original worktrees; new threads will use the updated path.',
+            )}
+          </p>
+        </div>
+        <div className="flex gap-2">
+          <Input
+            data-testid="settings-project-path"
+            className="flex-1"
+            value={value}
+            onChange={(e) => setValue(e.target.value)}
+            placeholder="/absolute/path/to/repo"
+          />
+          <Button
+            data-testid="settings-project-path-browse"
+            variant="outline"
+            size="icon"
+            onClick={() => setPickerOpen(true)}
+            title={t('sidebar.browseFolder', 'Browse folder')}
+          >
+            <FolderOpen className="icon-base" />
+          </Button>
+          <Button
+            data-testid="settings-project-path-save"
+            size="sm"
+            disabled={!dirty || saving}
+            onClick={handleSave}
+          >
+            {saving ? t('common.loading', 'Saving…') : t('common.save', 'Save')}
+          </Button>
+        </div>
+      </div>
+      {pickerOpen && (
+        <FolderPicker
+          onSelect={(p) => {
+            setValue(p);
+            setPickerOpen(false);
+          }}
+          onClose={() => setPickerOpen(false)}
+        />
+      )}
+    </>
+  );
+}
 
 /* ── Color picker area ── */
 function ProjectColorPicker({
@@ -687,6 +773,11 @@ function GeneralSettings() {
             Project
           </h3>
           <div className="mb-6 overflow-hidden rounded-lg border border-border/50">
+            <ProjectPathSetting
+              projectId={selectedProject.id}
+              currentPath={selectedProject.path}
+              onSave={saveProject}
+            />
             <ProjectColorPicker
               projectId={selectedProject.id}
               currentColor={selectedProject.color}

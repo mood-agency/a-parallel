@@ -1112,6 +1112,58 @@ githubRoutes.get('/pr-commits', async (c) => {
   }
 });
 
+// ── Commit Authors (avatar_url per SHA for commit history view) ──────
+
+githubRoutes.get('/commit-authors', async (c) => {
+  const userId = c.get('userId') as string;
+  const projectId = c.req.query('projectId');
+  if (!projectId) return c.json({ error: 'projectId is required' }, 400);
+
+  const project = await getServices().projects.getProject(projectId);
+  if (!project) return c.json({ error: 'Project not found' }, 404);
+
+  const remoteResult = await getRemoteUrl(project.path);
+  if (remoteResult.isErr() || !remoteResult.value) {
+    return c.json({ authors: [] });
+  }
+  const parsed = parseGithubOwnerRepo(remoteResult.value);
+  if (!parsed) return c.json({ authors: [] });
+
+  const resolved = await resolveGithubToken(userId);
+  const token = resolved?.token ?? null;
+
+  const sha = c.req.query('sha') || undefined;
+  const perPage = Math.min(Number(c.req.query('per_page')) || 100, 100);
+  const page = Number(c.req.query('page')) || 1;
+
+  const qs = new URLSearchParams({ per_page: String(perPage), page: String(page) });
+  if (sha) qs.set('sha', sha);
+  const apiPath = `/repos/${parsed.owner}/${parsed.repo}/commits?${qs.toString()}`;
+
+  try {
+    const res = token
+      ? await githubApiFetch(apiPath, token)
+      : await fetch(`${GITHUB_API}${apiPath}`, {
+          headers: {
+            Accept: 'application/vnd.github+json',
+            'X-GitHub-Api-Version': '2022-11-28',
+          },
+        });
+    if (!res.ok) return c.json({ authors: [] });
+    const data = (await res.json()) as any[];
+    const authors = data
+      .map((c: any) => ({
+        sha: c.sha as string,
+        login: (c.author?.login as string) ?? null,
+        avatar_url: (c.author?.avatar_url as string) ?? null,
+      }))
+      .filter((a) => a.sha && a.avatar_url);
+    return c.json({ authors });
+  } catch {
+    return c.json({ authors: [] });
+  }
+});
+
 // ── PR File Content (get full file content from base and head branches) ──────
 
 githubRoutes.get('/pr-file-content', async (c) => {

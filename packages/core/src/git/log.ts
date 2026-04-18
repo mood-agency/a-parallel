@@ -14,6 +14,7 @@ export interface GitLogEntry {
   hash: string;
   shortHash: string;
   author: string;
+  authorEmail: string;
   relativeDate: string;
   message: string;
 }
@@ -49,24 +50,25 @@ export function getLog(
   const native = getNativeGit();
   if (native && !baseBranch && skip === 0) {
     return ResultAsync.fromPromise(
-      native
-        .getLog(cwd, limit)
-        .then((entries) =>
-          entries.map((e) => ({
-            hash: e.hash,
-            shortHash: e.shortHash,
-            author: e.author,
-            relativeDate: e.relativeDate,
-            message: e.message,
-          })),
-        )
-        // Empty repo (no commits yet) — return empty array instead of throwing
-        .catch(() => [] as GitLogEntry[]),
+      (async () => {
+        const [entries, emailMap] = await Promise.all([
+          native.getLog(cwd, limit).catch(() => []),
+          fetchEmailMap(cwd, limit, undefined, 0),
+        ]);
+        return entries.map((e) => ({
+          hash: e.hash,
+          shortHash: e.shortHash,
+          author: e.author,
+          authorEmail: emailMap.get(e.hash) ?? '',
+          relativeDate: e.relativeDate,
+          message: e.message,
+        }));
+      })(),
       (error) => processError(String(error), 1, ''),
     );
   }
   const SEP = '@@SEP@@';
-  const format = `%H${SEP}%h${SEP}%an${SEP}%ar${SEP}%s`;
+  const format = `%H${SEP}%h${SEP}%an${SEP}%ae${SEP}%ar${SEP}%s`;
   const args = ['log', `--format=${format}`, `-n`, String(limit)];
   if (skip > 0) {
     args.push(`--skip=${skip}`);
@@ -83,12 +85,32 @@ export function getLog(
         .trim()
         .split('\n')
         .map((line) => {
-          const [hash, shortHash, author, relativeDate, message] = line.split(SEP);
-          return { hash, shortHash, author, relativeDate, message };
+          const [hash, shortHash, author, authorEmail, relativeDate, message] = line.split(SEP);
+          return { hash, shortHash, author, authorEmail, relativeDate, message };
         });
     })(),
     (error) => processError(String(error), 1, ''),
   );
+}
+
+async function fetchEmailMap(
+  cwd: string,
+  limit: number,
+  baseBranch: string | null | undefined,
+  skip: number,
+): Promise<Map<string, string>> {
+  const SEP = '@@SEP@@';
+  const args = ['log', `--format=%H${SEP}%ae`, '-n', String(limit)];
+  if (skip > 0) args.push(`--skip=${skip}`);
+  if (baseBranch) args.push(`${baseBranch}..HEAD`);
+  const result = await gitRead(args, { cwd, reject: false });
+  const map = new Map<string, string>();
+  if (result.exitCode !== 0 || !result.stdout.trim()) return map;
+  for (const line of result.stdout.trim().split('\n')) {
+    const [hash, email] = line.split(SEP);
+    if (hash) map.set(hash, email ?? '');
+  }
+  return map;
 }
 
 /**

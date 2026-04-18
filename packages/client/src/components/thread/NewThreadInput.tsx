@@ -298,6 +298,15 @@ export function NewThreadInput() {
   return (
     <div className="flex flex-1 items-center justify-center px-4 text-muted-foreground">
       <div className="w-full max-w-3xl">
+        {project && (
+          <h1
+            className="mb-3 truncate text-3xl font-semibold text-foreground"
+            data-testid="new-thread-project-name"
+            title={project.name}
+          >
+            {project.name}
+          </h1>
+        )}
         {/* Context bar: Project / Repo / Branch */}
         <div
           className="mb-2 flex items-center gap-1.5 text-xs text-muted-foreground"

@@ -18,6 +18,7 @@ import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 import { toast } from 'sonner';
 
+import { AuthorBadge } from '@/components/AuthorBadge';
 import { ConfirmDialog } from '@/components/ConfirmDialog';
 import { PullFetchButtons } from '@/components/pull-fetch-buttons';
 import { PullStrategyDialog, isDivergedBranchesError } from '@/components/pull-strategy-dialog';
@@ -52,6 +53,7 @@ interface LogEntry {
   hash: string;
   shortHash: string;
   author: string;
+  authorEmail: string;
   relativeDate: string;
   message: string;
 }
@@ -147,6 +149,9 @@ export function CommitHistoryTab({ visible }: CommitHistoryTabProps) {
   const [diffContent, setDiffContent] = useState<string | null>(null);
   const [diffLoading, setDiffLoading] = useState(false);
 
+  // GitHub avatar_url by commit SHA (populated from GitHub API)
+  const [githubAvatarBySha, setGithubAvatarBySha] = useState<Map<string, string>>(new Map());
+
   // Operation progress
   const [checkoutInProgress, setCheckoutInProgress] = useState(false);
   const [revertInProgress, setRevertInProgress] = useState(false);
@@ -155,7 +160,19 @@ export function CommitHistoryTab({ visible }: CommitHistoryTabProps) {
   const [confirmRevertOpen, setConfirmRevertOpen] = useState(false);
   const [confirmResetOpen, setConfirmResetOpen] = useState(false);
 
-  const gitContextKey = effectiveThreadId || projectModeId;
+  // Project branch — reloads the log when the working directory branch changes
+  // (e.g. user switches branches via the PromptInput branch picker).
+  // Worktree threads pin to their own branch; local/project mode follows the
+  // project's current branch in the store.
+  const threadProjectId = useThreadStore((s) => s.activeThread?.projectId);
+  const projectBranch = useProjectStore((s) => {
+    const pid = projectModeId ?? threadProjectId;
+    return pid ? s.branchByProject[pid] : undefined;
+  });
+  const isWorktreeMode = useThreadStore((s) => s.activeThread?.mode === 'worktree');
+  const effectiveBranch = isWorktreeMode ? threadBranch : projectBranch;
+
+  const gitContextKey = `${effectiveThreadId || projectModeId || ''}::${effectiveBranch ?? ''}`;
 
   // AbortController for in-flight git log requests — aborted on context change
   const abortRef = useRef<AbortController | null>(null);
@@ -213,11 +230,19 @@ export function CommitHistoryTab({ visible }: CommitHistoryTabProps) {
 
     if (!contextChanged) return;
 
-    // Abort in-flight git log requests from the previous context
+    // Abort in-flight git log requests from the previous context.
+    // Reset loadingRef too — the aborted loadLog won't clear it cleanly,
+    // and leaving it true would make the new loadLog() below early-return.
     abortRef.current?.abort();
     abortRef.current = new AbortController();
+    loadingRef.current = false;
 
     loadedRef.current = false;
+    // Set loading BEFORE clearing entries so the list doesn't flash the
+    // "No commits yet" empty state between clear and loadLog().
+    if (!isInitialMount && visible && hasGitContext) {
+      setLogLoading(true);
+    }
     setLogEntries([]);
     setHasMore(false);
     setUnpushedHashes(new Set());
@@ -228,6 +253,14 @@ export function CommitHistoryTab({ visible }: CommitHistoryTabProps) {
     if (!isInitialMount) {
       setSelectedHash(null);
     }
+
+    // Immediately reload the log for the new context (don't wait for the
+    // second effect — it only fires on mount or when its own deps change).
+    if (!isInitialMount && visible && hasGitContext) {
+      loadedRef.current = true;
+      loadLog(0, false);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- intentionally only trigger on context change
   }, [gitContextKey, setSelectedHash]);
 
   useEffect(() => {
@@ -246,6 +279,45 @@ export function CommitHistoryTab({ visible }: CommitHistoryTabProps) {
       loadLog(0, false);
     }
   }, [visible, hasGitContext, loadLog]);
+
+  // Reset GitHub avatars when git context changes
+  const anchoredShasRef = useRef<Set<string>>(new Set());
+  useEffect(() => {
+    setGithubAvatarBySha(new Map());
+    anchoredShasRef.current = new Set();
+  }, [gitContextKey]);
+
+  // Fetch GitHub avatar_url per SHA for the currently loaded commits.
+  // Each GitHub request returns up to 100 commits walking backwards from an
+  // anchor SHA. For pagination beyond 100, we anchor at the first uncovered
+  // SHA. anchoredShasRef prevents re-requesting the same anchor.
+  const ghProjectId = projectModeId ?? threadProjectId ?? null;
+  useEffect(() => {
+    if (!ghProjectId || logEntries.length === 0) return;
+    const firstMissing = logEntries.find(
+      (e) => !githubAvatarBySha.has(e.hash) && !anchoredShasRef.current.has(e.hash),
+    );
+    if (!firstMissing) return;
+    anchoredShasRef.current.add(firstMissing.hash);
+    let cancelled = false;
+    api
+      .githubCommitAuthors(ghProjectId, { sha: firstMissing.hash, per_page: 100 })
+      .then((result) => {
+        if (cancelled || result.isErr()) return;
+        const authors = result.value.authors;
+        if (authors.length === 0) return;
+        setGithubAvatarBySha((prev) => {
+          const next = new Map(prev);
+          for (const a of authors) {
+            if (a.avatar_url) next.set(a.sha, a.avatar_url);
+          }
+          return next;
+        });
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [ghProjectId, logEntries, githubAvatarBySha]);
 
   // ── Load commit files when a commit is selected ──
 
@@ -852,30 +924,37 @@ export function CommitHistoryTab({ visible }: CommitHistoryTabProps) {
                         className="block truncate font-medium text-foreground"
                       />
                       <div className="mt-0.5 flex min-w-0 items-center gap-1.5 text-[10px] text-muted-foreground">
-                        <GitCommit className="icon-xs flex-shrink-0" />
-                        <HighlightText
-                          text={entry.shortHash}
-                          query={commitSearch}
-                          className="flex-shrink-0 font-mono text-primary"
-                        />
-                        {unpushedHashes.has(entry.hash) && (
-                          <Tooltip>
-                            <TooltipTrigger asChild>
-                              <ArrowUpCircle
-                                className="icon-xs flex-shrink-0 text-muted-foreground"
-                                data-testid={`history-unpushed-${entry.shortHash}`}
-                              />
-                            </TooltipTrigger>
-                            <TooltipContent side="top">
-                              {t('history.unpushed', 'Not pushed')}
-                            </TooltipContent>
-                          </Tooltip>
-                        )}
-                        <span className="min-w-0 truncate">
+                        <AuthorBadge
+                          name={entry.author}
+                          email={entry.authorEmail}
+                          avatarUrl={githubAvatarBySha.get(entry.hash)}
+                          size="xs"
+                        >
                           <HighlightText text={entry.author} query={commitSearch} />
-                        </span>
+                        </AuthorBadge>
                         <span className="flex-shrink-0 text-muted-foreground">
                           {shortRelativeDate(entry.relativeDate)}
+                        </span>
+                        <span className="flex flex-shrink-0 items-center gap-1">
+                          {unpushedHashes.has(entry.hash) && (
+                            <Tooltip>
+                              <TooltipTrigger asChild>
+                                <ArrowUpCircle
+                                  className="icon-xs flex-shrink-0 text-muted-foreground"
+                                  data-testid={`history-unpushed-${entry.shortHash}`}
+                                />
+                              </TooltipTrigger>
+                              <TooltipContent side="top">
+                                {t('history.unpushed', 'Not pushed')}
+                              </TooltipContent>
+                            </Tooltip>
+                          )}
+                          <GitCommit className="icon-xs flex-shrink-0" />
+                          <HighlightText
+                            text={entry.shortHash}
+                            query={commitSearch}
+                            className="flex-shrink-0 font-mono text-primary"
+                          />
                         </span>
                       </div>
                     </button>
@@ -931,7 +1010,12 @@ export function CommitHistoryTab({ visible }: CommitHistoryTabProps) {
                 <code className="flex-shrink-0 font-mono text-primary">
                   {selectedCommit.shortHash}
                 </code>
-                <span className="min-w-0 truncate">{selectedCommit.author}</span>
+                <AuthorBadge
+                  name={selectedCommit.author}
+                  email={selectedCommit.authorEmail}
+                  avatarUrl={githubAvatarBySha.get(selectedCommit.hash)}
+                  size="sm"
+                />
                 <span className="flex-shrink-0">
                   {shortRelativeDate(selectedCommit.relativeDate)}
                 </span>

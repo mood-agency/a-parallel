@@ -59,6 +59,8 @@ export interface PromptEditorHandle {
   setDictationPreview(text: string): void;
   /** Commit the dictation partial as real text and reset tracking */
   commitDictation(text: string): void;
+  /** Reset dictation tracking without changing text — call when the mic stops mid-turn */
+  endDictation(): void;
 }
 
 interface PromptEditorProps {
@@ -1062,6 +1064,9 @@ export const PromptEditor = forwardRef<PromptEditorHandle, PromptEditorProps>(fu
           editor.view.dispatch(tr);
         }
 
+        dictationRangeRef.current = null;
+      },
+      endDictation: () => {
         dictationRangeRef.current = null;
       },
     }),

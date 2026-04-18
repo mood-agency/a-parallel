@@ -4,6 +4,7 @@ import { useNavigate } from 'react-router-dom';
 import { buildPath } from '@/lib/url';
 import { useProjectStore } from '@/stores/project-store';
 import { useTerminalStore } from '@/stores/terminal-store';
+import { useThreadHistoryStore } from '@/stores/thread-history-store';
 import { useThreadStore } from '@/stores/thread-store';
 
 export function useGlobalShortcuts(
@@ -43,6 +44,24 @@ export function useGlobalShortcuts(
         const activeThreadProjectId = useThreadStore.getState().activeThread?.projectId ?? null;
         const projectId = activeThreadProjectId ?? useProjectStore.getState().selectedProjectId;
         navigate(buildPath(projectId ? `/list?project=${projectId}` : '/list'));
+        return;
+      }
+
+      // Alt+Left / Alt+Right — walk through thread-selection history (VSCode-style)
+      if (e.altKey && !e.ctrlKey && !e.metaKey && !e.shiftKey && e.key === 'ArrowLeft') {
+        const entry = useThreadHistoryStore.getState().goBack();
+        if (!entry) return;
+        e.preventDefault();
+        e.stopPropagation();
+        navigate(buildPath(`/projects/${entry.projectId}/threads/${entry.threadId}`));
+        return;
+      }
+      if (e.altKey && !e.ctrlKey && !e.metaKey && !e.shiftKey && e.key === 'ArrowRight') {
+        const entry = useThreadHistoryStore.getState().goForward();
+        if (!entry) return;
+        e.preventDefault();
+        e.stopPropagation();
+        navigate(buildPath(`/projects/${entry.projectId}/threads/${entry.threadId}`));
         return;
       }
 

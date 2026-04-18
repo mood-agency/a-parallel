@@ -1,16 +1,9 @@
 import type { GitHubPR } from '@funny/shared';
-import {
-  ExternalLink,
-  GitBranch,
-  GitMerge,
-  GitPullRequest,
-  GitPullRequestClosed,
-  Loader2,
-  RefreshCw,
-} from 'lucide-react';
+import { ExternalLink, GitBranch, GitPullRequest, Loader2, RefreshCw } from 'lucide-react';
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
 
+import { AuthorBadge } from '@/components/AuthorBadge';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
@@ -111,12 +104,6 @@ export function PullRequestsTab({ visible }: PullRequestsTabProps) {
     fetchPRs(1, false);
   };
 
-  const getPRIcon = (pr: GitHubPR) => {
-    if (pr.merged_at) return GitMerge;
-    if (pr.state === 'closed') return GitPullRequestClosed;
-    return GitPullRequest;
-  };
-
   const getPRColor = (pr: GitHubPR) => {
     if (pr.merged_at) return 'text-purple-500';
     if (pr.state === 'closed') return 'text-red-500';
@@ -138,14 +125,31 @@ export function PullRequestsTab({ visible }: PullRequestsTabProps) {
     <div className="flex min-h-0 flex-1 flex-col" data-testid="pull-requests-tab">
       {/* Toolbar */}
       <div className="flex items-center gap-1 border-b border-sidebar-border px-2 py-1">
+        {/* Refresh */}
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <Button
+              variant="ghost"
+              size="icon-sm"
+              onClick={refresh}
+              disabled={loading}
+              className="shrink-0 text-muted-foreground"
+              data-testid="prs-refresh"
+            >
+              <RefreshCw className={cn('icon-base', loading && 'animate-spin')} />
+            </Button>
+          </TooltipTrigger>
+          <TooltipContent side="bottom">{t('common.refresh', 'Refresh')}</TooltipContent>
+        </Tooltip>
+
         {/* State filter */}
-        <div className="flex items-center gap-0.5 rounded-md bg-sidebar-accent/50 p-0.5">
+        <div className="flex min-w-0 items-center gap-0.5 rounded-md bg-sidebar-accent/50 p-0.5">
           {(['open', 'closed', 'all'] as PRState[]).map((s) => (
             <button
               key={s}
               onClick={() => setState(s)}
               className={cn(
-                'rounded px-2 py-0.5 text-[10px] font-medium transition-colors',
+                'rounded px-2 py-0.5 text-xs font-medium transition-colors',
                 state === s
                   ? 'bg-background text-foreground shadow-sm'
                   : 'text-muted-foreground hover:text-foreground',
@@ -161,38 +165,27 @@ export function PullRequestsTab({ visible }: PullRequestsTabProps) {
           ))}
         </div>
 
-        <div className="flex-1" />
-
-        {/* Refresh */}
-        <Tooltip>
-          <TooltipTrigger asChild>
-            <Button
-              variant="ghost"
-              size="icon-sm"
-              onClick={refresh}
-              disabled={loading}
-              className="text-muted-foreground"
-              data-testid="prs-refresh"
-            >
-              <RefreshCw className={cn('icon-base', loading && 'animate-spin')} />
-            </Button>
-          </TooltipTrigger>
-          <TooltipContent side="bottom">{t('common.refresh', 'Refresh')}</TooltipContent>
-        </Tooltip>
+        <div className="min-w-0 flex-1" />
 
         {/* Open on GitHub */}
         {repoInfo && (
           <Tooltip>
             <TooltipTrigger asChild>
-              <a
-                href={`https://github.com/${repoInfo.owner}/${repoInfo.repo}/pulls`}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="inline-flex items-center justify-center rounded-md p-1 text-muted-foreground transition-colors hover:bg-sidebar-accent hover:text-foreground"
+              <Button
+                variant="ghost"
+                size="icon-sm"
+                asChild
+                className="shrink-0 text-muted-foreground"
                 data-testid="prs-open-github"
               >
-                <ExternalLink className="icon-base" />
-              </a>
+                <a
+                  href={`https://github.com/${repoInfo.owner}/${repoInfo.repo}/pulls`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                >
+                  <ExternalLink className="icon-base" />
+                </a>
+              </Button>
             </TooltipTrigger>
             <TooltipContent side="bottom">
               {t('review.pullRequests.openOnGithub', 'Open on GitHub')}
@@ -236,7 +229,6 @@ export function PullRequestsTab({ visible }: PullRequestsTabProps) {
         ) : (
           <div className="flex flex-col divide-y divide-sidebar-border">
             {prs.map((pr) => {
-              const Icon = getPRIcon(pr);
               const color = getPRColor(pr);
               return (
                 <button
@@ -245,7 +237,6 @@ export function PullRequestsTab({ visible }: PullRequestsTabProps) {
                   className="flex w-full items-start gap-2 px-3 py-2 text-left text-xs transition-colors hover:bg-sidebar-accent/50"
                   data-testid={`pr-item-${pr.number}`}
                 >
-                  <Icon className={cn('mt-0.5 h-4 w-4 shrink-0', color)} />
                   <div className="flex min-w-0 flex-1 flex-col gap-0.5">
                     <div className="flex items-baseline gap-1.5">
                       <a
@@ -261,7 +252,13 @@ export function PullRequestsTab({ visible }: PullRequestsTabProps) {
                       <span className="font-medium leading-tight">{pr.title}</span>
                     </div>
                     <div className="flex items-center gap-1.5 text-[10px] text-muted-foreground">
-                      {pr.user && <span>{pr.user.login}</span>}
+                      {pr.user && (
+                        <AuthorBadge
+                          name={pr.user.login}
+                          avatarUrl={pr.user.avatar_url}
+                          size="xs"
+                        />
+                      )}
                       <span>&middot;</span>
                       <span>{timeAgo(pr.created_at)}</span>
                       {pr.draft && (

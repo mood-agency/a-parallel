@@ -242,6 +242,7 @@ export const api = {
     id: string,
     data: {
       name?: string;
+      path?: string;
       color?: string | null;
       followUpMode?: string;
       defaultProvider?: string | null;
@@ -610,6 +611,7 @@ export const api = {
         hash: string;
         shortHash: string;
         author: string;
+        authorEmail: string;
         relativeDate: string;
         message: string;
       }>;
@@ -828,6 +830,7 @@ export const api = {
         hash: string;
         shortHash: string;
         author: string;
+        authorEmail: string;
         relativeDate: string;
         message: string;
       }>;
@@ -1286,6 +1289,19 @@ export const api = {
       owner: string;
       repo: string;
     }>(`/github/prs?${p.toString()}`);
+  },
+
+  githubCommitAuthors: (
+    projectId: string,
+    params?: { sha?: string; page?: number; per_page?: number },
+  ) => {
+    const p = new URLSearchParams({ projectId });
+    if (params?.sha) p.set('sha', params.sha);
+    if (params?.page) p.set('page', String(params.page));
+    if (params?.per_page) p.set('per_page', String(params.per_page));
+    return request<{
+      authors: Array<{ sha: string; login: string | null; avatar_url: string }>;
+    }>(`/github/commit-authors?${p.toString()}`);
   },
 
   githubPRDetail: (projectId: string, prNumber: number) =>

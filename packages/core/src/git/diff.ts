@@ -2,7 +2,7 @@
  * Diff operations: full diff, diff summary, single-file diff.
  */
 
-import { existsSync } from 'node:fs';
+import { existsSync, statSync, openSync, readSync, closeSync } from 'node:fs';
 import { join } from 'node:path';
 
 import type { FileDiff, FileDiffSummary, DiffSummaryResponse } from '@funny/shared';
@@ -92,6 +92,45 @@ function matchesAnyPattern(filePath: string, patterns: string[]): boolean {
 const MAX_DIFF_BYTES_PER_FILE = 512 * 1024;
 /** Maximum total diff payload size in bytes (10 MB). Beyond this, remaining files get empty diffs. */
 const MAX_TOTAL_DIFF_BYTES = 10 * 1024 * 1024;
+/** Skip line-counting for untracked files larger than this (matches native MAX_UNTRACKED_FILE_SIZE). */
+const MAX_UNTRACKED_NUMSTAT_BYTES = 512 * 1024;
+
+/** True when an untracked file should be skipped from `git diff --no-index` (too large or binary). */
+function shouldSkipUntrackedDiff(cwd: string, relPath: string): boolean {
+  const abs = join(cwd, relPath);
+  try {
+    const st = statSync(abs);
+    if (!st.isFile()) return true;
+    if (st.size > MAX_UNTRACKED_NUMSTAT_BYTES) return true;
+  } catch {
+    return true;
+  }
+  return isBinaryFile(abs);
+}
+
+/** Detect binary files by scanning for a null byte in the first 8 KB. */
+function isBinaryFile(path: string): boolean {
+  let fd: number | null = null;
+  try {
+    fd = openSync(path, 'r');
+    const buf = Buffer.alloc(8192);
+    const bytesRead = readSync(fd, buf, 0, 8192, 0);
+    for (let i = 0; i < bytesRead; i++) {
+      if (buf[i] === 0) return true;
+    }
+    return false;
+  } catch {
+    return false;
+  } finally {
+    if (fd !== null) {
+      try {
+        closeSync(fd);
+      } catch {
+        // ignore
+      }
+    }
+  }
+}
 
 function truncateDiff(diff: string): string {
   if (Buffer.byteLength(diff, 'utf8') <= MAX_DIFF_BYTES_PER_FILE) return diff;
@@ -327,11 +366,15 @@ export function getDiffSummary(
 
       // 2b. Untracked files don't appear in `git diff --numstat` because they're not
       // in git's index yet. Compute their line counts via `git diff --no-index` so the
-      // UI can show +N for newly added files. Skip nested repos (path ends with "/").
-      const untrackedToStat = baseFiles.filter(
-        (f) =>
-          !f.staged && f.status === 'added' && !f.path.endsWith('/') && !statMap.has(`u:${f.path}`),
-      );
+      // UI can show +N for newly added files. Skip nested repos (path ends with "/"),
+      // oversized files, and binaries — `git diff --no-index` on a multi-GB binary can
+      // hang for tens of seconds and time the request out.
+      const untrackedToStat = baseFiles.filter((f) => {
+        if (f.staged || f.status !== 'added') return false;
+        if (f.path.endsWith('/')) return false;
+        if (statMap.has(`u:${f.path}`)) return false;
+        return !shouldSkipUntrackedDiff(cwd, f.path);
+      });
       if (untrackedToStat.length > 0) {
         await Promise.all(
           untrackedToStat.map(async (f) => {
@@ -406,7 +449,10 @@ export function getSingleFileDiff(
         { cwd, reject: false },
       );
       if (lsResult.exitCode === 0 && lsResult.stdout.trim()) {
-        // Untracked file — use diff --no-index
+        // Untracked file — use diff --no-index. Guard against large/binary files
+        // because `git diff --no-index` on a multi-GB binary can hang for tens
+        // of seconds, blocking the request.
+        if (shouldSkipUntrackedDiff(cwd, filePath)) return '';
         const result = await gitRead(['diff', '--no-index', '/dev/null', filePath], {
           cwd,
           reject: false,
@@ -446,7 +492,9 @@ export function getFullContextFileDiff(
         { cwd, reject: false },
       );
       if (lsResult.exitCode === 0 && lsResult.stdout.trim()) {
-        // Untracked file — use diff --no-index
+        // Untracked file — use diff --no-index. Same large/binary guard as
+        // getSingleFileDiff to prevent multi-GB binaries from hanging the call.
+        if (shouldSkipUntrackedDiff(cwd, filePath)) return '';
         const result = await gitRead(['diff', '--no-index', '-U99999', '/dev/null', filePath], {
           cwd,
           reject: false,

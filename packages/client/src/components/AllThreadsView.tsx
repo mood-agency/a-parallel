@@ -9,21 +9,19 @@ import {
   ChevronDown,
   Check,
   X,
-  Loader2,
 } from 'lucide-react';
-import { useState, useMemo, useEffect, useRef, startTransition } from 'react';
+import { useState, useMemo, useEffect, useRef, startTransition, useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useLocation, useNavigate, useSearchParams } from 'react-router-dom';
 
 import { KanbanView } from '@/components/KanbanView';
-import { ThreadListView } from '@/components/ThreadListView';
 import { ThreadPowerline } from '@/components/ThreadPowerline';
-import { Button } from '@/components/ui/button';
 import { normalize } from '@/components/ui/highlight-text';
 import { Input } from '@/components/ui/input';
 import { Popover, PopoverTrigger, PopoverContent } from '@/components/ui/popover';
 import { colorFromName } from '@/components/ui/project-chip';
 import { TooltipIconButton } from '@/components/ui/tooltip-icon-button';
+import { VirtualThreadList } from '@/components/VirtualThreadList';
 import { api } from '@/lib/api';
 import { getStatusLabels } from '@/lib/thread-utils';
 import { buildPath } from '@/lib/url';
@@ -32,8 +30,6 @@ import { useGitStatusStore, branchKey as computeBranchKey } from '@/stores/git-s
 import { useProjectStore } from '@/stores/project-store';
 import { useThreadStore } from '@/stores/thread-store';
 import { useUIStore } from '@/stores/ui-store';
-
-const ITEMS_PER_PAGE = 20;
 
 type SortField = 'updated' | 'created';
 type SortDir = 'desc' | 'asc';
@@ -183,7 +179,6 @@ export function AllThreadsView() {
 
   const handleProjectFilterChange = (projectId: string | null) => {
     setProjectFilter(projectId);
-    setPage(1);
     setSearchParams(buildSearchParams({ project: projectId }), { replace: true });
   };
 
@@ -198,7 +193,6 @@ export function AllThreadsView() {
   const searchInputRef = useRef<HTMLInputElement>(null);
   const searchKeyDownRef = useRef<((e: React.KeyboardEvent) => void) | null>(null);
   const [search, setSearch] = useState('');
-  const [page, setPage] = useState(1);
   const [statusFilter, setStatusFilter] = useState<Set<string>>(() => {
     const paramStatus = searchParams.get('status');
     if (paramStatus) return new Set(paramStatus.split(',').filter(Boolean));
@@ -303,7 +297,7 @@ export function AllThreadsView() {
   }, [threadsByProject, threadTotalByProject, projectFilter, projects]);
 
   const [loadingMore, setLoadingMore] = useState(false);
-  const handleLoadMore = async () => {
+  const handleLoadMore = useCallback(async () => {
     setLoadingMore(true);
     try {
       const relevantProjects = projectFilter ? [projectFilter] : projects.map((p) => p.id);
@@ -315,7 +309,7 @@ export function AllThreadsView() {
     } finally {
       setLoadingMore(false);
     }
-  };
+  }, [projectFilter, projects, threadsByProject, threadTotalByProject, loadMoreThreads]);
 
   const allThreads = useMemo(() => {
     // Board view always includes archived (they appear in the archived column)
@@ -386,12 +380,6 @@ export function AllThreadsView() {
     contentMatches,
   ]);
 
-  const currentPage = Math.min(page, Math.max(1, Math.ceil(filtered.length / ITEMS_PER_PAGE)));
-  const paginated = filtered.slice(
-    (currentPage - 1) * ITEMS_PER_PAGE,
-    currentPage * ITEMS_PER_PAGE,
-  );
-
   const resetFilters = () => {
     setSearch('');
     setStatusFilter(new Set());
@@ -402,12 +390,10 @@ export function AllThreadsView() {
       setProjectFilter(null);
     }
     setSearchParams(buildSearchParams({ project: null }), { replace: true });
-    setPage(1);
   };
 
   const handleSearchChange = (value: string) => {
     setSearch(value);
-    setPage(1);
   };
 
   const toggleFilter =
@@ -418,7 +404,6 @@ export function AllThreadsView() {
         else next.add(value);
         return next;
       });
-      setPage(1);
     };
 
   const hasActiveFilters =
@@ -654,7 +639,6 @@ export function AllThreadsView() {
             <button
               onClick={() => {
                 setSortField('updated');
-                setPage(1);
               }}
               className={cn(
                 'flex items-center gap-2 w-full px-2 py-1.5 text-xs rounded-sm transition-colors text-left',
@@ -676,7 +660,6 @@ export function AllThreadsView() {
             <button
               onClick={() => {
                 setSortField('created');
-                setPage(1);
               }}
               className={cn(
                 'flex items-center gap-2 w-full px-2 py-1.5 text-xs rounded-sm transition-colors text-left',
@@ -700,7 +683,6 @@ export function AllThreadsView() {
               data-testid="all-threads-sort-direction"
               onClick={() => {
                 setSortDir((d) => (d === 'desc' ? 'asc' : 'desc'));
-                setPage(1);
               }}
               className="flex w-full items-center gap-2 rounded-sm px-2 py-1.5 text-left text-xs transition-colors hover:bg-accent hover:text-accent-foreground"
             >
@@ -724,7 +706,6 @@ export function AllThreadsView() {
           data-testid="all-threads-show-archived"
           onClick={() => {
             setShowArchived(!showArchived);
-            setPage(1);
           }}
           className={cn(
             'inline-flex items-center gap-1 px-2 py-1 text-xs rounded-md border transition-colors whitespace-nowrap',
@@ -762,36 +743,23 @@ export function AllThreadsView() {
             />
           </div>
         ) : (
-          <div className="h-full px-4 py-3">
-            <ThreadListView
-              className="h-full"
-              autoFocusSearch={false}
-              threads={paginated}
-              totalCount={filtered.length}
+          <div className="flex min-h-0 flex-1 flex-col px-4 py-3">
+            <VirtualThreadList
+              threads={filtered}
               search={search}
-              onSearchChange={handleSearchChange}
-              searchPlaceholder={
-                projectFilter
-                  ? t('allThreads.searchPlaceholder')
-                  : t('allThreads.globalSearchPlaceholder')
-              }
-              page={currentPage}
-              onPageChange={setPage}
-              pageSize={ITEMS_PER_PAGE}
+              contentSnippets={contentMatches}
               emptyMessage={t('allThreads.noThreads')}
               searchEmptyMessage={t('allThreads.noMatch')}
+              hideBranch
+              hasMore={hasMoreServerThreads}
+              loadingMore={loadingMore}
+              onEndReached={handleLoadMore}
+              onSearchKeyDownRef={searchKeyDownRef}
               onThreadClick={(thread) => {
                 startTransition(() => {
                   navigate(buildPath(`/projects/${thread.projectId}/threads/${thread.id}`));
                 });
               }}
-              paginationLabel={({ total }) =>
-                `${total} ${t('allThreads.threads')}${search || hasActiveFilters ? ` ${t('allThreads.found')}` : ''}`
-              }
-              hideSearch={true}
-              hideBranch={true}
-              contentSnippets={contentMatches}
-              onSearchKeyDownRef={searchKeyDownRef}
               renderExtraBadges={(thread) => {
                 const gs = statusByBranch[computeBranchKey(thread)];
                 const pInfo = projectInfoById[thread.projectId];
@@ -815,26 +783,6 @@ export function AllThreadsView() {
                 );
               }}
             />
-            {hasMoreServerThreads && (
-              <div className="flex justify-center py-3">
-                <Button
-                  data-testid="all-threads-load-more"
-                  variant="outline"
-                  size="sm"
-                  onClick={handleLoadMore}
-                  disabled={loadingMore}
-                >
-                  {loadingMore ? (
-                    <>
-                      <Loader2 className="icon-sm mr-1.5 animate-spin" />
-                      {t('common.loading')}
-                    </>
-                  ) : (
-                    t('allThreads.loadMore')
-                  )}
-                </Button>
-              </div>
-            )}
           </div>
         )}
       </div>

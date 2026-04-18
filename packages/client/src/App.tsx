@@ -10,6 +10,7 @@ import { Toaster } from '@/components/ui/sonner';
 import { WorkflowErrorModal } from '@/components/WorkflowErrorModal';
 import { useGlobalShortcuts } from '@/hooks/use-global-shortcuts';
 import { useRouteSync } from '@/hooks/use-route-sync';
+import { useThreadHistoryTracker } from '@/hooks/use-thread-history-tracker';
 import { useWS } from '@/hooks/use-ws';
 import { TOAST_DURATION } from '@/lib/utils';
 import { useAgentTemplateStore } from '@/stores/agent-template-store';
@@ -252,6 +253,7 @@ export function App() {
     setFileSearchOpen((prev) => !prev);
   }, []);
   useGlobalShortcuts(toggleCommandPalette, toggleFileSearch);
+  useThreadHistoryTracker();
 
   return (
     <SidebarProvider defaultOpen={true} className="h-screen overflow-hidden">

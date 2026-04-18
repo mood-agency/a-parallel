@@ -257,6 +257,7 @@ export async function updateProject(
   id: string,
   fields: {
     name?: string;
+    path?: string;
     color?: string | null;
     followUpMode?: string;
     defaultProvider?: string | null;
@@ -285,8 +286,31 @@ export async function updateProject(
     }
   }
 
+  let resolvedPath: string | undefined;
+  if (fields.path !== undefined) {
+    if (!isAbsolute(fields.path)) {
+      return err(badRequest('Project path must be absolute'));
+    }
+    resolvedPath = resolve(fields.path);
+    if (!isGitRepoSync(resolvedPath)) {
+      return err(badRequest(`Not a git repository: ${resolvedPath}`));
+    }
+    const existingPath = await dbGet(
+      db
+        .select()
+        .from(schema.projects)
+        .where(
+          and(eq(schema.projects.path, resolvedPath), eq(schema.projects.userId, project.userId)),
+        ),
+    );
+    if (existingPath && existingPath.id !== id) {
+      return err(conflict(`A project with this path already exists: ${resolvedPath}`));
+    }
+  }
+
   const updateData: Record<string, unknown> = {};
   if (fields.name !== undefined) updateData.name = fields.name;
+  if (resolvedPath !== undefined) updateData.path = resolvedPath;
   if (fields.color !== undefined) updateData.color = fields.color;
   if (fields.followUpMode !== undefined) updateData.followUpMode = fields.followUpMode;
   if (fields.defaultProvider !== undefined) updateData.defaultProvider = fields.defaultProvider;

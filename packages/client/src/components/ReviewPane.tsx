@@ -237,12 +237,17 @@ export function ReviewPane() {
 
   const isWorktree = useThreadStore((s) => s.activeThread?.mode === 'worktree');
   const baseBranch = useThreadStore((s) => s.activeThread?.baseBranch);
-  const threadBranch = useThreadStore((s) =>
-    s.activeThread ? resolveThreadBranch(s.activeThread) : undefined,
-  );
-  const projectBranch = useProjectStore((s) =>
-    projectModeId ? s.branchByProject[projectModeId] : undefined,
-  );
+  // Worktree threads track their own branch; local threads share the project's
+  // working directory, so their "current branch" is whatever the project is on.
+  const threadBranch = useThreadStore((s) => {
+    if (!s.activeThread) return undefined;
+    if (s.activeThread.mode !== 'worktree') return undefined;
+    return resolveThreadBranch(s.activeThread);
+  });
+  const projectBranch = useProjectStore((s) => {
+    const pid = projectModeId ?? threadProjectId;
+    return pid ? s.branchByProject[pid] : undefined;
+  });
   const currentBranch = threadBranch || projectBranch;
 
   // Filter stash entries to only show those from the current branch

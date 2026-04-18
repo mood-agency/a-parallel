@@ -45,11 +45,13 @@ interface ProjectState {
   toggleProject: (projectId: string) => void;
   selectProject: (projectId: string | null) => void;
   fetchBranch: (projectId: string) => Promise<void>;
+  setBranch: (projectId: string, branch: string) => void;
   renameProject: (projectId: string, name: string) => Promise<void>;
   updateProject: (
     projectId: string,
     data: {
       name?: string;
+      path?: string;
       color?: string | null;
       followUpMode?: string;
       defaultProvider?: string | null;
@@ -189,6 +191,13 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
     } else {
       setTimeout(fetchGitStatus, 100);
     }
+  },
+
+  setBranch: (projectId, branch) => {
+    // Bypass the fetchBranch cooldown — the caller already knows the new branch
+    // (e.g. just performed a checkout) and needs subscribers to see the change.
+    _lastFetchBranch.set(projectId, Date.now());
+    set({ branchByProject: { ...get().branchByProject, [projectId]: branch } });
   },
 
   fetchBranch: async (projectId) => {
