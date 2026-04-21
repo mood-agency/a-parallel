@@ -33,10 +33,13 @@ export function CommandPalette({ open, onOpenChange }: CommandPaletteProps) {
 
   const handleProjectSelect = (projectId: string) => {
     navigatedRef.current = true;
-    onOpenChange(false);
+    // Update target state + navigate BEFORE closing the dialog so Radix's
+    // close animation isn't interrupted by the subsequent route/store
+    // updates (which could otherwise cause the palette to flash open again).
     startNewThread(projectId);
     useGitStatusStore.getState().fetchForProject(projectId);
     navigate(buildPath(`/projects/${projectId}`));
+    onOpenChange(false);
   };
 
   // Prevent Radix from restoring focus to the previously-focused element
@@ -69,9 +72,9 @@ export function CommandPalette({ open, onOpenChange }: CommandPaletteProps) {
 
   const handleSettingsSelect = (itemId: string) => {
     navigatedRef.current = true;
-    onOpenChange(false);
     setSettingsOpen(true);
     navigate(buildPath(`/settings/${itemId}`));
+    onOpenChange(false);
   };
 
   return (

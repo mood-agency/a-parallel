@@ -16,6 +16,14 @@ import { useLocation, useNavigate, useSearchParams } from 'react-router-dom';
 
 import { KanbanView } from '@/components/KanbanView';
 import { ThreadPowerline } from '@/components/ThreadPowerline';
+import {
+  Command,
+  CommandEmpty,
+  CommandGroup,
+  CommandInput,
+  CommandItem,
+  CommandList,
+} from '@/components/ui/command';
 import { normalize } from '@/components/ui/highlight-text';
 import { Input } from '@/components/ui/input';
 import { Popover, PopoverTrigger, PopoverContent } from '@/components/ui/popover';
@@ -133,6 +141,7 @@ export function AllThreadsView() {
   const [projectFilter, setProjectFilter] = useState<string | null>(() => {
     return searchParams.get('project') || null;
   });
+  const [projectFilterOpen, setProjectFilterOpen] = useState(false);
 
   // Build search params from current filter state (preserves status/sort params if present)
   const buildSearchParams = (overrides?: { project?: string | null }) => {
@@ -512,7 +521,7 @@ export function AllThreadsView() {
         <div className="h-4 w-px bg-border" />
 
         {/* Project filter (single-select) */}
-        <Popover>
+        <Popover open={projectFilterOpen} onOpenChange={setProjectFilterOpen}>
           <PopoverTrigger asChild>
             <button
               data-testid="all-threads-project-filter"
@@ -529,56 +538,65 @@ export function AllThreadsView() {
               <ChevronDown className="icon-xs opacity-50" />
             </button>
           </PopoverTrigger>
-          <PopoverContent
-            align="start"
-            className="max-h-[300px] w-auto min-w-[180px] overflow-y-auto p-1"
-          >
-            <button
-              onClick={() => handleProjectFilterChange(null)}
-              className={cn(
-                'flex items-center gap-2 w-full px-2 py-1.5 text-xs rounded-sm transition-colors text-left',
-                'hover:bg-accent hover:text-accent-foreground',
-                !projectFilter && 'text-accent-foreground',
-              )}
-            >
-              <span
-                className={cn(
-                  'flex h-3.5 w-3.5 items-center justify-center rounded-full border',
-                  !projectFilter
-                    ? 'bg-primary border-primary text-primary-foreground'
-                    : 'border-muted-foreground/30',
-                )}
-              >
-                {!projectFilter && <Check className="icon-2xs" />}
-              </span>
-              <span className="flex-1">{t('allThreads.allProjects')}</span>
-            </button>
-            {projects.map((p) => {
-              const isActive = projectFilter === p.id;
-              return (
-                <button
-                  key={p.id}
-                  onClick={() => handleProjectFilterChange(p.id)}
-                  className={cn(
-                    'flex items-center gap-2 w-full px-2 py-1.5 text-xs rounded-sm transition-colors text-left',
-                    'hover:bg-accent hover:text-accent-foreground',
-                    isActive && 'text-accent-foreground',
-                  )}
-                >
-                  <span
-                    className={cn(
-                      'flex h-3.5 w-3.5 items-center justify-center rounded-full border',
-                      isActive
-                        ? 'bg-primary border-primary text-primary-foreground'
-                        : 'border-muted-foreground/30',
-                    )}
+          <PopoverContent align="start" className="w-[240px] p-0">
+            <Command>
+              <CommandInput
+                placeholder={t('kanban.searchProject')}
+                className="h-9 text-xs"
+                data-testid="all-threads-project-filter-search"
+              />
+              <CommandList>
+                <CommandEmpty>{t('commandPalette.noResults')}</CommandEmpty>
+                <CommandGroup>
+                  <CommandItem
+                    value={t('allThreads.allProjects')}
+                    onSelect={() => {
+                      handleProjectFilterChange(null);
+                      setProjectFilterOpen(false);
+                    }}
+                    className="text-xs"
                   >
-                    {isActive && <Check className="icon-2xs" />}
-                  </span>
-                  <span className="flex-1 truncate">{p.name}</span>
-                </button>
-              );
-            })}
+                    <span
+                      className={cn(
+                        'flex h-3.5 w-3.5 items-center justify-center rounded-full border',
+                        !projectFilter
+                          ? 'bg-primary border-primary text-primary-foreground'
+                          : 'border-muted-foreground/30',
+                      )}
+                    >
+                      {!projectFilter && <Check className="icon-2xs" />}
+                    </span>
+                    <span className="flex-1">{t('allThreads.allProjects')}</span>
+                  </CommandItem>
+                  {projects.map((p) => {
+                    const isActive = projectFilter === p.id;
+                    return (
+                      <CommandItem
+                        key={p.id}
+                        value={`${p.name} ${p.path ?? ''}`}
+                        onSelect={() => {
+                          handleProjectFilterChange(p.id);
+                          setProjectFilterOpen(false);
+                        }}
+                        className="text-xs"
+                      >
+                        <span
+                          className={cn(
+                            'flex h-3.5 w-3.5 items-center justify-center rounded-full border',
+                            isActive
+                              ? 'bg-primary border-primary text-primary-foreground'
+                              : 'border-muted-foreground/30',
+                          )}
+                        >
+                          {isActive && <Check className="icon-2xs" />}
+                        </span>
+                        <span className="flex-1 truncate">{p.name}</span>
+                      </CommandItem>
+                    );
+                  })}
+                </CommandGroup>
+              </CommandList>
+            </Command>
           </PopoverContent>
         </Popover>
 

@@ -113,15 +113,22 @@ async function directFetch(
   return { ok: res.ok, status: res.status, body };
 }
 
-function buildForwardHeaders(userId: string, orgId?: string): Record<string, string> {
+function buildForwardHeaders(
+  userId: string,
+  orgId?: string,
+  role?: string,
+  orgName?: string,
+): Record<string, string> {
   const headers: Record<string, string> = {
     'Content-Type': 'application/json',
     'X-Forwarded-User': userId,
     'X-Runner-Auth': RUNNER_AUTH_SECRET,
   };
   if (orgId) headers['X-Forwarded-Org'] = orgId;
+  if (orgName) headers['X-Forwarded-Org-Name'] = orgName;
+  if (role) headers['X-Forwarded-Role'] = role;
   const { signature, timestamp } = signForwardedIdentity(
-    { userId, orgId: orgId ?? null },
+    { userId, role: role ?? null, orgId: orgId ?? null, orgName: orgName ?? null },
     RUNNER_AUTH_SECRET,
   );
   headers[SIGNATURE_HEADER] = signature;
@@ -332,7 +339,12 @@ async function createThreadOnRunner(c: any, runnerPath: string) {
   }
 
   try {
-    const headers = buildForwardHeaders(userId, c.get('organizationId') as string | undefined);
+    const headers = buildForwardHeaders(
+      userId,
+      c.get('organizationId') as string | undefined,
+      c.get('userRole') as string | undefined,
+      c.get('organizationName') as string | undefined,
+    );
     const result = await fetchFromRunner(resolved, runnerPath, {
       method: 'POST',
       headers,
@@ -485,7 +497,12 @@ threadRoutes.delete('/:id', async (c) => {
       httpUrl: runnerInfo.httpUrl,
     };
     try {
-      const headers = buildForwardHeaders(userId, c.get('organizationId') as string | undefined);
+      const headers = buildForwardHeaders(
+        userId,
+        c.get('organizationId') as string | undefined,
+        c.get('userRole') as string | undefined,
+        c.get('organizationName') as string | undefined,
+      );
       await fetchFromRunner(resolved, `/api/threads/${threadId}`, {
         method: 'DELETE',
         headers,

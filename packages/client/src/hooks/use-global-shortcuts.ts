@@ -1,4 +1,4 @@
-import { startTransition, useEffect } from 'react';
+import { useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 
 import { buildPath } from '@/lib/url';
@@ -21,9 +21,7 @@ export function useGlobalShortcuts(
       if (e.ctrlKey && e.key === 'k') {
         e.preventDefault();
         e.stopPropagation();
-        startTransition(() => {
-          onToggleCommandPalette();
-        });
+        onToggleCommandPalette();
         return;
       }
 
@@ -31,9 +29,7 @@ export function useGlobalShortcuts(
       if (e.ctrlKey && e.key === 'p') {
         e.preventDefault();
         e.stopPropagation();
-        startTransition(() => {
-          onToggleFileSearch();
-        });
+        onToggleFileSearch();
         return;
       }
 
