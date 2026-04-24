@@ -90,10 +90,20 @@ class WSBroker {
 
   /** Record a pong received from a client */
   handlePong(ws: ServerWebSocket<unknown>): void {
-    this.missedPongs.set(ws, 0);
+    // Only track pongs for known clients — avoids leaking missedPongs entries
+    // for ws instances that were never registered via addClient.
+    if (this.clients.has(ws)) {
+      this.missedPongs.set(ws, 0);
+    }
   }
 
   addClient(ws: ServerWebSocket<unknown>, userId: string, organizationId?: string | null): void {
+    // Defensive: if the same ws is re-registered (reconnect race), drop the
+    // prior entry so missedPongs / clients cannot diverge.
+    if (this.clients.has(ws)) {
+      this.clients.delete(ws);
+      this.missedPongs.delete(ws);
+    }
     this.clients.set(ws, { userId, organizationId: organizationId ?? null });
     this.missedPongs.set(ws, 0);
     log.info('Client connected', {

@@ -61,14 +61,17 @@ export function initDatabase(options?: {
     });
   } else {
     const dbPath = options?.sqlitePath ?? resolve(DATA_DIR, 'data.db');
-    // Ensure restrictive permissions on the database file (owner-only read/write)
-    if (!existsSync(dbPath)) {
-      writeFileSync(dbPath, '', { mode: 0o600 });
-    } else {
-      try {
-        chmodSync(dbPath, 0o600);
-      } catch {
-        // May fail on non-POSIX filesystems — best effort
+    // SQLite's in-memory sentinel — never touch the filesystem.
+    if (dbPath !== ':memory:') {
+      // Ensure restrictive permissions on the database file (owner-only read/write)
+      if (!existsSync(dbPath)) {
+        writeFileSync(dbPath, '', { mode: 0o600 });
+      } else {
+        try {
+          chmodSync(dbPath, 0o600);
+        } catch {
+          // May fail on non-POSIX filesystems — best effort
+        }
       }
     }
     // Use the legacy wrapper so _legacyConnection stays populated

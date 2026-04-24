@@ -85,6 +85,7 @@ export {
   stashDrop,
   stashList,
   stashShow,
+  stashFileDiff,
   resetSoft,
   type StashEntry,
 } from './stash.js';

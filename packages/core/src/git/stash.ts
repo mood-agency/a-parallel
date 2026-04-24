@@ -102,6 +102,26 @@ export function stashShow(
   );
 }
 
+/**
+ * Get the diff for a single file within a stash entry.
+ */
+export function stashFileDiff(
+  cwd: string,
+  stashRef: string,
+  filePath: string,
+): ResultAsync<string, DomainError> {
+  return ResultAsync.fromPromise(
+    (async () => {
+      const result = await gitRead(['stash', 'show', '-p', stashRef, '--', filePath], {
+        cwd,
+        reject: false,
+      });
+      return result.exitCode === 0 ? result.stdout : '';
+    })(),
+    (error) => internal(String(error)),
+  );
+}
+
 // ─── Reset Soft ─────────────────────────────────────────
 
 /**

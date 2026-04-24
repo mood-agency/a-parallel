@@ -58,6 +58,25 @@ export interface ProcessOptions {
   stdin?: string; // data to write to stdin
   /** Skip the concurrency pool (e.g. for critical single-shot commands). */
   skipPool?: boolean;
+  /**
+   * Maximum bytes to buffer for stdout+stderr combined. Process is killed and
+   * the promise rejects if exceeded. Defaults to DEFAULT_MAX_OUTPUT_BYTES.
+   * Set to 0 to disable the cap (use with care — large diffs can OOM).
+   */
+  maxOutputBytes?: number;
+}
+
+/** 50MB default — protects against huge `git diff` outputs OOMing the runner. */
+export const DEFAULT_MAX_OUTPUT_BYTES = 50 * 1024 * 1024;
+
+export class ProcessOutputTooLargeError extends Error {
+  constructor(
+    public command: string,
+    public limit: number,
+  ) {
+    super(`Command output exceeded ${limit} bytes: ${command}`);
+    this.name = 'ProcessOutputTooLargeError';
+  }
 }
 
 export class ProcessExecutionError extends Error {
@@ -128,6 +147,42 @@ async function _executeRaw(
   return _executeRawNode(command, args, options);
 }
 
+/**
+ * Read a ReadableStream as text, enforcing a byte cap. Calls onOverflow (to
+ * kill the process) and throws ProcessOutputTooLargeError once the cap is hit,
+ * avoiding unbounded Buffer.concat for huge diffs.
+ */
+async function readStreamWithCap(
+  stream: ReadableStream<Uint8Array>,
+  maxBytes: number,
+  onOverflow: () => void,
+): Promise<string> {
+  const reader = stream.getReader();
+  const decoder = new TextDecoder();
+  let total = 0;
+  let out = '';
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      if (value) {
+        total += value.byteLength;
+        if (total > maxBytes) {
+          onOverflow();
+          throw new ProcessOutputTooLargeError('stream', maxBytes);
+        }
+        out += decoder.decode(value, { stream: true });
+      }
+    }
+    out += decoder.decode();
+    return out;
+  } finally {
+    try {
+      reader.releaseLock();
+    } catch {}
+  }
+}
+
 /** Bun-optimized path using Bun.spawn */
 async function _executeRawBun(
   command: string,
@@ -143,6 +198,7 @@ async function _executeRawBun(
   });
 
   const timeoutMs = options.timeout ?? 30_000;
+  const maxBytes = options.maxOutputBytes ?? DEFAULT_MAX_OUTPUT_BYTES;
   let timeoutId: ReturnType<typeof setTimeout> | undefined;
 
   const timeoutPromise = new Promise<never>((_, reject) => {
@@ -156,10 +212,16 @@ async function _executeRawBun(
     // Read streams BEFORE awaiting exit to avoid race condition.
     // In Bun, once proc.exited resolves the ReadableStreams may already be
     // closed/drained, causing read failures and ECONNRESET on the HTTP side.
+    const readCapped =
+      maxBytes > 0
+        ? (stream: ReadableStream<Uint8Array>) =>
+            readStreamWithCap(stream, maxBytes, () => proc.kill())
+        : (stream: ReadableStream<Uint8Array>) => new Response(stream).text();
+
     const [stdout, stderr, exitCode] = await Promise.race([
       Promise.all([
-        new Response(proc.stdout).text(),
-        new Response(proc.stderr).text(),
+        readCapped(proc.stdout as ReadableStream<Uint8Array>),
+        readCapped(proc.stderr as ReadableStream<Uint8Array>),
         proc.exited,
       ]),
       timeoutPromise,
@@ -193,6 +255,7 @@ async function _executeRawNode(
   options: ProcessOptions,
 ): Promise<ProcessResult> {
   const timeoutMs = options.timeout ?? 30_000;
+  const maxBytes = options.maxOutputBytes ?? DEFAULT_MAX_OUTPUT_BYTES;
 
   return new Promise((resolve, reject) => {
     const proc = spawn(command, args, {
@@ -210,8 +273,21 @@ async function _executeRawNode(
 
     const stdoutChunks: Buffer[] = [];
     const stderrChunks: Buffer[] = [];
-    proc.stdout.on('data', (chunk: Buffer) => stdoutChunks.push(chunk));
-    proc.stderr.on('data', (chunk: Buffer) => stderrChunks.push(chunk));
+    let totalBytes = 0;
+    let overflowed = false;
+    const onChunk = (chunk: Buffer, chunks: Buffer[]) => {
+      if (overflowed) return;
+      chunks.push(chunk);
+      totalBytes += chunk.byteLength;
+      if (maxBytes > 0 && totalBytes > maxBytes) {
+        overflowed = true;
+        proc.kill();
+        clearTimeout(timer);
+        reject(new ProcessOutputTooLargeError(`${command} ${args.join(' ')}`, maxBytes));
+      }
+    };
+    proc.stdout.on('data', (chunk: Buffer) => onChunk(chunk, stdoutChunks));
+    proc.stderr.on('data', (chunk: Buffer) => onChunk(chunk, stderrChunks));
 
     const timer = setTimeout(() => {
       proc.kill();
@@ -219,6 +295,7 @@ async function _executeRawNode(
     }, timeoutMs);
 
     proc.on('close', (code) => {
+      if (overflowed) return;
       clearTimeout(timer);
       const stdout = Buffer.concat(stdoutChunks).toString();
       const stderr = Buffer.concat(stderrChunks).toString();

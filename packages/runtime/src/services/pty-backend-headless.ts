@@ -27,7 +27,11 @@ interface HeadlessSession {
   proc: Subprocess;
   headless: InstanceType<typeof HeadlessTerminal>;
   serialize: SerializeAddon;
+  cachedSerialization: string | null;
+  dirty: boolean;
 }
+
+const SCROLLBACK_LINES = 2000;
 
 function resolveShell(shellId?: string): { exe: string; args: string[] } {
   if (!shellId || shellId === 'default') {
@@ -89,7 +93,7 @@ export class HeadlessPtyBackend implements PtyBackend {
       const headless = new HeadlessTerminal({
         cols: effectiveCols,
         rows: effectiveRows,
-        scrollback: 5000,
+        scrollback: SCROLLBACK_LINES,
         allowProposedApi: true,
       });
       const serialize = new SerializeAddon();
@@ -105,6 +109,11 @@ export class HeadlessPtyBackend implements PtyBackend {
             const str = data.toString();
             // Write to headless terminal to track state
             headless.write(str);
+            const s = sessions.get(id);
+            if (s) {
+              s.dirty = true;
+              s.cachedSerialization = null;
+            }
             // Forward to client
             callbacks.onData(id, str);
           },
@@ -120,7 +129,13 @@ export class HeadlessPtyBackend implements PtyBackend {
         },
       });
 
-      this.sessions.set(id, { proc, headless, serialize });
+      this.sessions.set(id, {
+        proc,
+        headless,
+        serialize,
+        cachedSerialization: null,
+        dirty: true,
+      });
       log.info('Headless PTY spawned', { namespace: 'pty-headless', ptyId: id, shell: exe });
     } catch (err: any) {
       log.error('Failed to spawn headless PTY', {
@@ -153,6 +168,8 @@ export class HeadlessPtyBackend implements PtyBackend {
       try {
         (session.proc as any).terminal?.resize(cols, rows);
         session.headless.resize(cols, rows);
+        session.dirty = true;
+        session.cachedSerialization = null;
       } catch (err: any) {
         log.error('Failed to resize headless PTY', {
           namespace: 'pty-headless',
@@ -211,7 +228,13 @@ export class HeadlessPtyBackend implements PtyBackend {
     if (!session) return null;
 
     try {
-      return session.serialize.serialize();
+      if (!session.dirty && session.cachedSerialization !== null) {
+        return session.cachedSerialization;
+      }
+      const state = session.serialize.serialize();
+      session.cachedSerialization = state;
+      session.dirty = false;
+      return state;
     } catch (err: any) {
       log.error('Failed to serialize terminal state', {
         namespace: 'pty-headless',
@@ -230,7 +253,14 @@ export class HeadlessPtyBackend implements PtyBackend {
     const states = new Map<string, string>();
     for (const [id, session] of this.sessions) {
       try {
-        const state = session.serialize.serialize();
+        let state: string;
+        if (!session.dirty && session.cachedSerialization !== null) {
+          state = session.cachedSerialization;
+        } else {
+          state = session.serialize.serialize();
+          session.cachedSerialization = state;
+          session.dirty = false;
+        }
         if (state) states.set(id, state);
       } catch (err: any) {
         log.error('Failed to serialize session for persistence', {
@@ -288,7 +318,7 @@ export class HeadlessPtyBackend implements PtyBackend {
       const headless = new HeadlessTerminal({
         cols: effectiveCols,
         rows: effectiveRows,
-        scrollback: 5000,
+        scrollback: SCROLLBACK_LINES,
         allowProposedApi: true,
       });
       const serialize = new SerializeAddon();
@@ -309,6 +339,11 @@ export class HeadlessPtyBackend implements PtyBackend {
           data(_terminal, data) {
             const str = data.toString();
             headless.write(str);
+            const s = sessions.get(id);
+            if (s) {
+              s.dirty = true;
+              s.cachedSerialization = null;
+            }
             callbacks.onData(id, str);
           },
           exit(_terminal, exitCode) {
@@ -322,7 +357,13 @@ export class HeadlessPtyBackend implements PtyBackend {
         },
       });
 
-      this.sessions.set(id, { proc, headless, serialize });
+      this.sessions.set(id, {
+        proc,
+        headless,
+        serialize,
+        cachedSerialization: null,
+        dirty: true,
+      });
       log.info('Headless PTY restored', {
         namespace: 'pty-headless',
         ptyId: id,

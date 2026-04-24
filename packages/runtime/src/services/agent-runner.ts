@@ -36,6 +36,7 @@ export class AgentRunner {
   ) {
     const orchestrator = new AgentOrchestrator(processFactory);
     const state = new AgentStateTracker();
+    state.startAutoSweep();
     const messageHandler = new AgentMessageHandler(state, threadManager, wsBroker, getProject);
 
     this.eventRouter = new AgentEventRouter(
