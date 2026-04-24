@@ -64,6 +64,21 @@ export function useActiveThreadId() {
   return useThreadStore((s) => s.activeThread?.id ?? null);
 }
 
+/** Subscribe to the active thread's worktreePath only. */
+export function useActiveThreadWorktreePath() {
+  return useThreadStore((s) => s.activeThread?.worktreePath ?? null);
+}
+
+/** Subscribe to the active thread's projectId only. */
+export function useActiveThreadProjectId() {
+  return useThreadStore((s) => s.activeThread?.projectId ?? null);
+}
+
+/** Subscribe to the active thread's branch only. */
+export function useActiveThreadBranch() {
+  return useThreadStore((s) => s.activeThread?.branch ?? null);
+}
+
 /**
  * Subscribe to the active thread's `initInfo`.
  *

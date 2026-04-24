@@ -12,7 +12,6 @@ import { useGlobalShortcuts } from '@/hooks/use-global-shortcuts';
 import { useRouteSync } from '@/hooks/use-route-sync';
 import { useThreadHistoryTracker } from '@/hooks/use-thread-history-tracker';
 import { useWS } from '@/hooks/use-ws';
-import { cn } from '@/lib/utils';
 import { TOAST_DURATION } from '@/lib/utils';
 import { useAgentTemplateStore } from '@/stores/agent-template-store';
 import { useInternalEditorStore } from '@/stores/internal-editor-store';
@@ -187,20 +186,6 @@ export function App() {
     },
   });
 
-  // Eagerly mount ReviewPane (hidden) after initial load so first toggle is instant.
-  // Deferred via requestIdleCallback to avoid blocking the initial render.
-  const [reviewPaneReady, setReviewPaneReady] = useState(false);
-  useEffect(() => {
-    const mount = () => setReviewPaneReady(true);
-    if (typeof requestIdleCallback === 'function') {
-      const id = requestIdleCallback(mount);
-      return () => cancelIdleCallback(id);
-    } else {
-      const id = setTimeout(mount, 3000);
-      return () => clearTimeout(id);
-    }
-  }, []);
-
   // Register navigate so the store can trigger navigation (e.g. from toasts)
   useEffect(() => {
     setAppNavigate(navigate);
@@ -311,15 +296,12 @@ export function App() {
           />
         )}
 
-        {/* Right panel — Review / Tasks / Activity. Kept mounted (width 0) once
-            ready so subsequent toggles are instant and the open/close animates. */}
-        {!isFullScreenView && (reviewPaneReady || reviewPaneOpen) && (
+        {/* Right panel — Review / Tasks / Activity. Mounted only while open;
+            the chunk is prefetched on idle so first open is near-instant. */}
+        {rightPaneVisible && (
           <div
-            className={cn(
-              'flex min-w-0 flex-shrink-0 flex-col overflow-hidden bg-sidebar',
-              !resizing && 'transition-[width] duration-200 ease-linear',
-            )}
-            style={{ width: rightPaneVisible ? `${reviewPaneWidth}vw` : '0px' }}
+            className="flex min-w-0 flex-shrink-0 flex-col overflow-hidden bg-sidebar"
+            style={{ width: `${reviewPaneWidth}vw` }}
           >
             <div className="min-h-0 flex-1 overflow-hidden">
               <ErrorBoundary area="right-pane">

@@ -102,7 +102,7 @@ export const TaskCard = memo(function TaskCard({
         </span>
         {hasChildren && (
           <span className="flex-shrink-0 rounded bg-muted px-1.5 py-0.5 font-mono text-[10px] text-muted-foreground">
-            {childToolCalls!.length} tools
+            {childToolCalls!.length} tool calls
           </span>
         )}
         {displayTime && (

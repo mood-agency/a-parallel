@@ -17,7 +17,7 @@ import { api } from '@/lib/api';
 import { FileExtensionIcon } from '@/lib/file-icons';
 import { useInternalEditorStore } from '@/stores/internal-editor-store';
 import { useProjectStore } from '@/stores/project-store';
-import { useThreadStore } from '@/stores/thread-store';
+import { useActiveThreadWorktreePath } from '@/stores/thread-selectors';
 
 interface FileSearchDialogProps {
   open: boolean;
@@ -36,10 +36,10 @@ export function FileSearchDialog({ open, onOpenChange }: FileSearchDialogProps) 
   const selectedProjectId = useProjectStore((s) => s.selectedProjectId);
   const projects = useProjectStore((s) => s.projects);
   const project = projects.find((p) => p.id === selectedProjectId);
-  const activeThread = useThreadStore((s) => s.activeThread);
+  const worktreePath = useActiveThreadWorktreePath();
 
   // Use worktree path when thread is in worktree mode, otherwise fall back to project path
-  const basePath = activeThread?.worktreePath || project?.path;
+  const basePath = worktreePath || project?.path;
 
   const [query, setQuery] = useState('');
   const [files, setFiles] = useState<BrowseFile[]>([]);

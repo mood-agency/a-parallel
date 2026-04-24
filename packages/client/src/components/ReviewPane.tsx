@@ -103,7 +103,7 @@ import { useUIStore, type ReviewSubTab } from '@/stores/ui-store';
 
 import { CommitHistoryTab } from './CommitHistoryTab';
 import { DiffStats } from './DiffStats';
-import { buildTreeRows, collectAllFolderPaths } from './FileTree';
+import { FileTree, buildTreeRows, collectAllFolderPaths } from './FileTree';
 import { InlineProgressSteps } from './InlineProgressSteps';
 import { PRSummaryCard } from './PRSummaryCard';
 import { PublishRepoDialog } from './PublishRepoDialog';
@@ -1548,7 +1548,7 @@ export function ReviewPane() {
       toast.success(t('review.stashDropSuccess', 'Stash discarded'));
     }
     setStashDropInProgress(null);
-    setExpandedStashIndex(null);
+    setSelectedStashIndex(null);
     setStashFiles([]);
     await refresh();
     refreshStashList();
@@ -1612,27 +1612,108 @@ export function ReviewPane() {
     [setReviewSubTabStore, location.pathname, location.search, navigate],
   );
 
-  // ── Stash tab: expanded stash entry to show its files ──
-  const [expandedStashIndex, setExpandedStashIndex] = useState<string | null>(null);
+  // ── Stash tab: dialog state for viewing stash contents ──
+  const [selectedStashIndex, setSelectedStashIndex] = useState<string | null>(null);
   const [stashFiles, setStashFiles] = useState<
     Array<{ path: string; additions: number; deletions: number }>
   >([]);
   const [stashFilesLoading, setStashFilesLoading] = useState(false);
+  const [stashDialogFile, setStashDialogFile] = useState<string | null>(null);
+  const [stashDialogDiff, setStashDialogDiff] = useState<string | null>(null);
+  const [stashDialogDiffLoading, setStashDialogDiffLoading] = useState(false);
+  const [stashFileSearch, setStashFileSearch] = useState('');
 
-  const loadStashFiles = useCallback(
-    async (index: string) => {
+  const loadStashFileDiff = useCallback(
+    async (index: string, filePath: string) => {
       if (!hasGitContext) return;
-      setStashFilesLoading(true);
+      setStashDialogFile(filePath);
+      setStashDialogDiffLoading(true);
+      setStashDialogDiff(null);
       const result = effectiveThreadId
-        ? await api.stashShow(effectiveThreadId, index)
-        : await api.projectStashShow(projectModeId!, index);
+        ? await api.stashFileDiff(effectiveThreadId, index, filePath)
+        : await api.projectStashFileDiff(projectModeId!, index, filePath);
       if (result.isOk()) {
-        setStashFiles(result.value.files);
+        setStashDialogDiff(result.value.diff);
+      } else {
+        toast.error(`Failed to load diff: ${result.error.message}`);
       }
-      setStashFilesLoading(false);
+      setStashDialogDiffLoading(false);
     },
     [hasGitContext, effectiveThreadId, projectModeId],
   );
+
+  // Load files + first diff when a stash is selected
+  useEffect(() => {
+    if (!selectedStashIndex || !hasGitContext) {
+      setStashFiles([]);
+      setStashDialogFile(null);
+      setStashDialogDiff(null);
+      setStashFileSearch('');
+      return;
+    }
+    let cancelled = false;
+    setStashFilesLoading(true);
+    setStashFileSearch('');
+    const load = async () => {
+      const filesResult = effectiveThreadId
+        ? await api.stashShow(effectiveThreadId, selectedStashIndex)
+        : await api.projectStashShow(projectModeId!, selectedStashIndex);
+      if (cancelled) return;
+      if (filesResult.isOk()) {
+        setStashFiles(filesResult.value.files);
+        if (filesResult.value.files.length > 0) {
+          const firstPath = filesResult.value.files[0].path;
+          setStashDialogFile(firstPath);
+          setStashDialogDiffLoading(true);
+          setStashDialogDiff(null);
+          const diffResult = effectiveThreadId
+            ? await api.stashFileDiff(effectiveThreadId, selectedStashIndex, firstPath)
+            : await api.projectStashFileDiff(projectModeId!, selectedStashIndex, firstPath);
+          if (!cancelled && diffResult.isOk()) {
+            setStashDialogDiff(diffResult.value.diff);
+          }
+          if (!cancelled) setStashDialogDiffLoading(false);
+        }
+      } else {
+        toast.error(`Failed to load stash files: ${filesResult.error.message}`);
+        setStashFiles([]);
+      }
+      if (!cancelled) setStashFilesLoading(false);
+    };
+    load();
+    return () => {
+      cancelled = true;
+    };
+  }, [selectedStashIndex, hasGitContext, effectiveThreadId, projectModeId]);
+
+  // Treeview data for stash dialog
+  const stashTreeFiles = useMemo<FileDiffSummary[]>(() => {
+    const all: FileDiffSummary[] = stashFiles.map((f) => ({
+      path: f.path,
+      status: 'modified',
+      staged: false,
+      additions: f.additions,
+      deletions: f.deletions,
+    }));
+    if (!stashFileSearch.trim()) return all;
+    const q = stashFileSearch.toLowerCase();
+    return all.filter((f) => f.path.toLowerCase().includes(q));
+  }, [stashFiles, stashFileSearch]);
+
+  const selectedStashEntry = useMemo(() => {
+    if (!selectedStashIndex) return null;
+    return (
+      stashEntries.find(
+        (e) => e.index.replace('stash@{', '').replace('}', '') === selectedStashIndex,
+      ) ?? null
+    );
+  }, [selectedStashIndex, stashEntries]);
+
+  const stashDialogDiffCache = useMemo(() => {
+    const m = new Map<string, string>();
+    if (stashDialogFile && stashDialogDiff) m.set(stashDialogFile, stashDialogDiff);
+    return m;
+  }, [stashDialogFile, stashDialogDiff]);
 
   // When a thread is active, commits are delegated to the agent, so allow even if agent is running
   const canCommit =
@@ -2925,147 +3006,220 @@ export function ReviewPane() {
               <div className="flex flex-col divide-y divide-sidebar-border">
                 {filteredStashEntries.map((entry) => {
                   const idx = entry.index.replace('stash@{', '').replace('}', '');
-                  const isExpanded = expandedStashIndex === idx;
                   return (
-                    <div key={entry.index} className="flex flex-col">
-                      <div
-                        role="button"
-                        tabIndex={0}
-                        className={cn(
-                          'flex w-full cursor-pointer items-center gap-2 px-3 py-2 text-left text-xs hover:bg-sidebar-accent/50 transition-colors',
-                          isExpanded && 'bg-sidebar-accent/30',
-                        )}
-                        onClick={() => {
-                          if (isExpanded) {
-                            setExpandedStashIndex(null);
-                            setStashFiles([]);
-                          } else {
-                            setExpandedStashIndex(idx);
-                            loadStashFiles(idx);
-                          }
-                        }}
-                        onKeyDown={(e) => {
-                          if (e.key === 'Enter' || e.key === ' ') {
-                            e.preventDefault();
-                            if (isExpanded) {
-                              setExpandedStashIndex(null);
-                              setStashFiles([]);
-                            } else {
-                              setExpandedStashIndex(idx);
-                              loadStashFiles(idx);
-                            }
-                          }
-                        }}
-                        data-testid={`stash-entry-${idx}`}
-                      >
-                        <ChevronRight
-                          className={cn(
-                            'h-3 w-3 shrink-0 transition-transform',
-                            isExpanded && 'rotate-90',
-                          )}
-                        />
-                        <div className="flex min-w-0 flex-1 flex-col">
-                          <span className="truncate font-medium">{entry.message}</span>
-                          <span className="text-[10px] text-muted-foreground">
-                            {entry.relativeDate}
-                          </span>
-                        </div>
-                        <Tooltip>
-                          <TooltipTrigger asChild>
-                            <Button
-                              variant="ghost"
-                              size="icon-sm"
-                              className="shrink-0 text-muted-foreground"
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                handleStashPop();
-                              }}
-                              disabled={stashPopInProgress || !!isAgentRunning || idx !== '0'}
-                              data-testid={`stash-pop-${idx}`}
-                            >
-                              {stashPopInProgress && idx === '0' ? (
-                                <Loader2 className="icon-sm animate-spin" />
-                              ) : (
-                                <ArchiveRestore className="icon-sm" />
-                              )}
-                            </Button>
-                          </TooltipTrigger>
-                          <TooltipContent side="left">
-                            {idx === '0'
-                              ? t('review.popStash', 'Pop stash')
-                              : t(
-                                  'review.popStashOnlyLatest',
-                                  'Only the latest stash can be popped',
-                                )}
-                          </TooltipContent>
-                        </Tooltip>
-                        <Tooltip>
-                          <TooltipTrigger asChild>
-                            <Button
-                              variant="ghost"
-                              size="icon-sm"
-                              className="shrink-0 text-muted-foreground hover:text-destructive"
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                setConfirmDialog({ type: 'drop-stash', stashIndex: idx });
-                              }}
-                              disabled={!!stashDropInProgress || !!isAgentRunning}
-                              data-testid={`stash-drop-${idx}`}
-                            >
-                              {stashDropInProgress === idx ? (
-                                <Loader2 className="icon-sm animate-spin" />
-                              ) : (
-                                <Trash2 className="icon-sm" />
-                              )}
-                            </Button>
-                          </TooltipTrigger>
-                          <TooltipContent side="left">
-                            {t('review.dropStash', 'Discard stash')}
-                          </TooltipContent>
-                        </Tooltip>
+                    <div
+                      key={entry.index}
+                      role="button"
+                      tabIndex={0}
+                      className="flex w-full cursor-pointer items-center gap-2 px-3 py-2 text-left text-xs transition-colors hover:bg-sidebar-accent/50"
+                      onClick={() => setSelectedStashIndex(idx)}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter' || e.key === ' ') {
+                          e.preventDefault();
+                          setSelectedStashIndex(idx);
+                        }
+                      }}
+                      data-testid={`stash-entry-${idx}`}
+                    >
+                      <Archive className="h-3 w-3 shrink-0 text-muted-foreground" />
+                      <div className="flex min-w-0 flex-1 flex-col">
+                        <span className="truncate font-medium">{entry.message}</span>
+                        <span className="text-[10px] text-muted-foreground">
+                          {entry.relativeDate}
+                        </span>
                       </div>
-                      {isExpanded && (
-                        <div className="border-t border-sidebar-border/50 bg-sidebar-accent/20">
-                          {stashFilesLoading ? (
-                            <div className="flex items-center gap-2 px-6 py-2 text-xs text-muted-foreground">
-                              <Loader2 className="h-3 w-3 animate-spin" />
-                              {t('review.loading', 'Loading...')}
-                            </div>
-                          ) : stashFiles.length === 0 ? (
-                            <div className="px-6 py-2 text-xs text-muted-foreground">
-                              {t('review.noFiles', 'No files')}
-                            </div>
-                          ) : (
-                            stashFiles.map((file) => (
-                              <div
-                                key={file.path}
-                                className="flex items-center gap-2 px-6 py-1 text-xs"
-                                data-testid={`stash-file-${file.path}`}
-                              >
-                                <FileExtensionIcon
-                                  filePath={file.path}
-                                  className="h-3.5 w-3.5 shrink-0"
-                                />
-                                <span className="min-w-0 flex-1 truncate text-foreground/80">
-                                  {file.path}
-                                </span>
-                                <span className="shrink-0 tabular-nums text-green-500">
-                                  +{file.additions}
-                                </span>
-                                <span className="shrink-0 tabular-nums text-red-500">
-                                  -{file.deletions}
-                                </span>
-                              </div>
-                            ))
-                          )}
-                        </div>
-                      )}
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <Button
+                            variant="ghost"
+                            size="icon-sm"
+                            className="shrink-0 text-muted-foreground"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleStashPop();
+                            }}
+                            disabled={stashPopInProgress || !!isAgentRunning || idx !== '0'}
+                            data-testid={`stash-pop-${idx}`}
+                          >
+                            {stashPopInProgress && idx === '0' ? (
+                              <Loader2 className="icon-sm animate-spin" />
+                            ) : (
+                              <ArchiveRestore className="icon-sm" />
+                            )}
+                          </Button>
+                        </TooltipTrigger>
+                        <TooltipContent side="left">
+                          {idx === '0'
+                            ? t('review.popStash', 'Pop stash')
+                            : t('review.popStashOnlyLatest', 'Only the latest stash can be popped')}
+                        </TooltipContent>
+                      </Tooltip>
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <Button
+                            variant="ghost"
+                            size="icon-sm"
+                            className="shrink-0 text-muted-foreground hover:text-destructive"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setConfirmDialog({ type: 'drop-stash', stashIndex: idx });
+                            }}
+                            disabled={!!stashDropInProgress || !!isAgentRunning}
+                            data-testid={`stash-drop-${idx}`}
+                          >
+                            {stashDropInProgress === idx ? (
+                              <Loader2 className="icon-sm animate-spin" />
+                            ) : (
+                              <Trash2 className="icon-sm" />
+                            )}
+                          </Button>
+                        </TooltipTrigger>
+                        <TooltipContent side="left">
+                          {t('review.dropStash', 'Discard stash')}
+                        </TooltipContent>
+                      </Tooltip>
                     </div>
                   );
                 })}
               </div>
             )}
           </div>
+
+          {/* Stash detail dialog */}
+          <Dialog
+            open={!!selectedStashIndex}
+            onOpenChange={(open) => {
+              if (!open) setSelectedStashIndex(null);
+            }}
+          >
+            <DialogContent
+              className="flex h-[85vh] max-w-[90vw] flex-col gap-0 p-0"
+              data-testid="stash-detail-dialog"
+            >
+              <div className="shrink-0 border-b border-border px-4 py-3">
+                <div className="flex items-start justify-between gap-2">
+                  <DialogTitle className="text-sm font-semibold leading-tight">
+                    {selectedStashEntry?.message ?? t('review.stashDetails', 'Stash details')}
+                  </DialogTitle>
+                  <Button
+                    variant="ghost"
+                    size="icon-xs"
+                    onClick={() => setSelectedStashIndex(null)}
+                    className="shrink-0 text-muted-foreground"
+                    data-testid="stash-detail-close"
+                  >
+                    <X className="icon-xs" />
+                  </Button>
+                </div>
+                <DialogDescription className="sr-only">
+                  {t('review.stashDetailsDesc', 'Stash detail with file changes and diffs')}
+                </DialogDescription>
+                {selectedStashEntry && (
+                  <div className="flex items-center gap-1.5 pt-1 text-[11px] text-muted-foreground">
+                    <Archive className="icon-xs flex-shrink-0" />
+                    <code className="flex-shrink-0 font-mono text-primary">
+                      {selectedStashEntry.index}
+                    </code>
+                    <span className="flex-shrink-0">{selectedStashEntry.relativeDate}</span>
+                    <span className="flex-shrink-0 text-muted-foreground">
+                      &middot; {stashFiles.length} file{stashFiles.length !== 1 ? 's' : ''}
+                    </span>
+                  </div>
+                )}
+              </div>
+
+              {stashFilesLoading ? (
+                <div className="flex flex-1 items-center justify-center gap-2 text-xs text-muted-foreground">
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                  {t('review.loading', 'Loading changes\u2026')}
+                </div>
+              ) : (
+                <div className="flex min-h-0 flex-1">
+                  <div
+                    className="flex w-[280px] shrink-0 flex-col border-r border-border"
+                    data-testid="stash-detail-file-tree"
+                  >
+                    {stashFiles.length > 0 && (
+                      <div className="shrink-0 border-b border-sidebar-border px-2 py-2">
+                        <div className="relative">
+                          <Search className="icon-sm pointer-events-none absolute left-2 top-1/2 -translate-y-1/2 text-muted-foreground" />
+                          <Input
+                            type="text"
+                            placeholder={t('review.searchFiles', 'Filter files\u2026')}
+                            aria-label={t('review.searchFiles', 'Filter files')}
+                            data-testid="stash-detail-file-filter"
+                            value={stashFileSearch}
+                            onChange={(e) => setStashFileSearch(e.target.value)}
+                            className="h-7 pl-7 pr-7 text-xs md:text-xs"
+                          />
+                          {stashFileSearch && (
+                            <Button
+                              variant="ghost"
+                              size="icon-xs"
+                              onClick={() => setStashFileSearch('')}
+                              aria-label={t('review.clearSearch', 'Clear search')}
+                              data-testid="stash-detail-file-filter-clear"
+                              className="absolute right-1 top-1/2 -translate-y-1/2 text-muted-foreground"
+                            >
+                              <X className="icon-xs" />
+                            </Button>
+                          )}
+                        </div>
+                      </div>
+                    )}
+                    <div className="min-h-0 flex-1 overflow-auto">
+                      {stashFiles.length === 0 ? (
+                        <div className="py-4 text-center text-xs text-muted-foreground">
+                          {t('review.noFiles', 'No files')}
+                        </div>
+                      ) : stashTreeFiles.length === 0 ? (
+                        <div className="py-4 text-center text-xs text-muted-foreground">
+                          {t('history.noMatchingFiles', 'No matching files')}
+                        </div>
+                      ) : (
+                        <FileTree
+                          files={stashTreeFiles}
+                          selectedFile={stashDialogFile}
+                          onFileClick={(p) =>
+                            selectedStashIndex && loadStashFileDiff(selectedStashIndex, p)
+                          }
+                          testIdPrefix="stash-detail"
+                          searchQuery={stashFileSearch || undefined}
+                        />
+                      )}
+                    </div>
+                  </div>
+
+                  <div
+                    className="flex min-w-0 flex-1 flex-col"
+                    data-testid="stash-detail-diff-pane"
+                  >
+                    {!stashDialogFile ? (
+                      <div className="flex flex-1 flex-col items-center justify-center gap-2 text-muted-foreground">
+                        <FileCode className="h-8 w-8 opacity-30" />
+                        <p className="text-xs">
+                          {t('history.selectFile', 'Select a file to view changes')}
+                        </p>
+                      </div>
+                    ) : (
+                      <ExpandedDiffView
+                        filePath={stashDialogFile}
+                        oldValue={stashDialogDiff ? parseDiffOld(stashDialogDiff) : ''}
+                        newValue={stashDialogDiff ? parseDiffNew(stashDialogDiff) : ''}
+                        loading={stashDialogDiffLoading}
+                        rawDiff={stashDialogDiff ?? undefined}
+                        files={stashTreeFiles}
+                        onFileSelect={(p) =>
+                          selectedStashIndex && loadStashFileDiff(selectedStashIndex, p)
+                        }
+                        diffCache={stashDialogDiffCache}
+                      />
+                    )}
+                  </div>
+                </div>
+              )}
+            </DialogContent>
+          </Dialog>
         </TabsContent>
 
         {/* Pull Requests tab */}

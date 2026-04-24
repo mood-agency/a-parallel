@@ -41,6 +41,7 @@ import type {
 import { create } from 'zustand';
 
 import { api } from '@/lib/api';
+import { metric } from '@/lib/telemetry';
 
 import {
   expandProject,
@@ -59,16 +60,20 @@ import {
   getSelectingThreadId,
   setSelectingThreadId,
   rebuildThreadProjectIndex,
+  invalidateSelectThread as _internalInvalidate,
 } from './thread-store-internals';
 import * as wsHandlers from './thread-ws-handlers';
-import { useUIStore } from './ui-store';
 
-// Re-export for external consumers
-export {
-  invalidateSelectThread,
-  setAppNavigate,
-  getSelectingThreadId,
-} from './thread-store-internals';
+export { setAppNavigate, getSelectingThreadId } from './thread-store-internals';
+
+/**
+ * Invalidate cached thread data so the next selectThread() refetches.
+ * Wraps the internal generation bump and also clears the per-thread LRU cache.
+ */
+export function invalidateSelectThread(): void {
+  _internalInvalidate();
+  cacheClear();
+}
 
 // ── Types ────────────────────────────────────────────────────────
 
@@ -275,6 +280,46 @@ const _prefetchCache = new Map<
   }
 }
 
+// ── Per-thread LRU cache ──────────────────────────────────────────
+// Avoids refetching messages on rapid back-and-forth thread switches.
+// Cache hit → set activeThread synchronously (no network); SWR refresh
+// in background if the entry is older than SWR_AFTER_MS but still within TTL.
+interface ThreadCacheEntry {
+  thread: ThreadWithMessages;
+  fetchedAt: number;
+}
+const THREAD_CACHE_MAX = 8;
+const THREAD_CACHE_TTL_MS = 5 * 60_000;
+const THREAD_CACHE_SWR_AFTER_MS = 30_000;
+const _threadCache = new Map<string, ThreadCacheEntry>();
+
+function cacheGet(id: string): ThreadCacheEntry | undefined {
+  const entry = _threadCache.get(id);
+  if (!entry) return undefined;
+  // Bump LRU recency
+  _threadCache.delete(id);
+  _threadCache.set(id, entry);
+  return entry;
+}
+
+function cachePut(id: string, thread: ThreadWithMessages): void {
+  if (_threadCache.has(id)) _threadCache.delete(id);
+  _threadCache.set(id, { thread, fetchedAt: Date.now() });
+  while (_threadCache.size > THREAD_CACHE_MAX) {
+    const oldest = _threadCache.keys().next().value;
+    if (!oldest) break;
+    _threadCache.delete(oldest);
+  }
+}
+
+function cacheInvalidate(id: string): void {
+  _threadCache.delete(id);
+}
+
+function cacheClear(): void {
+  _threadCache.clear();
+}
+
 // ── Store ────────────────────────────────────────────────────────
 
 // Abort controller for in-flight selectThread API requests.
@@ -342,6 +387,8 @@ export const useThreadStore = create<ThreadState>((set, get) => ({
     // Skip if already loading this exact thread (prevents StrictMode double-fire)
     if (threadId && threadId === getSelectingThreadId()) return;
 
+    const selectStart = performance.now();
+
     // Abort any in-flight fetch from a previous selectThread call.
     // This prevents piling up stale network requests during rapid clicking.
     _selectAbortController?.abort();
@@ -358,12 +405,51 @@ export const useThreadStore = create<ThreadState>((set, get) => ({
       selectedThreadId: threadId,
       activeThread: keepStale ? prevActive : threadId ? prevActive : null,
     });
-    useUIStore.setState({ newThreadProjectId: null, allThreadsProjectId: null });
+    // Lazy import breaks the ui-store ↔ thread-store runtime cycle.
+    import('./ui-store').then((m) =>
+      m.useUIStore.setState({ newThreadProjectId: null, allThreadsProjectId: null }),
+    );
 
     if (!threadId) {
       _selectAbortController = null;
       setSelectingThreadId(null);
       return;
+    }
+
+    // ── Cache hit fast path ───────────────────────────────────────
+    // Reuse the last activeThread snapshot for this thread when available.
+    // Avoids the network round trip on rapid back-and-forth switches.
+    const cached = cacheGet(threadId);
+    if (cached && Date.now() - cached.fetchedAt < THREAD_CACHE_TTL_MS) {
+      const stored = cached.thread;
+      // Re-merge per-thread state slices (these live outside the cached snapshot)
+      const storedSetupProgress =
+        stored.status === 'setting_up' ? get().setupProgressByThread[threadId] : undefined;
+      const storedContextUsage = get().contextUsageByThread[threadId];
+      const storedQueuedCount = get().queuedCountByThread[threadId];
+      set({
+        activeThread: {
+          ...stored,
+          setupProgress: storedSetupProgress ?? stored.setupProgress,
+          contextUsage: storedContextUsage ?? stored.contextUsage,
+          queuedCount: storedQueuedCount ?? stored.queuedCount,
+        },
+      });
+      bridgeSelectProject(stored.projectId);
+      flushWSBuffer(threadId, get());
+      metric('thread.select.duration', Math.round(performance.now() - selectStart), {
+        attributes: { cacheHit: 'true' },
+      });
+      // Stale-while-revalidate: kick off background refresh if entry is aging.
+      const isStale = Date.now() - cached.fetchedAt > THREAD_CACHE_SWR_AFTER_MS;
+      if (isStale) {
+        // Fire-and-forget; the existing fetch path below will write through.
+        // Drop down to the network path but skip the keepStale visual bridge.
+      } else {
+        if (getSelectingThreadId() === threadId) setSelectingThreadId(null);
+        if (_selectAbortController === abortController) _selectAbortController = null;
+        return;
+      }
     }
 
     try {
@@ -480,6 +566,9 @@ export const useThreadStore = create<ThreadState>((set, get) => ({
 
       // Replay any WS events that arrived while activeThread was loading
       flushWSBuffer(threadId, get());
+      metric('thread.select.duration', Math.round(performance.now() - selectStart), {
+        attributes: { cacheHit: 'false' },
+      });
     } finally {
       // Clear in-flight tracker so future selectThread calls for this thread can proceed
       if (getSelectingThreadId() === threadId) {
@@ -704,6 +793,7 @@ export const useThreadStore = create<ThreadState>((set, get) => ({
     }
     // Optimistic: update UI immediately, then fire API in background
     cleanupThreadActor(threadId);
+    cacheInvalidate(threadId);
     set({
       threadsByProject: {
         ...get().threadsByProject,
@@ -836,6 +926,9 @@ export const useThreadStore = create<ThreadState>((set, get) => ({
     const oldestMessage = activeThread.messages[0];
     if (!oldestMessage) return;
 
+    // Older messages are about to merge in — drop the snapshot so the next
+    // selectThread refetches the unified window instead of the cached tail.
+    cacheInvalidate(activeThread.id);
     set({ activeThread: { ...activeThread, loadingMore: true } });
 
     const result = await api.getThreadMessages(activeThread.id, oldestMessage.timestamp, 50);
@@ -1131,4 +1224,17 @@ useThreadStore.subscribe((state) => {
     _prevThreadsByProject = state.threadsByProject;
     rebuildThreadProjectIndex(state.threadsByProject);
   }
+});
+
+// ── Active thread cache subscriber ────────────────────────────
+// Mirror the latest activeThread reference into the LRU cache so that
+// switching back to it later avoids the network round trip. WS handlers
+// already produce fresh references on every meaningful update — by piping
+// through this subscriber we keep the cache patched without touching them.
+let _prevActiveThread: ThreadWithMessages | null = null;
+useThreadStore.subscribe((state) => {
+  const current = state.activeThread;
+  if (current === _prevActiveThread) return;
+  _prevActiveThread = current;
+  if (current) cachePut(current.id, current);
 });

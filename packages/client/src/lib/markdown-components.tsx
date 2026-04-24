@@ -3,6 +3,7 @@ import { lazy, Suspense, useState, useEffect } from 'react';
 import remarkGfm from 'remark-gfm';
 
 import { MermaidBlock, MermaidExpandedDialog } from '@/components/MermaidBlock';
+import { Checkbox } from '@/components/ui/checkbox';
 import { useCopyToClipboard } from '@/hooks/use-copy-to-clipboard';
 import { ensureLanguage, highlightCode } from '@/hooks/use-highlight';
 
@@ -140,6 +141,29 @@ export const baseMarkdownComponents = {
       <table>{children}</table>
     </div>
   ),
+  // GFM task lists: render the native <input type="checkbox"> as a shadcn Checkbox.
+  input: ({ type, checked, disabled, ...props }: any) => {
+    if (type === 'checkbox') {
+      return (
+        <Checkbox
+          checked={!!checked}
+          disabled={disabled ?? true}
+          className="relative top-[2px] mr-1 inline-flex align-baseline"
+          {...props}
+        />
+      );
+    }
+    return <input type={type} checked={checked} disabled={disabled} {...props} />;
+  },
+  // Drop the list marker on task-list items so the Checkbox stands alone.
+  li: ({ className, children, ...props }: any) => {
+    const isTask = typeof className === 'string' && className.includes('task-list-item');
+    return (
+      <li className={cn(className, isTask && 'list-none')} {...props}>
+        {children}
+      </li>
+    );
+  },
   code: ({ className, children, ...props }: any) => {
     const isBlock = className?.startsWith('language-');
     if (isBlock) {
