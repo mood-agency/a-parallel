@@ -2,7 +2,7 @@ import type { ThreadPurpose } from '@funny/shared';
 import { DEFAULT_FOLLOW_UP_MODE } from '@funny/shared/models';
 import { Loader2 } from 'lucide-react';
 import { useReducedMotion } from 'motion/react';
-import { useState, useRef, useEffect, useCallback, useMemo, startTransition } from 'react';
+import { useState, useRef, useEffect, useCallback, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useNavigate } from 'react-router-dom';
 import { toast } from 'sonner';
@@ -342,9 +342,6 @@ export function ThreadView() {
         toast.info(t('thread.interruptingAgent'));
       }
 
-      // Always scroll to bottom when the user sends a message
-      streamRef.current?.scrollToBottom();
-
       // Only show the optimistic message when the thread is NOT running.
       // When the thread is running, the message will be queued by the server
       // and displayed in the queue widget — showing an optimistic card would
@@ -352,19 +349,21 @@ export function ThreadView() {
       // If the client is wrong about the thread being idle, the server may
       // queue the message and we'll roll it back; a rare flash is acceptable.
       if (!threadIsRunning) {
-        startTransition(() => {
-          useThreadStore
-            .getState()
-            .appendOptimisticMessage(
-              thread.id,
-              prompt,
-              images,
-              opts.model as any,
-              opts.mode as any,
-              opts.fileReferences,
-            );
-        });
+        useThreadStore
+          .getState()
+          .appendOptimisticMessage(
+            thread.id,
+            prompt,
+            images,
+            opts.model as any,
+            opts.mode as any,
+            opts.fileReferences,
+          );
       }
+
+      // Scroll to bottom after the optimistic message is in the DOM so the
+      // new message is visible immediately.
+      requestAnimationFrame(() => streamRef.current?.scrollToBottom());
 
       const { allowedTools, disallowedTools } = deriveToolLists(
         useSettingsStore.getState().toolPermissions,
@@ -461,25 +460,23 @@ export function ThreadView() {
         toast.info(t('thread.interruptingAgent'));
       }
 
-      streamRef.current?.scrollToBottom();
-
       // Only show the optimistic message for interrupt (the agent will restart
       // with this message). For queue, skip it — the message goes to the queue
       // widget and showing a card would cause a brief flash before rollback.
       if (action === 'interrupt') {
-        startTransition(() => {
-          useThreadStore
-            .getState()
-            .appendOptimisticMessage(
-              thread.id,
-              pending.prompt,
-              pending.images,
-              pending.opts.model as any,
-              pending.opts.permissionMode as any,
-              pending.opts.fileReferences as any,
-            );
-        });
+        useThreadStore
+          .getState()
+          .appendOptimisticMessage(
+            thread.id,
+            pending.prompt,
+            pending.images,
+            pending.opts.model as any,
+            pending.opts.permissionMode as any,
+            pending.opts.fileReferences as any,
+          );
       }
+
+      requestAnimationFrame(() => streamRef.current?.scrollToBottom());
 
       const result = await api.sendMessage(
         thread.id,

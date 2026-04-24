@@ -39,6 +39,73 @@ import { ThreadPickerDialog } from './ThreadPickerDialog';
 const MAX_GRID_COLS = 5;
 const MAX_GRID_ROWS = 5;
 
+/** A small popover that lets the user pick a project. Used by the grid header
+ *  and by empty cells to choose which project a new thread should belong to. */
+function ProjectPickerPopover({
+  trigger,
+  onSelect,
+  placeholder,
+}: {
+  trigger: React.ReactNode;
+  onSelect: (projectId: string) => void;
+  placeholder: string;
+}) {
+  const [open, setOpen] = useState(false);
+  const [search, setSearch] = useState('');
+  const projects = useProjectStore((s) => s.projects);
+  const filtered = search
+    ? projects.filter((p) => p.name.toLowerCase().includes(search.toLowerCase()))
+    : projects;
+
+  return (
+    <Popover
+      open={open}
+      onOpenChange={(v) => {
+        setOpen(v);
+        if (!v) setSearch('');
+      }}
+    >
+      <PopoverTrigger asChild>{trigger}</PopoverTrigger>
+      <PopoverContent align="start" className="w-64 p-0">
+        <div className="flex items-center gap-2 border-b border-border/50 px-3 py-2.5">
+          <Search className="icon-base shrink-0 text-muted-foreground" />
+          <Input
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            placeholder={placeholder}
+            className="h-auto flex-1 rounded-none border-0 bg-transparent px-0 py-0 text-sm shadow-none placeholder:text-muted-foreground focus-visible:ring-0"
+            autoFocus
+          />
+        </div>
+        <div className="max-h-56 overflow-y-auto py-1">
+          {filtered.length === 0 ? (
+            <div className="py-3 text-center text-sm text-muted-foreground">—</div>
+          ) : (
+            filtered.map((p) => (
+              <button
+                key={p.id}
+                className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm transition-colors hover:bg-accent"
+                data-testid={`grid-project-pick-${p.id}`}
+                onClick={() => {
+                  setOpen(false);
+                  setSearch('');
+                  onSelect(p.id);
+                }}
+              >
+                <span
+                  className="h-2.5 w-2.5 shrink-0 rounded-full"
+                  style={{ backgroundColor: p.color || colorFromName(p.name) }}
+                />
+                <span className="truncate">{p.name}</span>
+              </button>
+            ))
+          )}
+        </div>
+      </PopoverContent>
+    </Popover>
+  );
+}
+
 function GridPicker({
   cols,
   rows,
@@ -257,7 +324,7 @@ const ThreadColumn = memo(function ThreadColumn({
 
   return (
     <div
-      className="group/col flex min-w-0 flex-col overflow-hidden rounded-sm border border-border"
+      className="group/col flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden rounded-sm border border-border"
       data-testid={`grid-column-${threadId}`}
     >
       {/* Column header */}
@@ -375,11 +442,13 @@ export function LiveColumnsView() {
   const [slideUpOpen, setSlideUpOpen] = useState(false);
   const [slideUpProjectId, setSlideUpProjectId] = useState<string | undefined>(undefined);
   const [creating, setCreating] = useState(false);
-  const [projectPickerOpen, setProjectPickerOpen] = useState(false);
-  const [projectSearch, setProjectSearch] = useState('');
+  // If set, the newly created thread is placed into this grid cell.
+  // If null, the thread is placed in the first empty cell (if any).
+  const [pendingCreateCell, setPendingCreateCell] = useState<number | null>(null);
 
-  const handleAddThread = useCallback((pid: string) => {
+  const handleAddThread = useCallback((pid: string, cellIndex: number | null = null) => {
     setSlideUpProjectId(pid);
+    setPendingCreateCell(cellIndex);
     setSlideUpOpen(true);
   }, []);
 
@@ -404,56 +473,88 @@ export function LiveColumnsView() {
         slideUpProject?.defaultMode ||
         DEFAULT_THREAD_MODE;
 
-      if (opts.sendToBacklog) {
-        const result = await api.createIdleThread({
+      const createdId = await (async (): Promise<string | null> => {
+        if (opts.sendToBacklog) {
+          const result = await api.createIdleThread({
+            projectId: slideUpProjectId,
+            title: prompt.slice(0, 200),
+            mode: threadMode,
+            baseBranch: opts.baseBranch,
+            prompt,
+            images,
+          });
+          if (result.isErr()) {
+            toastError(result.error);
+            return null;
+          }
+          return result.value.id;
+        }
+
+        const { allowedTools, disallowedTools } = deriveToolLists(toolPermissions);
+        const result = await api.createThread({
           projectId: slideUpProjectId,
           title: prompt.slice(0, 200),
           mode: threadMode,
-          baseBranch: opts.baseBranch,
+          model: opts.model,
           prompt,
+          permissionMode: opts.mode,
+          allowedTools,
+          disallowedTools,
+          baseBranch: opts.baseBranch,
           images,
         });
         if (result.isErr()) {
           toastError(result.error);
-          setCreating(false);
-          return false;
+          return null;
         }
-        await loadThreadsForProject(slideUpProjectId);
-        setCreating(false);
-        toast.success(t('toast.threadCreated', { title: prompt.slice(0, 200) }));
-        return true;
-      }
+        return result.value.id;
+      })();
 
-      const { allowedTools, disallowedTools } = deriveToolLists(toolPermissions);
-      const result = await api.createThread({
-        projectId: slideUpProjectId,
-        title: prompt.slice(0, 200),
-        mode: threadMode,
-        model: opts.model,
-        prompt,
-        permissionMode: opts.mode,
-        allowedTools,
-        disallowedTools,
-        baseBranch: opts.baseBranch,
-        images,
-      });
-      if (result.isErr()) {
-        toastError(result.error);
+      if (!createdId) {
         setCreating(false);
         return false;
       }
 
       await loadThreadsForProject(slideUpProjectId);
+
+      // Place the newly created thread into a grid cell: the explicitly
+      // requested cell if any, otherwise the first empty slot in the grid.
+      setGridCells((prev) => {
+        const updated: GridCellAssignments = { ...prev };
+        let targetIndex = pendingCreateCell;
+        if (targetIndex == null) {
+          for (let i = 0; i < maxSlots; i++) {
+            if (!updated[String(i)]) {
+              targetIndex = i;
+              break;
+            }
+          }
+        }
+        if (targetIndex == null) return prev;
+        // Avoid duplicates: if the thread already sits in another cell, move it.
+        for (const [key, val] of Object.entries(updated)) {
+          if (val === createdId) delete updated[key];
+        }
+        updated[String(targetIndex)] = createdId;
+        localStorage.setItem('funny:grid-cells', JSON.stringify(updated));
+        return updated;
+      });
+      setPendingCreateCell(null);
       setCreating(false);
       toast.success(t('toast.threadCreated', { title: prompt.slice(0, 200) }));
       return true;
     },
-    [slideUpProjectId, creating, projects, toolPermissions, loadThreadsForProject, t],
+    [
+      slideUpProjectId,
+      creating,
+      projects,
+      toolPermissions,
+      loadThreadsForProject,
+      t,
+      pendingCreateCell,
+      maxSlots,
+    ],
   );
-
-  const filteredProjects = projectSearch
-    ? projects.filter((p) => p.name.toLowerCase().includes(projectSearch.toLowerCase()))
-    : projects;
 
   // Load threads once for any project that hasn't been loaded yet (no polling —
   // WS events like thread:created, thread:updated, and agent:status keep the
@@ -528,57 +629,16 @@ export function LiveColumnsView() {
         <span className="flex items-center gap-2 text-sm font-medium">
           <LayoutGrid className="icon-sm text-muted-foreground" /> {t('live.title', 'Grid')}
         </span>
-        {/* Create new thread */}
-        <Popover
-          open={projectPickerOpen}
-          onOpenChange={(v) => {
-            setProjectPickerOpen(v);
-            if (!v) setProjectSearch('');
-          }}
-        >
-          <PopoverTrigger asChild>
+        {/* Create new thread (auto-fills the first empty grid cell) */}
+        <ProjectPickerPopover
+          placeholder={t('kanban.searchProject', 'Search project...')}
+          onSelect={(pid) => handleAddThread(pid)}
+          trigger={
             <Button variant="ghost" size="icon" className="h-7 w-7" data-testid="grid-new-thread">
               <Plus className="icon-base" />
             </Button>
-          </PopoverTrigger>
-          <PopoverContent align="start" className="w-64 p-0">
-            <div className="flex items-center gap-2 border-b border-border/50 px-3 py-2.5">
-              <Search className="icon-base shrink-0 text-muted-foreground" />
-              <Input
-                value={projectSearch}
-                onChange={(e) => setProjectSearch(e.target.value)}
-                placeholder={t('kanban.searchProject', 'Search project...')}
-                className="h-auto flex-1 rounded-none border-0 bg-transparent px-0 py-0 text-sm shadow-none placeholder:text-muted-foreground focus-visible:ring-0"
-                autoFocus
-              />
-            </div>
-            <div className="max-h-56 overflow-y-auto py-1">
-              {filteredProjects.length === 0 ? (
-                <div className="py-3 text-center text-sm text-muted-foreground">
-                  {t('commandPalette.noResults', 'No results')}
-                </div>
-              ) : (
-                filteredProjects.map((p) => (
-                  <button
-                    key={p.id}
-                    className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm transition-colors hover:bg-accent"
-                    onClick={() => {
-                      setProjectPickerOpen(false);
-                      setProjectSearch('');
-                      handleAddThread(p.id);
-                    }}
-                  >
-                    <span
-                      className="h-2.5 w-2.5 shrink-0 rounded-full"
-                      style={{ backgroundColor: p.color || colorFromName(p.name) }}
-                    />
-                    <span className="truncate">{p.name}</span>
-                  </button>
-                ))
-              )}
-            </div>
-          </PopoverContent>
-        </Popover>
+          }
+        />
 
         {/* Grid size picker */}
         <div className="ml-auto">
@@ -612,16 +672,38 @@ export function LiveColumnsView() {
               {threadId ? (
                 <ThreadColumn threadId={threadId} onRemove={() => handleRemoveFromGrid(i)} />
               ) : (
-                <button
-                  onClick={() => handlePickThread(i)}
-                  className="flex h-full w-full flex-col items-center justify-center gap-2 rounded-sm border-2 border-dashed border-border/60 bg-muted/10 transition-colors hover:border-primary/50 hover:bg-muted/30"
+                <div
+                  className="flex h-full w-full flex-col items-center justify-center gap-3 rounded-sm border-2 border-dashed border-border/60 bg-muted/10 p-4 transition-colors hover:border-primary/50 hover:bg-muted/30"
                   data-testid={`grid-empty-cell-${i}`}
                 >
                   <Plus className="h-8 w-8 text-muted-foreground/40" />
-                  <span className="text-xs text-muted-foreground/60">
-                    {t('live.addThread', 'Add thread')}
-                  </span>
-                </button>
+                  <div className="flex flex-col items-center gap-1.5">
+                    <ProjectPickerPopover
+                      placeholder={t('kanban.searchProject', 'Search project...')}
+                      onSelect={(pid) => handleAddThread(pid, i)}
+                      trigger={
+                        <Button
+                          variant="default"
+                          size="sm"
+                          className="h-7"
+                          data-testid={`grid-empty-new-${i}`}
+                        >
+                          <Plus className="icon-sm" />
+                          {t('live.newThread', 'New thread')}
+                        </Button>
+                      }
+                    />
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="h-7 text-xs text-muted-foreground"
+                      onClick={() => handlePickThread(i)}
+                      data-testid={`grid-empty-pick-${i}`}
+                    >
+                      {t('live.pickExisting', 'Pick existing')}
+                    </Button>
+                  </div>
+                </div>
               )}
             </GridCellDropTarget>
           );

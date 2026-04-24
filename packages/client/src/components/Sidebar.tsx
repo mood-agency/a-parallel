@@ -44,6 +44,7 @@ import {
   SidebarRail,
   useSidebar,
 } from '@/components/ui/sidebar';
+import { Skeleton } from '@/components/ui/skeleton';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { WorktreeDeleteDialog } from '@/components/WorktreeDeleteDialog';
 import { useBranchSwitch } from '@/hooks/use-branch-switch';
@@ -72,6 +73,7 @@ export function AppSidebar() {
   const { toggleSidebar } = useSidebar();
   // project-store
   const projects = useProjectStore((s) => s.projects);
+  const projectsInitialized = useProjectStore((s) => s.initialized);
   const selectedProjectId = useProjectStore((s) => s.selectedProjectId);
   const expandedProjects = useProjectStore((s) => s.expandedProjects);
   const toggleProject = useProjectStore((s) => s.toggleProject);
@@ -456,6 +458,17 @@ export function AppSidebar() {
     return result;
   }, [threadsByProject, projects]);
 
+  // Which projects have had their threads fetched (distinct from "fetched and
+  // empty"). Used to show thread skeleton rows inside an expanded project
+  // whose thread list hasn't arrived yet, instead of flashing "No threads".
+  const threadsLoadedByProject = useMemo(() => {
+    const result: Record<string, boolean> = {};
+    for (const project of projects) {
+      result[project.id] = Array.isArray(threadsByProject[project.id]);
+    }
+    return result;
+  }, [threadsByProject, projects]);
+
   if (settingsOpen) {
     return <SettingsPanel />;
   }
@@ -603,7 +616,22 @@ export function AppSidebar() {
             projectsScrolled ? 'opacity-100' : 'opacity-0',
           )}
         />
-        {projects.length === 0 && (
+        {!projectsInitialized && projects.length === 0 && (
+          <div
+            aria-hidden
+            data-testid="sidebar-projects-skeleton"
+            className="flex flex-col gap-1.5"
+          >
+            {Array.from({ length: 6 }).map((_, i) => (
+              <div key={i} className="flex items-center gap-1.5 px-2 py-1">
+                <Skeleton className="h-3.5 w-3.5 rounded" />
+                <Skeleton className="h-3.5 w-3.5 rounded" />
+                <Skeleton className="h-3 flex-1" style={{ maxWidth: `${60 + ((i * 37) % 35)}%` }} />
+              </div>
+            ))}
+          </div>
+        )}
+        {projectsInitialized && projects.length === 0 && (
           <button
             data-testid="sidebar-no-projects-cta"
             onClick={() => navigate(buildPath('/new'))}
@@ -618,6 +646,7 @@ export function AppSidebar() {
               key={project.id}
               project={project}
               threads={filteredThreadsByProject[project.id] ?? EMPTY_THREADS}
+              threadsLoaded={threadsLoadedByProject[project.id] ?? false}
               isExpanded={expandedProjects.has(project.id)}
               isSelected={selectedProjectId === project.id}
               onToggle={handleToggleProject}

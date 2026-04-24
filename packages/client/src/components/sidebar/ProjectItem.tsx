@@ -30,6 +30,7 @@ import {
   DropdownMenuItem,
   DropdownMenuSeparator,
 } from '@/components/ui/dropdown-menu';
+import { Skeleton } from '@/components/ui/skeleton';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { useStableNavigate } from '@/hooks/use-stable-navigate';
 import { api } from '@/lib/api';
@@ -138,6 +139,7 @@ const ProjectThreadItem: FC<ProjectThreadItemProps> = memo(function ProjectThrea
 interface ProjectItemProps {
   project: Project;
   threads: Thread[];
+  threadsLoaded: boolean;
   isExpanded: boolean;
   isSelected: boolean;
   onToggle: (projectId: string) => void;
@@ -156,6 +158,7 @@ interface ProjectItemProps {
 
 function projectItemAreEqual(prev: ProjectItemProps, next: ProjectItemProps): boolean {
   if (prev.threads !== next.threads) return false;
+  if (prev.threadsLoaded !== next.threadsLoaded) return false;
   if (prev.isExpanded !== next.isExpanded) return false;
   if (prev.isSelected !== next.isSelected) return false;
   if (prev.onToggle !== next.onToggle) return false;
@@ -189,6 +192,7 @@ function projectItemAreEqual(prev: ProjectItemProps, next: ProjectItemProps): bo
 export const ProjectItem = memo(function ProjectItem({
   project,
   threads,
+  threadsLoaded,
   isExpanded,
   isSelected,
   onToggle,
@@ -489,7 +493,21 @@ export const ProjectItem = memo(function ProjectItem({
 
       <CollapsibleContent className="data-[state=open]:animate-slide-down">
         <div className="mt-0.5 min-w-0">
-          {threads.length === 0 && (
+          {threads.length === 0 && !threadsLoaded && (
+            <div
+              aria-hidden
+              data-testid={`project-threads-skeleton-${project.id}`}
+              className="flex flex-col gap-0.5 px-2 py-1"
+            >
+              {Array.from({ length: 3 }).map((_, i) => (
+                <div key={i} className="flex items-center gap-1.5 py-1">
+                  <Skeleton className="h-3.5 w-3.5 rounded-full" />
+                  <Skeleton className="h-3" style={{ width: `${55 + ((i * 23) % 30)}%` }} />
+                </div>
+              ))}
+            </div>
+          )}
+          {threads.length === 0 && threadsLoaded && (
             <p className="px-2 py-2 text-xs text-muted-foreground">{t('sidebar.noThreads')}</p>
           )}
           {visibleThreads.map((th) => (
