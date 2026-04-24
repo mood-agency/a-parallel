@@ -8,7 +8,7 @@ import {
   highlightTextInDom,
   type PlanComment,
   type AnnotationPosition,
-} from './PlanReviewDialog';
+} from './plan-annotations';
 
 /**
  * Wraps content and provides text selection → popover (emoji/comment),

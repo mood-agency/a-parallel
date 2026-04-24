@@ -1,6 +1,6 @@
 import type { GitHubPR } from '@funny/shared';
-import { ExternalLink, GitBranch, GitPullRequest, Loader2, RefreshCw } from 'lucide-react';
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { ExternalLink, GitBranch, GitPullRequest, List, Loader2, RefreshCw } from 'lucide-react';
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
 
 import { AuthorBadge } from '@/components/AuthorBadge';
@@ -8,11 +8,21 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { api } from '@/lib/api';
-import { cn } from '@/lib/utils';
+import { createClientLogger } from '@/lib/client-logger';
+import { cn, resolveThreadBranch } from '@/lib/utils';
 import { useProjectStore } from '@/stores/project-store';
-import { useThreadStore } from '@/stores/thread-store';
+import {
+  useActiveThreadBranch,
+  useActiveThreadProjectId,
+  useActiveThreadWorktreePath,
+} from '@/stores/thread-selectors';
 
+import { PinnedPRCard } from './PinnedPRCard';
 import { PRDetailDialog } from './PRDetailDialog';
+
+const log = createClientLogger('pull-requests-tab');
+
+const DEFAULT_BRANCH_FALLBACKS = new Set(['main', 'master']);
 
 // ── Helpers ──
 
@@ -40,8 +50,35 @@ interface PullRequestsTabProps {
 export function PullRequestsTab({ visible }: PullRequestsTabProps) {
   const { t } = useTranslation();
   const selectedProjectId = useProjectStore((s) => s.selectedProjectId);
-  const activeThread = useThreadStore((s) => s.activeThread);
-  const projectId = activeThread?.projectId ?? selectedProjectId;
+  const activeThreadProjectId = useActiveThreadProjectId();
+  const activeThreadBranch = useActiveThreadBranch();
+  const activeThreadWorktreePath = useActiveThreadWorktreePath();
+  const projectId = activeThreadProjectId ?? selectedProjectId;
+
+  // Branch of the current thread (or project when no thread is active) —
+  // used to pin the matching PR at the top of the list.
+  const threadBranch =
+    activeThreadProjectId !== null
+      ? resolveThreadBranch({
+          branch: activeThreadBranch,
+          worktreePath: activeThreadWorktreePath,
+        })
+      : undefined;
+  const projectBranch = useProjectStore((s) =>
+    projectId ? s.branchByProject[projectId] : undefined,
+  );
+  const currentBranch = threadBranch || projectBranch;
+
+  const project = useProjectStore((s) => s.projects.find((p) => p.id === projectId));
+  const defaultBranch = project?.defaultBranch || undefined;
+
+  // Are we sitting on the default/main branch? If defaultBranch is unknown,
+  // fall back to the common names so we don't lock users out of the full list.
+  const isOnDefaultBranch = useMemo(() => {
+    if (!currentBranch) return true;
+    if (defaultBranch) return currentBranch === defaultBranch;
+    return DEFAULT_BRANCH_FALLBACKS.has(currentBranch);
+  }, [currentBranch, defaultBranch]);
 
   const [prs, setPrs] = useState<GitHubPR[]>([]);
   const [loading, setLoading] = useState(false);
@@ -52,6 +89,30 @@ export function PullRequestsTab({ visible }: PullRequestsTabProps) {
   const [repoInfo, setRepoInfo] = useState<{ owner: string; repo: string } | null>(null);
   const loadedRef = useRef(false);
   const [selectedPR, setSelectedPR] = useState<GitHubPR | null>(null);
+  const [currentUserLogin, setCurrentUserLogin] = useState<string | undefined>(undefined);
+  // When on a feature branch, we focus on the PR tied to that branch. This
+  // toggle lets the user escape to the full listing without switching branches.
+  const [viewAll, setViewAll] = useState(false);
+
+  // Branch-focused mode: feature branch + user hasn't opted into the full list.
+  const branchFocusMode = !isOnDefaultBranch && !viewAll;
+  // In branch-focus mode we force state='all' so a closed/merged PR for the
+  // current branch still shows up — the user cares about *this* branch's PR,
+  // whatever its state.
+  const effectiveState: PRState = branchFocusMode ? 'all' : state;
+
+  useEffect(() => {
+    let cancelled = false;
+    void api.githubStatus().then((res) => {
+      if (cancelled) return;
+      if (res.isOk() && res.value.connected) {
+        setCurrentUserLogin(res.value.login);
+      }
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   const fetchPRs = useCallback(
     async (pageNum: number, append: boolean) => {
@@ -60,7 +121,7 @@ export function PullRequestsTab({ visible }: PullRequestsTabProps) {
       setError(null);
 
       const result = await api.githubPRs(projectId, {
-        state,
+        state: effectiveState,
         page: pageNum,
         per_page: 30,
       });
@@ -71,6 +132,11 @@ export function PullRequestsTab({ visible }: PullRequestsTabProps) {
         setHasMore(data.hasMore);
         setRepoInfo({ owner: data.owner, repo: data.repo });
       } else {
+        log.error('failed to load pull requests', {
+          projectId,
+          state: effectiveState,
+          error: result.error.message,
+        });
         setError(
           result.error.message ||
             t('review.pullRequests.fetchError', 'Failed to load pull requests'),
@@ -78,7 +144,7 @@ export function PullRequestsTab({ visible }: PullRequestsTabProps) {
       }
       setLoading(false);
     },
-    [projectId, state, t],
+    [projectId, effectiveState, t],
   );
 
   // Reset and fetch on visibility / project / state change
@@ -91,7 +157,13 @@ export function PullRequestsTab({ visible }: PullRequestsTabProps) {
     setPage(1);
     setPrs([]);
     fetchPRs(1, false);
-  }, [visible, projectId, state, fetchPRs]);
+  }, [visible, projectId, effectiveState, fetchPRs]);
+
+  // When switching to a different branch, reset the "view all" escape hatch
+  // so the user lands back in branch-focus mode by default.
+  useEffect(() => {
+    setViewAll(false);
+  }, [currentBranch]);
 
   const loadMore = () => {
     const next = page + 1;
@@ -108,6 +180,100 @@ export function PullRequestsTab({ visible }: PullRequestsTabProps) {
     if (pr.merged_at) return 'text-purple-500';
     if (pr.state === 'closed') return 'text-red-500';
     return 'text-green-500';
+  };
+
+  const { currentBranchPRs, otherPRs } = useMemo(() => {
+    if (!currentBranch) return { currentBranchPRs: [] as GitHubPR[], otherPRs: prs };
+    const match: GitHubPR[] = [];
+    const rest: GitHubPR[] = [];
+    for (const pr of prs) {
+      if (pr.head.ref === currentBranch) match.push(pr);
+      else rest.push(pr);
+    }
+    return { currentBranchPRs: match, otherPRs: rest };
+  }, [prs, currentBranch]);
+
+  const renderPRRow = (pr: GitHubPR) => {
+    const color = getPRColor(pr);
+    return (
+      <button
+        key={pr.number}
+        onClick={() => setSelectedPR(pr)}
+        className="flex w-full items-start gap-2 px-3 py-2 text-left text-xs transition-colors hover:bg-sidebar-accent/50"
+        data-testid={`pr-item-${pr.number}`}
+      >
+        <div className="flex min-w-0 flex-1 flex-col gap-0.5">
+          <div className="flex items-baseline gap-1.5">
+            <a
+              href={pr.html_url}
+              target="_blank"
+              rel="noopener noreferrer"
+              onClick={(e) => e.stopPropagation()}
+              className={cn('shrink-0 font-mono text-[10px] hover:underline', color)}
+              data-testid={`pr-number-link-${pr.number}`}
+            >
+              #{pr.number}
+            </a>
+            <span className="font-medium leading-tight">{pr.title}</span>
+          </div>
+          <div className="flex items-center gap-1.5 text-[10px] text-muted-foreground">
+            {pr.user && (
+              <AuthorBadge name={pr.user.login} avatarUrl={pr.user.avatar_url} size="xs" />
+            )}
+            <span>&middot;</span>
+            <span>{timeAgo(pr.created_at)}</span>
+            {pr.draft && (
+              <>
+                <span>&middot;</span>
+                <Badge variant="outline" className="h-3.5 px-1 py-0 text-[9px] leading-none">
+                  {t('review.pullRequests.draft', 'Draft')}
+                </Badge>
+              </>
+            )}
+          </div>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <div className="flex min-w-0 items-center gap-1 text-[10px] text-muted-foreground">
+                <GitBranch className="h-3 w-3 shrink-0" />
+                <span
+                  className="block max-w-[45%] overflow-hidden text-ellipsis whitespace-nowrap"
+                  dir="rtl"
+                >
+                  <bdi>{pr.head.ref}</bdi>
+                </span>
+                <span className="shrink-0">&rarr;</span>
+                <span
+                  className="block max-w-[35%] overflow-hidden text-ellipsis whitespace-nowrap"
+                  dir="rtl"
+                >
+                  <bdi>{pr.base.ref}</bdi>
+                </span>
+              </div>
+            </TooltipTrigger>
+            <TooltipContent side="bottom" className="text-xs">
+              {pr.head.ref} &rarr; {pr.base.ref}
+            </TooltipContent>
+          </Tooltip>
+          {pr.labels.length > 0 && (
+            <div className="flex flex-wrap gap-1 pt-0.5">
+              {pr.labels.map((label) => (
+                <span
+                  key={label.name}
+                  className="rounded-full px-1.5 py-0 text-[9px] leading-4"
+                  style={{
+                    backgroundColor: `#${label.color}20`,
+                    color: `#${label.color}`,
+                    border: `1px solid #${label.color}40`,
+                  }}
+                >
+                  {label.name}
+                </span>
+              ))}
+            </div>
+          )}
+        </div>
+      </button>
+    );
   };
 
   if (!projectId) {
@@ -142,30 +308,66 @@ export function PullRequestsTab({ visible }: PullRequestsTabProps) {
           <TooltipContent side="bottom">{t('common.refresh', 'Refresh')}</TooltipContent>
         </Tooltip>
 
-        {/* State filter */}
-        <div className="flex min-w-0 items-center gap-0.5 rounded-md bg-sidebar-accent/50 p-0.5">
-          {(['open', 'closed', 'all'] as PRState[]).map((s) => (
-            <button
-              key={s}
-              onClick={() => setState(s)}
-              className={cn(
-                'rounded px-2 py-0.5 text-xs font-medium transition-colors',
-                state === s
-                  ? 'bg-background text-foreground shadow-sm'
-                  : 'text-muted-foreground hover:text-foreground',
-              )}
-              data-testid={`prs-filter-${s}`}
-            >
-              {s === 'open'
-                ? t('review.pullRequests.open', 'Open')
-                : s === 'closed'
-                  ? t('review.pullRequests.closed', 'Closed')
-                  : t('review.pullRequests.all', 'All')}
-            </button>
-          ))}
-        </div>
+        {/* State filter — only shown when browsing the full list */}
+        {!branchFocusMode && (
+          <div className="flex min-w-0 items-center gap-0.5 rounded-md bg-sidebar-accent/50 p-0.5">
+            {(['open', 'closed', 'all'] as PRState[]).map((s) => (
+              <button
+                key={s}
+                onClick={() => setState(s)}
+                className={cn(
+                  'rounded px-2 py-0.5 text-xs font-medium transition-colors',
+                  state === s
+                    ? 'bg-background text-foreground shadow-sm'
+                    : 'text-muted-foreground hover:text-foreground',
+                )}
+                data-testid={`prs-filter-${s}`}
+              >
+                {s === 'open'
+                  ? t('review.pullRequests.open', 'Open')
+                  : s === 'closed'
+                    ? t('review.pullRequests.closed', 'Closed')
+                    : t('review.pullRequests.all', 'All')}
+              </button>
+            ))}
+          </div>
+        )}
+
+        {/* Branch-focus indicator + escape hatch */}
+        {branchFocusMode && currentBranch && (
+          <div
+            className="flex min-w-0 items-center gap-1.5 rounded-md bg-sidebar-accent/50 px-2 py-0.5 text-xs text-muted-foreground"
+            data-testid="prs-branch-focus-indicator"
+          >
+            <GitBranch className="h-3 w-3 shrink-0" />
+            <span className="truncate font-mono text-[11px]">
+              <bdi>{currentBranch}</bdi>
+            </span>
+          </div>
+        )}
 
         <div className="min-w-0 flex-1" />
+
+        {!isOnDefaultBranch && (
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button
+                variant="ghost"
+                size="icon-sm"
+                onClick={() => setViewAll((v) => !v)}
+                className={cn('shrink-0', viewAll ? 'text-foreground' : 'text-muted-foreground')}
+                data-testid="prs-toggle-view-all"
+              >
+                <List className="icon-base" />
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent side="bottom">
+              {viewAll
+                ? t('review.pullRequests.focusOnBranch', 'Focus on current branch')
+                : t('review.pullRequests.viewAll', 'View all pull requests')}
+            </TooltipContent>
+          </Tooltip>
+        )}
 
         {/* Open on GitHub */}
         {repoInfo && (
@@ -215,6 +417,44 @@ export function PullRequestsTab({ visible }: PullRequestsTabProps) {
               {t('common.retry', 'Retry')}
             </Button>
           </div>
+        ) : branchFocusMode ? (
+          currentBranchPRs.length > 0 ? (
+            <div className="flex flex-col">
+              {currentBranchPRs.map((pr) => (
+                <PinnedPRCard
+                  key={pr.number}
+                  pr={pr}
+                  projectId={projectId}
+                  currentUserLogin={currentUserLogin}
+                />
+              ))}
+            </div>
+          ) : (
+            <div
+              className="flex min-h-0 flex-1 flex-col items-center justify-center gap-2 p-4 text-muted-foreground"
+              data-testid="prs-branch-empty"
+            >
+              <GitPullRequest className="h-8 w-8 opacity-40" />
+              <p className="text-center text-xs">
+                {t('review.pullRequests.noPRForBranch', 'No pull request for this branch yet')}
+              </p>
+              {currentBranch && (
+                <p className="text-center font-mono text-[10px] text-muted-foreground/70">
+                  <bdi>{currentBranch}</bdi>
+                </p>
+              )}
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => setViewAll(true)}
+                className="mt-1 gap-1.5 text-xs"
+                data-testid="prs-view-all-cta"
+              >
+                <List className="icon-xs" />
+                {t('review.pullRequests.viewAll', 'View all pull requests')}
+              </Button>
+            </div>
+          )
         ) : prs.length === 0 ? (
           <div className="flex min-h-0 flex-1 flex-col items-center justify-center gap-2 p-4 text-muted-foreground">
             <GitPullRequest className="h-8 w-8 opacity-40" />
@@ -227,96 +467,51 @@ export function PullRequestsTab({ visible }: PullRequestsTabProps) {
             </p>
           </div>
         ) : (
-          <div className="flex flex-col divide-y divide-sidebar-border">
-            {prs.map((pr) => {
-              const color = getPRColor(pr);
-              return (
-                <button
-                  key={pr.number}
-                  onClick={() => setSelectedPR(pr)}
-                  className="flex w-full items-start gap-2 px-3 py-2 text-left text-xs transition-colors hover:bg-sidebar-accent/50"
-                  data-testid={`pr-item-${pr.number}`}
+          <div className="flex flex-col">
+            {currentBranchPRs.length > 0 && (
+              <>
+                <div
+                  className="flex items-center gap-1.5 border-b border-sidebar-border bg-sidebar-accent/30 px-3 py-1 text-[10px] font-medium uppercase tracking-wide text-muted-foreground"
+                  data-testid="prs-current-branch-header"
                 >
-                  <div className="flex min-w-0 flex-1 flex-col gap-0.5">
-                    <div className="flex items-baseline gap-1.5">
-                      <a
-                        href={pr.html_url}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        onClick={(e) => e.stopPropagation()}
-                        className={cn('shrink-0 font-mono text-[10px] hover:underline', color)}
-                        data-testid={`pr-number-link-${pr.number}`}
-                      >
-                        #{pr.number}
-                      </a>
-                      <span className="font-medium leading-tight">{pr.title}</span>
-                    </div>
-                    <div className="flex items-center gap-1.5 text-[10px] text-muted-foreground">
-                      {pr.user && (
-                        <AuthorBadge
-                          name={pr.user.login}
-                          avatarUrl={pr.user.avatar_url}
-                          size="xs"
-                        />
-                      )}
-                      <span>&middot;</span>
-                      <span>{timeAgo(pr.created_at)}</span>
-                      {pr.draft && (
-                        <>
-                          <span>&middot;</span>
-                          <Badge
-                            variant="outline"
-                            className="h-3.5 px-1 py-0 text-[9px] leading-none"
-                          >
-                            {t('review.pullRequests.draft', 'Draft')}
-                          </Badge>
-                        </>
-                      )}
-                    </div>
-                    <Tooltip>
-                      <TooltipTrigger asChild>
-                        <div className="flex min-w-0 items-center gap-1 text-[10px] text-muted-foreground">
-                          <GitBranch className="h-3 w-3 shrink-0" />
-                          <span
-                            className="block max-w-[45%] overflow-hidden text-ellipsis whitespace-nowrap"
-                            dir="rtl"
-                          >
-                            <bdi>{pr.head.ref}</bdi>
-                          </span>
-                          <span className="shrink-0">&rarr;</span>
-                          <span
-                            className="block max-w-[35%] overflow-hidden text-ellipsis whitespace-nowrap"
-                            dir="rtl"
-                          >
-                            <bdi>{pr.base.ref}</bdi>
-                          </span>
-                        </div>
-                      </TooltipTrigger>
-                      <TooltipContent side="bottom" className="text-xs">
-                        {pr.head.ref} &rarr; {pr.base.ref}
-                      </TooltipContent>
-                    </Tooltip>
-                    {pr.labels.length > 0 && (
-                      <div className="flex flex-wrap gap-1 pt-0.5">
-                        {pr.labels.map((label) => (
-                          <span
-                            key={label.name}
-                            className="rounded-full px-1.5 py-0 text-[9px] leading-4"
-                            style={{
-                              backgroundColor: `#${label.color}20`,
-                              color: `#${label.color}`,
-                              border: `1px solid #${label.color}40`,
-                            }}
-                          >
-                            {label.name}
-                          </span>
-                        ))}
-                      </div>
-                    )}
+                  <GitBranch className="h-3 w-3" />
+                  <span className="truncate">
+                    {t('review.pullRequests.currentBranch', 'Current branch')}
+                    {currentBranch ? (
+                      <>
+                        {' '}
+                        &middot; <bdi>{currentBranch}</bdi>
+                      </>
+                    ) : null}
+                  </span>
+                </div>
+                <div className="flex flex-col">
+                  {currentBranchPRs.map((pr) => (
+                    <PinnedPRCard
+                      key={pr.number}
+                      pr={pr}
+                      projectId={projectId}
+                      currentUserLogin={currentUserLogin}
+                    />
+                  ))}
+                </div>
+              </>
+            )}
+            {otherPRs.length > 0 && (
+              <>
+                {currentBranchPRs.length > 0 && (
+                  <div
+                    className="border-b border-sidebar-border bg-sidebar-accent/30 px-3 py-1 text-[10px] font-medium uppercase tracking-wide text-muted-foreground"
+                    data-testid="prs-other-header"
+                  >
+                    {t('review.pullRequests.otherPRs', 'Other pull requests')}
                   </div>
-                </button>
-              );
-            })}
+                )}
+                <div className="flex flex-col divide-y divide-sidebar-border">
+                  {otherPRs.map(renderPRRow)}
+                </div>
+              </>
+            )}
             {hasMore && (
               <div className="flex justify-center py-2">
                 <Button
