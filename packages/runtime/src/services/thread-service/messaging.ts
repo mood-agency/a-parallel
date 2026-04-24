@@ -1,0 +1,454 @@
+/**
+ * @domain subdomain: Thread Management
+ * @domain subdomain-type: core
+ * @domain type: app-service
+ * @domain layer: application
+ */
+
+import type {
+  WSEvent,
+  AgentProvider,
+  AgentModel,
+  PermissionMode,
+  ImageAttachment,
+} from '@funny/shared';
+import {
+  DEFAULT_MODEL,
+  DEFAULT_PROVIDER,
+  DEFAULT_PERMISSION_MODE,
+  DEFAULT_FOLLOW_UP_MODE,
+} from '@funny/shared/models';
+
+import { log } from '../../lib/logger.js';
+import {
+  augmentPromptWithFiles,
+  augmentPromptWithSymbols,
+  type FileRef,
+  type SymbolRef,
+} from '../../utils/file-mentions.js';
+import { startAgent, stopAgent, isAgentRunning } from '../agent-runner.js';
+import { cleanupExternalThread } from '../ingest-mapper.js';
+import { getServices } from '../service-registry.js';
+import * as tm from '../thread-manager.js';
+import { wsBroker } from '../ws-broker.js';
+import { ThreadServiceError, emitThreadUpdated } from './helpers.js';
+
+// ── Send Message / Follow-Up ────────────────────────────────────
+
+export interface SendMessageParams {
+  threadId: string;
+  userId: string;
+  content: string;
+  provider?: string;
+  model?: string;
+  permissionMode?: string;
+  effort?: string;
+  images?: ImageAttachment[];
+  allowedTools?: string[];
+  disallowedTools?: string[];
+  fileReferences?: FileRef[];
+  symbolReferences?: SymbolRef[];
+  baseBranch?: string;
+  forceQueue?: boolean;
+}
+
+export interface SendMessageResult {
+  ok: true;
+  queued?: boolean;
+  queuedCount?: number;
+  queuedMessageId?: string;
+}
+
+export async function sendMessage(params: SendMessageParams): Promise<SendMessageResult> {
+  const thread = await tm.getThread(params.threadId);
+  if (!thread) throw new ThreadServiceError('Thread not found', 404);
+
+  log.info('sendMessage called', {
+    namespace: 'thread-service',
+    threadId: params.threadId,
+    userId: thread.userId ?? params.userId ?? 'unknown',
+    projectId: thread.projectId,
+    threadStatus: thread.status,
+    sessionId: thread.sessionId ?? '',
+    agentRunning: String(isAgentRunning(params.threadId)),
+    contentPreview: params.content.slice(0, 120),
+  });
+
+  let cwd: string;
+  if (thread.worktreePath) {
+    cwd = thread.worktreePath;
+  } else {
+    const pathResult = await getServices().projects.resolveProjectPath(
+      thread.projectId,
+      params.userId,
+    );
+    if (pathResult.isErr()) throw new ThreadServiceError(pathResult.error.message, 400);
+    cwd = pathResult.value;
+  }
+
+  const effectiveProvider = (params.provider ||
+    thread.provider ||
+    DEFAULT_PROVIDER) as AgentProvider;
+  const effectiveModel = (params.model || thread.model || DEFAULT_MODEL) as AgentModel;
+  let effectivePermission = (params.permissionMode ||
+    thread.permissionMode ||
+    'autoEdit') as PermissionMode;
+
+  // Update thread's permission mode, model, provider, and baseBranch if they changed
+  const updates: Record<string, any> = {};
+  const modelChanged = !!(params.model && params.model !== thread.model);
+  const providerChanged = !!(params.provider && params.provider !== thread.provider);
+
+  if (params.permissionMode && params.permissionMode !== thread.permissionMode) {
+    updates.permissionMode = params.permissionMode;
+  }
+  if (modelChanged) {
+    updates.model = params.model;
+  }
+  if (providerChanged) {
+    updates.provider = params.provider;
+  }
+  if (params.baseBranch && params.baseBranch !== thread.baseBranch) {
+    updates.baseBranch = params.baseBranch;
+  }
+  // Clear sessionId when model or provider changes — the old session is incompatible
+  if ((modelChanged || providerChanged) && thread.sessionId) {
+    updates.sessionId = null;
+    updates.contextRecoveryReason = providerChanged ? 'provider_changed' : 'model_changed';
+  }
+  if (Object.keys(updates).length > 0) {
+    await tm.updateThread(params.threadId, updates);
+  }
+
+  // Auto-move idle backlog threads to in_progress when a message is sent
+  let hasDraftMessage = false;
+  if (thread.status === 'idle' && thread.stage === 'backlog') {
+    const stageUpdates: Record<string, any> = { stage: 'in_progress' };
+    if (thread.initialPrompt && params.content !== thread.initialPrompt) {
+      stageUpdates.title = params.content.slice(0, 200);
+      stageUpdates.initialPrompt = params.content;
+    }
+    await tm.updateThread(params.threadId, stageUpdates);
+
+    const { messages: draftMessages } = await tm.getThreadMessages({
+      threadId: params.threadId,
+      limit: 1,
+    });
+    const draftMsg = draftMessages[0];
+    if (draftMsg && draftMsg.role === 'user') {
+      await tm.updateMessage(draftMsg.id, {
+        content: params.content,
+        images: params.images?.length ? JSON.stringify(params.images) : null,
+      });
+      hasDraftMessage = true;
+    }
+  }
+
+  // Persist the user's answer in the tool call output.
+  // Always attempt this (not just when status === 'waiting') because the thread
+  // status may have already transitioned away from 'waiting' by the time the
+  // user's response arrives — e.g. due to interruption or race conditions.
+  // Without this, the tool call output stays NULL and the UI re-shows
+  // accept/reject buttons on refresh.
+  {
+    const pendingTC = await tm.findLastUnansweredInteractiveToolCall(params.threadId);
+    if (pendingTC) {
+      log.info('sendMessage: resolving unanswered interactive tool call', {
+        namespace: 'thread-service',
+        threadId: params.threadId,
+        userId: thread.userId ?? 'unknown',
+        projectId: thread.projectId,
+        threadStatus: thread.status,
+        pendingToolCallId: pendingTC.id,
+        pendingToolCallName: pendingTC.name,
+      });
+      await tm.updateToolCallOutput(pendingTC.id, params.content);
+
+      // When the user accepts a plan (ExitPlanMode), switch from plan-only mode
+      // to autoEdit so the agent can actually execute. Without this, the agent
+      // restarts in plan mode and immediately calls ExitPlanMode again — an
+      // infinite loop.
+      if (pendingTC.name === 'ExitPlanMode' && effectivePermission === 'plan') {
+        effectivePermission = 'autoEdit';
+        await tm.updateThread(params.threadId, { permissionMode: 'autoEdit' });
+        emitThreadUpdated(thread.userId, params.threadId, { permissionMode: 'autoEdit' });
+        log.info('sendMessage: upgrading permissionMode from plan to autoEdit after ExitPlanMode', {
+          namespace: 'thread-service',
+          threadId: params.threadId,
+        });
+      }
+    }
+  }
+
+  // Augment prompt with file/symbol contents
+  let augmentedContent = await augmentPromptWithFiles(params.content, params.fileReferences, cwd);
+  augmentedContent = await augmentPromptWithSymbols(augmentedContent, params.symbolReferences, cwd);
+
+  // Check if the agent is running and the project uses queue mode
+  const agentRunning = isAgentRunning(params.threadId);
+  const project = await getServices().projects.getProject(thread.projectId);
+  const followUpMode = project?.followUpMode || DEFAULT_FOLLOW_UP_MODE;
+
+  // When the thread is waiting for user input (plan acceptance, question answer),
+  // always bypass the queue and deliver the response immediately. The agent process
+  // may still appear "running" due to a race condition (process hasn't fully exited
+  // after emitting the result), but agent:completed is never emitted for waiting
+  // threads, so queued messages would never be drained — causing a deadlock.
+  const isWaitingResponse = thread.status === 'waiting';
+
+  // When the thread has been stopped/completed/failed, bypass the queue even if
+  // isAgentRunning() still returns true (race condition: the stop request hasn't
+  // fully cleaned up the process yet). The user intends to restart the thread,
+  // not queue a message that would be drained by the stop completion handler.
+  const threadIsTerminal =
+    thread.status === 'stopped' || thread.status === 'completed' || thread.status === 'failed';
+
+  if (
+    agentRunning &&
+    !isWaitingResponse &&
+    !threadIsTerminal &&
+    (followUpMode === 'queue' || params.forceQueue)
+  ) {
+    const queued = await getServices().messageQueue.enqueue(params.threadId, {
+      content: augmentedContent,
+      provider: effectiveProvider,
+      model: effectiveModel,
+      permissionMode: effectivePermission,
+      images: params.images ? JSON.stringify(params.images) : undefined,
+      allowedTools: params.allowedTools ? JSON.stringify(params.allowedTools) : undefined,
+      disallowedTools: params.disallowedTools ? JSON.stringify(params.disallowedTools) : undefined,
+      fileReferences: params.fileReferences ? JSON.stringify(params.fileReferences) : undefined,
+    });
+
+    await tm.insertMessage({
+      threadId: params.threadId,
+      role: 'user',
+      content: augmentedContent,
+      images: params.images ? JSON.stringify(params.images) : null,
+      model: effectiveModel,
+      permissionMode: effectivePermission,
+    });
+
+    const qCount = await getServices().messageQueue.queueCount(params.threadId);
+    const nextMsg = await getServices().messageQueue.peek(params.threadId);
+    const queueEvent = {
+      type: 'thread:queue_update' as const,
+      threadId: params.threadId,
+      data: {
+        threadId: params.threadId,
+        queuedCount: qCount,
+        nextMessage: nextMsg?.content?.slice(0, 100),
+      },
+    } as WSEvent;
+    if (thread.userId) {
+      wsBroker.emitToUser(thread.userId, queueEvent);
+    } else {
+      wsBroker.emit(queueEvent);
+    }
+
+    return { ok: true, queued: true, queuedCount: qCount, queuedMessageId: queued.id };
+  }
+
+  // When sending to an idle thread that had a draft, update draft with augmented content
+  if (hasDraftMessage) {
+    const { messages: draftMsgs } = await tm.getThreadMessages({
+      threadId: params.threadId,
+      limit: 1,
+    });
+    if (draftMsgs[0]) {
+      await tm.updateMessage(draftMsgs[0].id, { content: augmentedContent });
+    }
+  }
+
+  // Default interrupt behavior — start agent (throws on failure)
+  log.info('sendMessage: calling startAgent', {
+    namespace: 'thread-service',
+    threadId: params.threadId,
+    userId: thread.userId ?? 'unknown',
+    projectId: thread.projectId,
+    threadStatusBefore: thread.status,
+    hasDraftMessage: String(hasDraftMessage),
+  });
+  await startAgent(
+    params.threadId,
+    augmentedContent,
+    cwd,
+    effectiveModel,
+    effectivePermission,
+    params.images,
+    params.disallowedTools,
+    params.allowedTools,
+    effectiveProvider,
+    undefined,
+    hasDraftMessage, // skipMessageInsert — draft already exists
+    params.effort,
+  );
+
+  return { ok: true };
+}
+
+// ── Stop Thread ─────────────────────────────────────────────────
+
+export async function stopThread(threadId: string): Promise<void> {
+  const thread = await tm.getThread(threadId);
+  if (!thread) throw new ThreadServiceError('Thread not found', 404);
+  if (thread.provider === 'external') {
+    await cleanupExternalThread(threadId);
+    return;
+  }
+  await stopAgent(threadId);
+}
+
+// ── Approve / Deny Tool ─────────────────────────────────────────
+
+export interface ApproveToolParams {
+  threadId: string;
+  userId: string;
+  toolName: string;
+  approved: boolean;
+  allowedTools?: string[];
+  disallowedTools?: string[];
+}
+
+export async function approveToolCall(params: ApproveToolParams): Promise<void> {
+  const thread = await tm.getThread(params.threadId);
+  if (!thread) throw new ThreadServiceError('Thread not found', 404);
+
+  let cwd: string;
+  if (thread.worktreePath) {
+    cwd = thread.worktreePath;
+  } else {
+    const pathResult = await getServices().projects.resolveProjectPath(
+      thread.projectId,
+      params.userId,
+    );
+    if (pathResult.isErr()) throw new ThreadServiceError(pathResult.error.message, 400);
+    cwd = pathResult.value;
+  }
+
+  const tools = params.allowedTools
+    ? [...params.allowedTools]
+    : [
+        'Read',
+        'Edit',
+        'Write',
+        'Bash',
+        'Glob',
+        'Grep',
+        'WebSearch',
+        'WebFetch',
+        'Task',
+        'TodoWrite',
+        'NotebookEdit',
+      ];
+
+  const threadProvider = (thread.provider || DEFAULT_PROVIDER) as AgentProvider;
+
+  if (params.approved) {
+    if (!tools.includes(params.toolName)) {
+      tools.push(params.toolName);
+    }
+    const disallowed = params.disallowedTools?.filter((t) => t !== params.toolName);
+    const message = `The user has approved the use of ${params.toolName}. Please proceed with using it.`;
+    await startAgent(
+      params.threadId,
+      message,
+      cwd,
+      (thread.model as AgentModel) || DEFAULT_MODEL,
+      (thread.permissionMode as PermissionMode) || DEFAULT_PERMISSION_MODE,
+      undefined,
+      disallowed,
+      tools,
+      threadProvider,
+    );
+  } else {
+    const message = `The user denied permission to use ${params.toolName}. Please continue without it.`;
+    await startAgent(
+      params.threadId,
+      message,
+      cwd,
+      (thread.model as AgentModel) || DEFAULT_MODEL,
+      (thread.permissionMode as PermissionMode) || DEFAULT_PERMISSION_MODE,
+      undefined,
+      params.disallowedTools,
+      params.allowedTools,
+      threadProvider,
+    );
+  }
+}
+
+// ── Queue Operations ────────────────────────────────────────────
+
+export async function cancelQueuedMessage(
+  threadId: string,
+  messageId: string,
+): Promise<{ queuedCount: number }> {
+  const cancelled = await getServices().messageQueue.cancel(messageId);
+  if (!cancelled) throw new ThreadServiceError('Queued message not found', 404);
+
+  const thread = await tm.getThread(threadId);
+  const qCount = await getServices().messageQueue.queueCount(threadId);
+  const nextMsg = await getServices().messageQueue.peek(threadId);
+
+  const queueEvent = {
+    type: 'thread:queue_update' as const,
+    threadId,
+    data: { threadId, queuedCount: qCount, nextMessage: nextMsg?.content?.slice(0, 100) },
+  } as WSEvent;
+  if (thread?.userId) {
+    wsBroker.emitToUser(thread.userId, queueEvent);
+  } else {
+    wsBroker.emit(queueEvent);
+  }
+
+  return { queuedCount: qCount };
+}
+
+export async function updateQueuedMessage(
+  threadId: string,
+  messageId: string,
+  content: string,
+): Promise<{ queuedCount: number; queuedMessage: any }> {
+  const queuedMessage = await getServices().messageQueue.update(messageId, content);
+  if (!queuedMessage) throw new ThreadServiceError('Queued message not found', 404);
+
+  const thread = await tm.getThread(threadId);
+  const qCount = await getServices().messageQueue.queueCount(threadId);
+  const nextMsg = await getServices().messageQueue.peek(threadId);
+
+  const queueEvent = {
+    type: 'thread:queue_update' as const,
+    threadId,
+    data: { threadId, queuedCount: qCount, nextMessage: nextMsg?.content?.slice(0, 100) },
+  } as WSEvent;
+  if (thread?.userId) {
+    wsBroker.emitToUser(thread.userId, queueEvent);
+  } else {
+    wsBroker.emit(queueEvent);
+  }
+
+  return { queuedCount: qCount, queuedMessage };
+}
+
+// ── Comment Operations ──────────────────────────────────────────
+
+export async function deleteComment(threadId: string, commentId: string): Promise<void> {
+  const thread = await tm.getThread(threadId);
+  if (!thread) throw new ThreadServiceError('Thread not found', 404);
+
+  await tm.deleteComment(commentId);
+
+  const event = {
+    type: 'thread:comment_deleted' as const,
+    threadId,
+    data: { commentId },
+  };
+  if (!thread.userId) {
+    log.warn('deleteComment: thread has no userId — dropping WS event', {
+      namespace: 'thread-service',
+      threadId,
+    });
+  } else {
+    wsBroker.emitToUser(thread.userId, event);
+  }
+}
