@@ -52,10 +52,10 @@ export function SwitchBranchDialog({
             {t('switchBranch.title', 'Switch branch')}
           </DialogTitle>
           <DialogDescription>
-            {t(
-              'switchBranch.description',
-              'You have changes on this branch. What would you like to do with them?',
-            )}
+            {t('switchBranch.description', {
+              branch: truncate(currentBranch),
+              defaultValue: `You have changes on ${truncate(currentBranch)}. What would you like to do with them?`,
+            })}
           </DialogDescription>
         </DialogHeader>
 

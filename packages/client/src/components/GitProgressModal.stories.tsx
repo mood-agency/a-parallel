@@ -141,7 +141,7 @@ function GitProgressTrigger({
 /* ------------------------------------------------------------------ */
 
 const meta: Meta = {
-  title: 'Components/GitProgressModal',
+  title: 'Dialogs/GitProgressModal',
   component: GitProgressModal,
   parameters: { layout: 'centered' },
   tags: ['autodocs'],

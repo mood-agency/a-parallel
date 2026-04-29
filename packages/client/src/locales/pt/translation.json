@@ -25,6 +25,10 @@
     "archive": "Arquivar",
     "pin": "Fixar",
     "unpin": "Desafixar",
+    "threadPinned": "Thread fixada",
+    "threadUnpinned": "Thread desafixada",
+    "pinFailed": "Falha ao fixar a thread",
+    "unpinFailed": "Falha ao desafixar a thread",
     "delete": "Excluir",
     "projectName": "Nome do projeto",
     "absolutePath": "Caminho absoluto",
@@ -707,7 +711,10 @@
     "sendSignal": "Enviar sinal",
     "uptime": "Tempo ativo",
     "memory": "Memória",
-    "restarts": "Reinícios"
+    "restarts": "Reinícios",
+    "rename": "Renomear",
+    "kill": "Encerrar terminal",
+    "close": "Fechar"
   },
   "worktreeSettings": {
     "noProject": "Nenhum projeto selecionado. Adicione um projeto primeiro para gerenciar worktrees.",
@@ -789,7 +796,9 @@
     "deleteBranchOption": "Também excluir a branch local \"{{branch}}\"",
     "createBranchTitle": "Criar Branch",
     "createBranchPlaceholder": "nome-nova-branch",
-    "createBranchDesc": "Criar uma nova branch para esta thread. A thread mudará para a nova branch."
+    "createBranchDesc": "Criar uma nova branch para esta thread. A thread mudará para a nova branch.",
+    "createBranchBasedOn": "Sua nova branch será baseada em",
+    "createBranchBasedOnUnknown": "branch atual"
   },
   "toast": {
     "threadArchived": "Thread arquivada com sucesso",
@@ -852,7 +861,7 @@
   },
   "switchBranch": {
     "title": "Mudar branch",
-    "description": "Você tem alterações nesta branch. O que gostaria de fazer com elas?",
+    "description": "Você tem alterações em {{branch}}. O que gostaria de fazer com elas?",
     "leaveChanges": "Deixar minhas alterações em {{branch}}",
     "leaveChangesDesc": "Seu trabalho em andamento será guardado em stash nesta branch para você voltar depois",
     "bringChanges": "Levar minhas alterações para {{branch}}",

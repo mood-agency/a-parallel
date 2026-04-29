@@ -25,6 +25,10 @@
     "archive": "Archive",
     "pin": "Pin",
     "unpin": "Unpin",
+    "threadPinned": "Thread pinned",
+    "threadUnpinned": "Thread unpinned",
+    "pinFailed": "Failed to pin thread",
+    "unpinFailed": "Failed to unpin thread",
     "delete": "Delete",
     "projectName": "Project name",
     "threadName": "Thread name",
@@ -716,7 +720,10 @@
     "sendSignal": "Send signal",
     "uptime": "Uptime",
     "memory": "Memory",
-    "restarts": "Restarts"
+    "restarts": "Restarts",
+    "rename": "Rename",
+    "kill": "Kill terminal",
+    "close": "Close"
   },
   "worktreeSettings": {
     "noProject": "No project selected. Add a project first to manage worktrees.",
@@ -802,7 +809,9 @@
     "deleteBranchOption": "Also delete local branch \"{{branch}}\"",
     "createBranchTitle": "Create Branch",
     "createBranchPlaceholder": "new-branch-name",
-    "createBranchDesc": "Create a new branch for this thread. The thread will switch to the new branch."
+    "createBranchDesc": "Create a new branch for this thread. The thread will switch to the new branch.",
+    "createBranchBasedOn": "Your new branch will be based on",
+    "createBranchBasedOnUnknown": "current branch"
   },
   "toast": {
     "threadArchived": "Thread archived successfully",
@@ -870,7 +879,7 @@
   },
   "switchBranch": {
     "title": "Switch branch",
-    "description": "You have changes on this branch. What would you like to do with them?",
+    "description": "You have changes on {{branch}}. What would you like to do with them?",
     "leaveChanges": "Leave my changes on {{branch}}",
     "leaveChangesDesc": "Your in-progress work will be stashed on this branch for you to return to later",
     "bringChanges": "Bring my changes to {{branch}}",

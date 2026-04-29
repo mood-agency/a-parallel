@@ -38,8 +38,10 @@ import type {
   AgentModel,
   PermissionMode,
 } from '@funny/shared';
+import { toast } from 'sonner';
 import { create } from 'zustand';
 
+import i18n from '@/i18n/config';
 import { api } from '@/lib/api';
 import { metric } from '@/lib/telemetry';
 
@@ -813,7 +815,10 @@ export const useThreadStore = create<ThreadState>((set, get) => ({
             ? { ...currentState.activeThread, pinned: oldPinned }
             : currentState.activeThread,
       });
+      toast.error(i18n.t(pinned ? 'sidebar.pinFailed' : 'sidebar.unpinFailed'));
+      return;
     }
+    toast.success(i18n.t(pinned ? 'sidebar.threadPinned' : 'sidebar.threadUnpinned'));
   },
 
   updateThreadStage: async (threadId, projectId, stage) => {

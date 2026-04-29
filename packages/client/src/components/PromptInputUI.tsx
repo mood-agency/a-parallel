@@ -782,33 +782,6 @@ export const PromptInputUI = memo(function PromptInputUI({
   return (
     <div className="border-border">
       <div className="mx-auto w-full min-w-0 max-w-3xl pb-4">
-        {/* Image previews */}
-        {images.length > 0 && (
-          <div className="mb-2 flex flex-wrap gap-2">
-            {images.map((img, idx) => (
-              <div key={`preview-${idx}`} className="group relative">
-                <img
-                  src={`data:${img.source.media_type};base64,${img.source.data}`}
-                  alt={`Attachment ${idx + 1}`}
-                  className="max-h-10 min-h-10 min-w-10 max-w-24 cursor-pointer rounded border border-input object-cover transition-opacity hover:opacity-80"
-                  onClick={() => {
-                    setLightboxIndex(idx);
-                    setLightboxOpen(true);
-                  }}
-                />
-                <button
-                  onClick={() => removeImage(idx)}
-                  aria-label={t('prompt.removeImage', 'Remove image')}
-                  className="absolute -right-1 -top-1 rounded-full bg-destructive p-0.5 text-destructive-foreground opacity-0 transition-opacity group-hover:opacity-100"
-                  disabled={loading}
-                >
-                  <X className="icon-xs" />
-                </button>
-              </div>
-            ))}
-          </div>
-        )}
-
         {/* Image lightbox */}
         <ImageLightbox
           images={images.map((img, idx) => ({
@@ -991,6 +964,33 @@ export const PromptInputUI = memo(function PromptInputUI({
           onDragLeave={handleDragLeave}
           onDrop={handleDrop}
         >
+          {/* Image previews */}
+          {images.length > 0 && (
+            <div className="flex flex-wrap gap-2 px-3 pt-2">
+              {images.map((img, idx) => (
+                <div key={`preview-${idx}`} className="group relative">
+                  <img
+                    src={`data:${img.source.media_type};base64,${img.source.data}`}
+                    alt={`Attachment ${idx + 1}`}
+                    className="max-h-10 min-h-10 min-w-10 max-w-24 cursor-pointer rounded border border-input object-cover transition-opacity hover:opacity-80"
+                    onClick={() => {
+                      setLightboxIndex(idx);
+                      setLightboxOpen(true);
+                    }}
+                  />
+                  <button
+                    onClick={() => removeImage(idx)}
+                    aria-label={t('prompt.removeImage', 'Remove image')}
+                    className="absolute -right-1 -top-1 rounded-full bg-destructive p-0.5 text-destructive-foreground opacity-0 transition-opacity group-hover:opacity-100"
+                    disabled={loading}
+                  >
+                    <X className="icon-xs" />
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
+
           {/* TipTap Editor */}
           <div ref={editorContainerRef} className="px-3 pt-2">
             <PromptEditor

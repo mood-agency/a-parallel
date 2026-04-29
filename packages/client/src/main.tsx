@@ -1,5 +1,22 @@
 import './wdyr'; // must be first — tracks unnecessary re-renders in dev
 import { AbbacchioProvider } from '@abbacchio/browser-transport/react';
+
+// Swallow benign "ResizeObserver loop completed with undelivered notifications"
+// errors before any other listener (Abbacchio, React) sees them. They surface
+// during Radix Collapsible/Sidebar layout transitions and have no user impact.
+// Must run before AbbacchioProvider attaches its window error listener.
+const RESIZE_OBSERVER_LOOP_RE =
+  /^ResizeObserver loop (completed with undelivered notifications|limit exceeded)/;
+window.addEventListener(
+  'error',
+  (e) => {
+    if (e.message && RESIZE_OBSERVER_LOOP_RE.test(e.message)) {
+      e.stopImmediatePropagation();
+      e.preventDefault();
+    }
+  },
+  true,
+);
 import { ThemeProvider, useTheme } from 'next-themes';
 import React, { lazy, Suspense, useEffect, useState, useSyncExternalStore } from 'react';
 import ReactDOM from 'react-dom/client';

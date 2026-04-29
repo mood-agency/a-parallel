@@ -188,6 +188,7 @@ export const PromptInput = memo(function PromptInput({
   const [followUpBranches, setFollowUpBranches] = useState<string[]>([]);
   const [followUpRemoteBranches, setFollowUpRemoteBranches] = useState<string[]>([]);
   const [followUpDefaultBranch, setFollowUpDefaultBranch] = useState<string | null>(null);
+  const [followUpCurrentBranch, setFollowUpCurrentBranch] = useState<string | null>(null);
   const [followUpSelectedBranch, setFollowUpSelectedBranch] = useState<string>('');
 
   // ── Queue state ──
@@ -391,7 +392,12 @@ export const PromptInput = memo(function PromptInput({
   useEffect(() => {
     if (!isNewThread && selectedProjectId) {
       // Use cached data if we already fetched for this project
-      if (followUpBranchCacheRef.current?.projectId === selectedProjectId) {
+      const cached = followUpBranchCacheRef.current;
+      if (cached?.projectId === selectedProjectId) {
+        setFollowUpBranches(cached.branches);
+        setFollowUpRemoteBranches(cached.remoteBranches);
+        setFollowUpDefaultBranch(cached.defaultBranch);
+        setFollowUpCurrentBranch(cached.currentBranch);
         return;
       }
       (async () => {
@@ -408,12 +414,15 @@ export const PromptInput = memo(function PromptInput({
           setFollowUpBranches(data.branches);
           setFollowUpRemoteBranches(data.remoteBranches ?? []);
           setFollowUpDefaultBranch(data.defaultBranch);
+          setFollowUpCurrentBranch(data.currentBranch);
         } else {
           setFollowUpBranches([]);
+          setFollowUpCurrentBranch(null);
         }
       })();
     } else {
       setFollowUpBranches([]);
+      setFollowUpCurrentBranch(null);
       followUpBranchCacheRef.current = null;
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -760,7 +769,7 @@ export const PromptInput = memo(function PromptInput({
         followUpDefaultBranch={followUpDefaultBranch}
         followUpSelectedBranch={followUpSelectedBranch}
         onFollowUpSelectedBranchChange={handleFollowUpBranchChange}
-        activeThreadBranch={activeThreadBranch}
+        activeThreadBranch={activeThreadBranch ?? followUpCurrentBranch ?? undefined}
         effectiveCwd={threadCwd}
         showBacklog={showBacklog}
         sendToBacklog={sendToBacklog}

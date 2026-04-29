@@ -81,11 +81,13 @@ export function PRBadge({
     return (
       <Tooltip>
         <TooltipTrigger asChild>
-          <a
-            href={prUrl}
-            target="_blank"
-            rel="noopener noreferrer"
-            onClick={(e) => e.stopPropagation()}
+          <button
+            type="button"
+            onClick={(e) => {
+              e.preventDefault();
+              e.stopPropagation();
+              window.open(prUrl, '_blank', 'noopener,noreferrer');
+            }}
             className={cn(
               'flex flex-shrink-0 items-center gap-0.5 font-mono hover:underline',
               textSize,
@@ -96,7 +98,7 @@ export function PRBadge({
           >
             <Icon className={iconSize} />
             <span>#{prNumber}</span>
-          </a>
+          </button>
         </TooltipTrigger>
         <TooltipContent side="top" className="text-xs">
           {tooltipLabel}
