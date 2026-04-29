@@ -35,6 +35,11 @@ export abstract class BaseAgentProcess extends EventEmitter {
   protected abortController = new AbortController();
   protected _exited = false;
 
+  /** Promise representing the currently running turn, or null when idle. */
+  private currentTurn: Promise<void> | null = null;
+  /** Prompts (with optional per-turn images) queued while a turn was in flight. */
+  private promptQueue: Array<{ prompt: string; images?: unknown[] }> = [];
+
   constructor(protected options: ClaudeProcessOptions) {
     super();
   }
@@ -66,6 +71,119 @@ export abstract class BaseAgentProcess extends EventEmitter {
 
   /** Provider-specific run loop. Implement in subclass. */
   protected abstract runProcess(): Promise<void>;
+
+  /**
+   * Hook for ACP-based subclasses that hold a live ACP connection. Returning
+   * a handle here opts the adapter into `steerPrompt` semantics — the base
+   * class will issue `session/cancel` on the in-flight turn before queuing
+   * the steered prompt. Adapters that can't cancel mid-turn should leave
+   * this undefined; `steerPrompt` then degrades to a plain follow-up.
+   */
+  protected getCancellableSession?(): {
+    sessionId: string;
+    cancel: () => Promise<void>;
+  } | null;
+
+  /**
+   * Steer: cancel the in-flight turn (if any) and send `prompt` on the same
+   * session. Falls back to plain `enqueuePrompt` for adapters that don't
+   * implement `getCancellableSession`. The cancelled turn still emits a
+   * `result` CLIMessage (subtype mapped from `stopReason: 'cancelled'`),
+   * so the queue lock releases naturally before the steered turn starts.
+   */
+  async steerPrompt(prompt: string, images?: unknown[]): Promise<void> {
+    const handle = this.getCancellableSession?.();
+    if (handle) {
+      try {
+        await handle.cancel();
+      } catch (err) {
+        // Best-effort: cancel may race against natural turn completion.
+        // Don't fail the steer — the steered prompt still queues.
+        if (!this.isAborted) {
+          this.emit('error', err instanceof Error ? err : new Error(String(err)));
+        }
+      }
+    }
+    return this.enqueuePrompt(prompt, images);
+  }
+
+  /**
+   * Resolves when kill() is called (or immediately if already aborted).
+   * Long-lived adapters await this inside runProcess() to keep the run
+   * loop alive across multiple prompts on the same session.
+   */
+  protected awaitShutdown(): Promise<void> {
+    return new Promise<void>((resolve) => {
+      if (this.abortController.signal.aborted) {
+        resolve();
+        return;
+      }
+      this.abortController.signal.addEventListener('abort', () => resolve(), { once: true });
+    });
+  }
+
+  /**
+   * Run a single turn under exclusion. If a turn is already running,
+   * queue this one to run after. Used by adapters that support multi-turn
+   * via `sendPrompt()`.
+   *
+   * Subclasses must implement `runOnePrompt(prompt)` to do the actual
+   * per-turn work (reset turn state, call provider's prompt API, emit result).
+   */
+  protected async enqueuePrompt(prompt: string, images?: unknown[]): Promise<void> {
+    if (this._exited || this.isAborted) {
+      throw new Error('Agent process has exited');
+    }
+    if (this.currentTurn) {
+      this.promptQueue.push({ prompt, images });
+      return;
+    }
+    const turn = this.runOnePromptSafe(prompt, images);
+    this.currentTurn = turn;
+    try {
+      await turn;
+    } finally {
+      this.currentTurn = null;
+      while (!this._exited && !this.isAborted && this.promptQueue.length > 0) {
+        const next = this.promptQueue.shift()!;
+        const t = this.runOnePromptSafe(next.prompt, next.images);
+        this.currentTurn = t;
+        try {
+          await t;
+        } finally {
+          this.currentTurn = null;
+        }
+      }
+    }
+  }
+
+  /**
+   * Wrapper around `runOnePrompt` that swallows errors after emitting them
+   * via the standard error-handling path, so a failed turn doesn't poison
+   * the queue.
+   */
+  private async runOnePromptSafe(prompt: string, images?: unknown[]): Promise<void> {
+    try {
+      if (!this.runOnePrompt) {
+        throw new Error('Adapter does not implement runOnePrompt — multi-turn not supported');
+      }
+      await this.runOnePrompt(prompt, images);
+    } catch (err) {
+      if (!this.isAborted) {
+        this.emit('error', err instanceof Error ? err : new Error(String(err)));
+      }
+    }
+  }
+
+  /**
+   * Provider-specific per-turn work. Multi-turn adapters override this and
+   * are expected to: reset per-turn state, call the provider's prompt API
+   * on the live connection, and emit a `result` CLIMessage.
+   *
+   * `images` are scoped to this single turn — callers pass `this.options.images`
+   * for the initial turn and follow-up images via `sendPrompt`/`steerPrompt`.
+   */
+  protected runOnePrompt?(prompt: string, images?: unknown[]): Promise<void>;
 
   /** Emit a system:init CLIMessage. */
   protected emitInit(sessionId: string, tools: string[], model: string, cwd: string): void {

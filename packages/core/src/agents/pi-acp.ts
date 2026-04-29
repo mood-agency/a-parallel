@@ -13,6 +13,12 @@
  * Translates ACP session updates into CLIMessage format so that
  * AgentMessageHandler works unchanged (same as GeminiACPProcess and
  * CodexACPProcess).
+ *
+ * The child process and ACP session are kept alive across turns: the
+ * initial prompt is run inline from `runProcess()`, after which the run
+ * loop awaits shutdown. Follow-up prompts are issued via `sendPrompt()`
+ * which calls `connection.prompt()` on the same session — no respawn,
+ * no history replay.
  */
 
 import { spawn, type ChildProcess } from 'child_process';
@@ -20,6 +26,7 @@ import { randomUUID } from 'crypto';
 import { Readable, Writable } from 'stream';
 
 import { createDebugLogger } from '../debug.js';
+import { toACPImageBlocks, type ACPImageBlock } from './acp-image.js';
 import { toACPMcpServers } from './acp-mcp.js';
 import { inferACPToolName, buildACPToolInput, extractACPToolOutput } from './acp-tool-input.js';
 import { BaseAgentProcess, type ResultSubtype } from './base-process.js';
@@ -35,6 +42,7 @@ type ACPSessionNotification = import('@agentclientprotocol/sdk').SessionNotifica
 type ACPSessionUpdate = import('@agentclientprotocol/sdk').SessionUpdate;
 type ACPRequestPermissionRequest = import('@agentclientprotocol/sdk').RequestPermissionRequest;
 type ACPRequestPermissionResponse = import('@agentclientprotocol/sdk').RequestPermissionResponse;
+type ACPConnection = import('@agentclientprotocol/sdk').ClientSideConnection;
 
 /** Pi built-in tools surfaced via system:init. Matches `pi --tools` defaults. */
 const PI_BUILTIN_TOOLS = ['read', 'bash', 'edit', 'write', 'grep', 'find', 'ls'];
@@ -59,8 +67,28 @@ function stripPiBanner(text: string): string {
 export class PiACPProcess extends BaseAgentProcess {
   private childProcess: ChildProcess | null = null;
 
+  // ── Long-lived per-process state ─────────────────────────────────
+  private connection: ACPConnection | null = null;
+  private activeSessionId: string | null = null;
+  private numTurns = 0;
+  private totalCost = 0;
+  /** True if the agent advertises `promptCapabilities.image` at init. */
+  private supportsImages = false;
+
+  // ── Per-turn state (reset on each runOnePrompt) ──────────────────
+  private assistantMsgId: string = randomUUID();
+  private accumulatedText = '';
+  private toolCallsSeen = new Map<string, string>();
+  private lastAssistantText = '';
   /** Buffer for `agent_thought_chunk` text — collapsed into a single Think tool call. */
   private pendingThought: { id: string; text: string } | null = null;
+
+  /**
+   * True while loadSession is replaying historical session updates.
+   * funny's DB already holds the persisted history and we don't want
+   * duplicates, so the sessionUpdate handler drops events while this is set.
+   */
+  private replayingHistory = false;
 
   private flushPendingThought(): void {
     if (!this.pendingThought) return;
@@ -91,6 +119,24 @@ export class PiACPProcess extends BaseAgentProcess {
     if (this.childProcess && !this.childProcess.killed) {
       this.childProcess.kill('SIGTERM');
     }
+  }
+
+  /** Multi-turn: re-prompt on the live ACP session. */
+  async sendPrompt(prompt: string, images?: unknown[]): Promise<void> {
+    return this.enqueuePrompt(prompt, images);
+  }
+
+  /** Expose the live ACP session so BaseAgentProcess.steerPrompt can cancel it. */
+  protected getCancellableSession() {
+    if (!this.connection || !this.activeSessionId) return null;
+    const sessionId = this.activeSessionId;
+    const conn = this.connection;
+    return {
+      sessionId,
+      cancel: async () => {
+        await conn.cancel({ sessionId });
+      },
+    };
   }
 
   // ── Provider-specific run loop ─────────────────────────────────
@@ -142,6 +188,16 @@ export class PiACPProcess extends BaseAgentProcess {
       }
     });
 
+    // If the child exits unexpectedly (crash, OOM, parent kill), shut down
+    // the run loop so awaitShutdown() resolves and finalize() runs. Without
+    // this, a long-lived adapter would leak its run loop after a child crash.
+    child.on('exit', (code, signal) => {
+      if (!this.isAborted && !this._exited) {
+        dlog.warn('pi-acp child exited unexpectedly', { code, signal });
+        this.abortController.abort();
+      }
+    });
+
     child.stderr?.on('data', (data: Buffer) => {
       const raw = data.toString().trim();
       if (!raw) return;
@@ -163,33 +219,11 @@ export class PiACPProcess extends BaseAgentProcess {
     const inputStream = Readable.toWeb(child.stdout!) as unknown as ReadableStream<Uint8Array>;
     const stream = ndJsonStream(outputStream, inputStream);
 
-    let activeSessionId: string = this.options.sessionId ?? randomUUID();
-    const startTime = Date.now();
-    let numTurns = 0;
-    const totalCost = 0;
-    let lastAssistantText = '';
-
-    let assistantMsgId: string = randomUUID();
-    let accumulatedText = '';
-    const toolCallsSeen = new Map<string, string>();
-
-    // While loadSession is replaying historical session updates, drop them —
-    // funny's DB already holds the persisted history and we don't want duplicates.
-    let replayingHistory = false;
-
     const acpClient: ACPClient = {
       sessionUpdate: async (params: ACPSessionNotification): Promise<void> => {
         if (this.isAborted) return;
-        if (replayingHistory) return;
-        const result = this.translateUpdate(
-          params.update,
-          assistantMsgId,
-          toolCallsSeen,
-          accumulatedText,
-        );
-        accumulatedText = result.text;
-        assistantMsgId = result.msgId;
-        if (result.lastAssistantText) lastAssistantText = result.lastAssistantText;
+        if (this.replayingHistory) return;
+        this.translateUpdate(params.update);
       },
 
       requestPermission: async (
@@ -210,6 +244,7 @@ export class PiACPProcess extends BaseAgentProcess {
     };
 
     const connection = new ClientSideConnection((_agent: ACPAgent) => acpClient, stream);
+    this.connection = connection;
 
     try {
       const initResult = await connection.initialize({
@@ -219,6 +254,7 @@ export class PiACPProcess extends BaseAgentProcess {
       });
 
       const supportsLoadSession = initResult.agentCapabilities?.loadSession === true;
+      this.supportsImages = initResult.agentCapabilities?.promptCapabilities?.image === true;
       const mcpCaps = (initResult.agentCapabilities as Record<string, any> | undefined)
         ?.mcpCapabilities;
       const supportsHttp = mcpCaps?.http === true;
@@ -242,10 +278,11 @@ export class PiACPProcess extends BaseAgentProcess {
           mcpCapabilities: mcpCaps,
         });
       }
+
       let sessionResponse: Awaited<ReturnType<typeof connection.newSession>> | null = null;
       if (this.options.sessionId && supportsLoadSession) {
-        activeSessionId = this.options.sessionId;
-        replayingHistory = true;
+        this.activeSessionId = this.options.sessionId;
+        this.replayingHistory = true;
         try {
           await connection.loadSession({
             sessionId: this.options.sessionId,
@@ -253,20 +290,20 @@ export class PiACPProcess extends BaseAgentProcess {
             mcpServers: mcpServerList,
           });
         } finally {
-          replayingHistory = false;
+          this.replayingHistory = false;
         }
       } else {
         sessionResponse = await connection.newSession({
           cwd: this.options.cwd,
           mcpServers: mcpServerList,
         });
-        activeSessionId = sessionResponse.sessionId;
+        this.activeSessionId = sessionResponse.sessionId;
       }
 
       // Emit init with the real session id once known so the persisted
       // record matches what pi-acp wrote to its session store.
       this.emitInit(
-        activeSessionId,
+        this.activeSessionId,
         PI_BUILTIN_TOOLS,
         this.options.model ?? 'pi-default',
         this.options.cwd,
@@ -286,7 +323,7 @@ export class PiACPProcess extends BaseAgentProcess {
       if (requestedModel && requestedModel !== 'default') {
         try {
           await connection.unstable_setSessionModel({
-            sessionId: activeSessionId,
+            sessionId: this.activeSessionId,
             modelId: requestedModel,
           });
           dlog.info('session/set_model applied', { modelId: requestedModel });
@@ -298,12 +335,81 @@ export class PiACPProcess extends BaseAgentProcess {
         }
       }
 
-      const promptResponse = await connection.prompt({
-        sessionId: activeSessionId,
-        prompt: [{ type: 'text', text: this.options.prompt }],
+      // Run the initial prompt inline so any setup error surfaces as a
+      // failed first turn rather than a stuck "no response" thread.
+      await this.runOnePrompt(this.options.prompt, this.options.images);
+
+      // Stay alive across turns — sendPrompt() will issue follow-up prompts
+      // on the same connection. Resolves when kill() is called.
+      await this.awaitShutdown();
+    } catch (err: unknown) {
+      this.flushPendingThought();
+      if (!this.isAborted) {
+        const errorMessage = this.extractErrorMessage(err);
+        this.emitResult({
+          sessionId: this.activeSessionId ?? randomUUID(),
+          subtype: 'error_during_execution',
+          startTime: Date.now(),
+          numTurns: this.numTurns,
+          totalCost: this.totalCost,
+          result: errorMessage,
+          errors: [errorMessage],
+        });
+      }
+    } finally {
+      if (this.childProcess && !this.childProcess.killed) {
+        this.childProcess.kill('SIGTERM');
+      }
+      this.connection = null;
+      this.finalize();
+    }
+  }
+
+  // ── Per-turn execution ──────────────────────────────────────────
+
+  protected async runOnePrompt(prompt: string, images?: unknown[]): Promise<void> {
+    if (!this.connection || !this.activeSessionId) {
+      throw new Error('PiACPProcess: connection not initialized');
+    }
+
+    // Reset per-turn state so each turn renders as a fresh assistant message.
+    this.assistantMsgId = randomUUID();
+    this.accumulatedText = '';
+    this.toolCallsSeen.clear();
+    this.lastAssistantText = '';
+    this.pendingThought = null;
+
+    const startTime = Date.now();
+
+    // Forward images for this turn only if the agent advertised image support
+    // — otherwise pi-acp would reject the prompt or silently drop the blocks.
+    const promptBlocks: Array<{ type: 'text'; text: string } | ACPImageBlock> = [
+      { type: 'text', text: prompt },
+    ];
+    const imageBlocks = toACPImageBlocks(images);
+    dlog.info('runOnePrompt image diagnostics', {
+      rawImagesType: Array.isArray(images) ? 'array' : typeof images,
+      rawImagesCount: Array.isArray(images) ? images.length : 0,
+      acpBlockCount: imageBlocks.length,
+      supportsImages: this.supportsImages,
+    });
+    if (imageBlocks.length > 0) {
+      if (this.supportsImages) {
+        promptBlocks.push(...imageBlocks);
+      } else {
+        dlog.warn('agent does not advertise promptCapabilities.image — dropping images', {
+          count: imageBlocks.length,
+        });
+      }
+    }
+
+    try {
+      const promptResponse = await this.connection.prompt({
+        sessionId: this.activeSessionId,
+        prompt: promptBlocks,
       });
 
-      numTurns = 1;
+      this.numTurns += 1;
 
       const subtype: ResultSubtype =
         promptResponse.stopReason === 'end_turn'
@@ -317,53 +423,33 @@ export class PiACPProcess extends BaseAgentProcess {
       this.flushPendingThought();
 
       this.emitResult({
-        sessionId: activeSessionId,
+        sessionId: this.activeSessionId,
         subtype,
         startTime,
-        numTurns,
-        totalCost,
-        result: lastAssistantText || undefined,
+        numTurns: this.numTurns,
+        totalCost: this.totalCost,
+        result: this.lastAssistantText || undefined,
       });
     } catch (err: unknown) {
       this.flushPendingThought();
       if (!this.isAborted) {
         const errorMessage = this.extractErrorMessage(err);
         this.emitResult({
-          sessionId: activeSessionId,
+          sessionId: this.activeSessionId,
           subtype: 'error_during_execution',
           startTime,
-          numTurns,
-          totalCost,
+          numTurns: this.numTurns,
+          totalCost: this.totalCost,
           result: errorMessage,
           errors: [errorMessage],
         });
       }
-    } finally {
-      if (this.childProcess && !this.childProcess.killed) {
-        this.childProcess.kill('SIGTERM');
-      }
-      this.finalize();
     }
   }
 
   // ── Update translation ──────────────────────────────────────
 
-  private translateUpdate(
-    update: ACPSessionUpdate,
-    assistantMsgId: string,
-    toolCallsSeen: Map<string, string>,
-    accumulatedText: string,
-  ): { text: string; msgId: string; lastAssistantText?: string } {
-    const ret = (
-      text: string,
-      msgId?: string,
-      lastAssistantText?: string,
-    ): { text: string; msgId: string; lastAssistantText?: string } => ({
-      text,
-      msgId: msgId ?? assistantMsgId,
-      lastAssistantText,
-    });
-
+  private translateUpdate(update: ACPSessionUpdate): void {
     switch (update.sessionUpdate) {
       case 'agent_thought_chunk': {
         const content = update.content;
@@ -373,32 +459,33 @@ export class PiACPProcess extends BaseAgentProcess {
           }
           this.pendingThought.text += content.text;
         }
-        return ret(accumulatedText);
+        return;
       }
 
       case 'agent_message_chunk': {
         this.flushPendingThought();
         const content = update.content;
         if (content.type === 'text' && content.text) {
-          accumulatedText += content.text;
-          const visible = stripPiBanner(accumulatedText);
+          this.accumulatedText += content.text;
+          const visible = stripPiBanner(this.accumulatedText);
           if (visible) {
             this.emit('message', {
               type: 'assistant',
               message: {
-                id: assistantMsgId,
+                id: this.assistantMsgId,
                 content: [{ type: 'text', text: visible }],
               },
             } as CLIMessage);
+            this.lastAssistantText = visible;
           }
         }
-        return ret(accumulatedText, assistantMsgId, stripPiBanner(accumulatedText));
+        return;
       }
 
       case 'tool_call': {
         this.flushPendingThought();
         const toolCallId = update.toolCallId;
-        if (toolCallsSeen.has(toolCallId)) return ret(accumulatedText);
+        if (this.toolCallsSeen.has(toolCallId)) return;
 
         const acpKind = (update as any).kind as string | undefined;
         const title = update.title || '';
@@ -406,7 +493,7 @@ export class PiACPProcess extends BaseAgentProcess {
           | Array<{ path: string; line?: number | null }>
           | undefined;
         const toolName = inferACPToolName(acpKind, title);
-        toolCallsSeen.set(toolCallId, toolName);
+        this.toolCallsSeen.set(toolCallId, toolName);
 
         const input = buildACPToolInput(toolName, {
           kind: acpKind,
@@ -425,7 +512,7 @@ export class PiACPProcess extends BaseAgentProcess {
 
         const tcStatus = (update as any).status as string | undefined;
         if (tcStatus === 'completed' || tcStatus === 'failed') {
-          toolCallsSeen.set(toolCallId, 'done');
+          this.toolCallsSeen.set(toolCallId, 'done');
           const tcOutput = extractACPToolOutput(update.rawOutput, (update as any).content, title);
           this.emit('message', {
             type: 'user',
@@ -435,14 +522,18 @@ export class PiACPProcess extends BaseAgentProcess {
           } as CLIMessage);
         }
 
-        return ret('', randomUUID());
+        // Rotate assistant message id so post-tool-call text becomes a
+        // separate DB message from any pre-tool-call streaming text.
+        this.accumulatedText = '';
+        this.assistantMsgId = randomUUID();
+        return;
       }
 
       case 'tool_call_update': {
         this.flushPendingThought();
         const toolCallId = update.toolCallId;
         if (update.status === 'completed' || update.status === 'failed') {
-          toolCallsSeen.set(toolCallId, 'done');
+          this.toolCallsSeen.set(toolCallId, 'done');
           const output = extractACPToolOutput(
             update.rawOutput,
             (update as any).content,
@@ -455,7 +546,7 @@ export class PiACPProcess extends BaseAgentProcess {
             },
           } as CLIMessage);
         }
-        return ret(accumulatedText);
+        return;
       }
 
       case 'plan': {
@@ -473,16 +564,16 @@ export class PiACPProcess extends BaseAgentProcess {
           this.emit('message', {
             type: 'assistant',
             message: {
-              id: assistantMsgId,
+              id: this.assistantMsgId,
               content: [{ type: 'text', text: `**Plan:**\n${planText}` }],
             },
           } as CLIMessage);
         }
-        return ret(accumulatedText);
+        return;
       }
 
       default:
-        return ret(accumulatedText);
+        return;
     }
   }
 

@@ -16,6 +16,31 @@ export interface IAgentProcess {
   removeAllListeners(event?: string): this;
   start(): void;
   kill(): Promise<void>;
+  /**
+   * Send a follow-up prompt on the same long-lived process. Only set by
+   * adapters that support multi-turn (e.g., ACP-based providers that keep
+   * the child process and ACP session alive across turns). When undefined,
+   * the orchestrator must respawn the process to issue another prompt.
+   *
+   * `images` are attachments scoped to this single turn. Adapters forward
+   * them only when the agent advertised `promptCapabilities.image`.
+   *
+   * Implementations should queue if a turn is already in flight.
+   */
+  sendPrompt?(prompt: string, images?: unknown[]): Promise<void>;
+  /**
+   * Cancel the in-flight turn (if any) and send a new prompt on the same
+   * session. Implemented by ACP adapters that can call `session/cancel`.
+   * The pending `prompt()` resolves with `stopReason: 'cancelled'`, the
+   * turn lock releases, and the new prompt runs on the same warm session.
+   *
+   * `images` are attachments scoped to this single turn. Adapters forward
+   * them only when the agent advertised `promptCapabilities.image`.
+   *
+   * Cancellation happens between tool calls — a tool already executing
+   * runs to completion before the agent honors the cancel.
+   */
+  steerPrompt?(prompt: string, images?: unknown[]): Promise<void>;
   readonly exited: boolean;
 }
 

@@ -23,6 +23,7 @@ import { fileURLToPath } from 'url';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
+import { toACPImageBlocks, type ACPImageBlock } from './acp-image.js';
 import { toACPMcpServers } from './acp-mcp.js';
 import { inferACPToolName, buildACPToolInput, extractACPToolOutput } from './acp-tool-input.js';
 import { BaseAgentProcess, type ResultSubtype } from './base-process.js';
@@ -305,11 +306,12 @@ export class DeepAgentProcess extends BaseAgentProcess {
 
     try {
       // Step 1: Initialize the ACP connection
-      await connection.initialize({
+      const initResult = await connection.initialize({
         protocolVersion: 1,
         clientInfo: { name: 'funny', version: '1.0.0' },
         clientCapabilities: {},
       });
+      const supportsImages = initResult.agentCapabilities?.promptCapabilities?.image === true;
 
       // Step 2: Create a new session
       // MCP servers can be injected via agent templates or project config
@@ -319,10 +321,24 @@ export class DeepAgentProcess extends BaseAgentProcess {
         mcpServers: mcpServerList,
       });
 
-      // Step 3: Send the prompt
+      // Step 3: Send the prompt — attach images if the agent supports them.
+      const promptBlocks: Array<{ type: 'text'; text: string } | ACPImageBlock> = [
+        { type: 'text', text: this.options.prompt },
+      ];
+      const imageBlocks = toACPImageBlocks(this.options.images);
+      if (imageBlocks.length > 0) {
+        if (supportsImages) {
+          promptBlocks.push(...imageBlocks);
+        } else {
+          console.warn(
+            '[deepagent-acp] agent does not advertise promptCapabilities.image — dropping images',
+            { count: imageBlocks.length },
+          );
+        }
+      }
       const promptResponse = await connection.prompt({
         sessionId: sessionResponse.sessionId,
-        prompt: [{ type: 'text', text: this.options.prompt }],
+        prompt: promptBlocks,
       });
 
       // Extract usage if available

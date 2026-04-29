@@ -13,12 +13,18 @@
  *   - Session resume via `session/load` (capability flag verified at runtime)
  *   - Mode + model selected explicitly after newSession via ACP requests
  *   - Per-tool approvals routed through requestPermission → permissionRuleLookup
+ *
+ * The child process and ACP session are kept alive across turns: the initial
+ * prompt is run inline from `runProcess()`, after which the run loop awaits
+ * shutdown. Follow-up prompts are issued via `sendPrompt()` which calls
+ * `connection.prompt()` on the same session — no respawn, no replay.
  */
 import { spawn, type ChildProcess } from 'child_process';
 import { randomUUID } from 'crypto';
 import { Readable, Writable } from 'stream';
 
 import { createDebugLogger } from '../debug.js';
+import { toACPImageBlocks, type ACPImageBlock } from './acp-image.js';
 import { toACPMcpServers } from './acp-mcp.js';
 import {
   inferACPToolName,
@@ -39,6 +45,7 @@ type ACPSessionNotification = import('@agentclientprotocol/sdk').SessionNotifica
 type ACPSessionUpdate = import('@agentclientprotocol/sdk').SessionUpdate;
 type ACPRequestPermissionRequest = import('@agentclientprotocol/sdk').RequestPermissionRequest;
 type ACPRequestPermissionResponse = import('@agentclientprotocol/sdk').RequestPermissionResponse;
+type ACPConnection = import('@agentclientprotocol/sdk').ClientSideConnection;
 
 /** Approximate list of Codex built-in tools — surfaced via system:init for UI. */
 const CODEX_BUILTIN_TOOLS = [
@@ -73,6 +80,19 @@ function buildCodexModelId(model: string | undefined, effort: string | undefined
 export class CodexACPProcess extends BaseAgentProcess {
   private childProcess: ChildProcess | null = null;
 
+  // ── Long-lived per-process state ─────────────────────────────────
+  private connection: ACPConnection | null = null;
+  private activeSessionId: string | null = null;
+  private numTurns = 0;
+  private totalCost = 0;
+  /** True if the agent advertises `promptCapabilities.image` at init. */
+  private supportsImages = false;
+
+  // ── Per-turn state (reset on each runOnePrompt) ──────────────────
+  private assistantMsgId: string = randomUUID();
+  private accumulatedText = '';
+  private toolCallsSeen = new Map<string, string>();
+  private lastAssistantText = '';
   /**
    * Buffer for `agent_thought_chunk` text. Codex streams its internal
    * reasoning as separate thought events that we collapse into a single
@@ -80,6 +100,9 @@ export class CodexACPProcess extends BaseAgentProcess {
    * matching how Claude extended thinking is displayed.
    */
   private pendingThought: { id: string; text: string } | null = null;
+
+  /** True while loadSession is replaying historical events. */
+  private replayingHistory = false;
 
   private flushPendingThought(): void {
     if (!this.pendingThought) return;
@@ -110,6 +133,24 @@ export class CodexACPProcess extends BaseAgentProcess {
     if (this.childProcess && !this.childProcess.killed) {
       this.childProcess.kill('SIGTERM');
     }
+  }
+
+  /** Multi-turn: re-prompt on the live ACP session. */
+  async sendPrompt(prompt: string, images?: unknown[]): Promise<void> {
+    return this.enqueuePrompt(prompt, images);
+  }
+
+  /** Expose the live ACP session so BaseAgentProcess.steerPrompt can cancel it. */
+  protected getCancellableSession() {
+    if (!this.connection || !this.activeSessionId) return null;
+    const sessionId = this.activeSessionId;
+    const conn = this.connection;
+    return {
+      sessionId,
+      cancel: async () => {
+        await conn.cancel({ sessionId });
+      },
+    };
   }
 
   // ── Provider-specific run loop ─────────────────────────────────
@@ -165,6 +206,14 @@ export class CodexACPProcess extends BaseAgentProcess {
       if (errorText) this.emitErrorToolCall(errorText);
     });
 
+    // If the child exits unexpectedly, wake the run loop so cleanup happens.
+    child.on('exit', (code, signal) => {
+      if (!this.isAborted && !this._exited) {
+        dlog.warn('codex-acp child exited unexpectedly', { code, signal });
+        this.abortController.abort();
+      }
+    });
+
     try {
       await new Promise<void>((resolve, reject) => {
         child.on('spawn', resolve);
@@ -179,33 +228,11 @@ export class CodexACPProcess extends BaseAgentProcess {
     const inputStream = Readable.toWeb(child.stdout!) as unknown as ReadableStream<Uint8Array>;
     const stream = ndJsonStream(outputStream, inputStream);
 
-    const startTime = Date.now();
-    let numTurns = 0;
-    let totalCost = 0;
-    let lastAssistantText = '';
-
-    let assistantMsgId = randomUUID();
-    let accumulatedText = '';
-    const toolCallsSeen = new Map<string, string>();
-
-    // While loadSession is replaying historical session updates, we drop them —
-    // funny's DB already holds the persisted history and we don't want duplicates.
-    let replayingHistory = false;
-
     const acpClient: ACPClient = {
       sessionUpdate: async (params: ACPSessionNotification): Promise<void> => {
         if (this.isAborted) return;
-        if (replayingHistory) return;
-
-        const result = this.translateUpdate(
-          params.update,
-          assistantMsgId,
-          toolCallsSeen,
-          accumulatedText,
-        );
-        accumulatedText = result.text;
-        assistantMsgId = result.msgId;
-        if (result.lastAssistantText) lastAssistantText = result.lastAssistantText;
+        if (this.replayingHistory) return;
+        this.translateUpdate(params.update);
       },
 
       requestPermission: async (
@@ -216,8 +243,7 @@ export class CodexACPProcess extends BaseAgentProcess {
     };
 
     const connection = new ClientSideConnection((_agent: ACPAgent) => acpClient, stream);
-
-    let activeSessionId: string | null = null;
+    this.connection = connection;
 
     try {
       // 1. Initialize ACP
@@ -228,6 +254,7 @@ export class CodexACPProcess extends BaseAgentProcess {
       });
 
       const supportsLoadSession = initResult.agentCapabilities?.loadSession === true;
+      this.supportsImages = initResult.agentCapabilities?.promptCapabilities?.image === true;
       const supportsSetSessionModel =
         (initResult.agentCapabilities as Record<string, unknown> | undefined)?.[
           'unstable_setSessionModel'
@@ -237,11 +264,10 @@ export class CodexACPProcess extends BaseAgentProcess {
         ] === true;
 
       // 2. Resume or create
-      // MCP servers can be injected via agent templates or project config
       const mcpServerList = toACPMcpServers(this.options.mcpServers);
       if (this.options.sessionId && supportsLoadSession) {
-        activeSessionId = this.options.sessionId;
-        replayingHistory = true;
+        this.activeSessionId = this.options.sessionId;
+        this.replayingHistory = true;
         try {
           await connection.loadSession({
             sessionId: this.options.sessionId,
@@ -249,22 +275,20 @@ export class CodexACPProcess extends BaseAgentProcess {
             mcpServers: mcpServerList,
           });
         } finally {
-          replayingHistory = false;
+          this.replayingHistory = false;
         }
       } else {
         const ns = await connection.newSession({
           cwd: this.options.cwd,
           mcpServers: mcpServerList,
         });
-        activeSessionId = ns.sessionId;
+        this.activeSessionId = ns.sessionId;
       }
 
       // Emit init with the real session id once known so the persisted
-      // record matches what codex-acp wrote to its session store —
-      // otherwise resume/loadSession would be looking up a UUID that
-      // codex-acp never assigned.
+      // record matches what codex-acp wrote to its session store.
       this.emitInit(
-        activeSessionId,
+        this.activeSessionId,
         CODEX_BUILTIN_TOOLS,
         this.options.model ?? 'gpt-5.4',
         this.options.cwd,
@@ -275,24 +299,20 @@ export class CodexACPProcess extends BaseAgentProcess {
         this.options.originalPermissionMode ?? this.options.permissionMode,
       );
       try {
-        await connection.setSessionMode({ sessionId: activeSessionId, modeId: desiredMode });
+        await connection.setSessionMode({ sessionId: this.activeSessionId, modeId: desiredMode });
       } catch (e) {
-        // Non-fatal: log via stderr-style tool card and continue with whatever the
-        // current mode is. Some Codex configs may restrict mode changes.
         this.emitErrorToolCall(
           `**codex-acp:** unable to switch to session mode "${desiredMode}" — ${this.extractErrorMessage(e)}`,
         );
       }
 
-      // 4. Select model + reasoning effort. Only attempt when the agent
-      // advertised the capability — older codex-acp builds will return
-      // method-not-found errors otherwise.
+      // 4. Select model + reasoning effort.
       if (supportsSetSessionModel) {
         const modelId = buildCodexModelId(this.options.model, this.options.effort);
         if (modelId) {
           try {
             await (connection as any).unstable_setSessionModel({
-              sessionId: activeSessionId,
+              sessionId: this.activeSessionId,
               modelId,
             });
           } catch (e) {
@@ -305,10 +325,82 @@ export class CodexACPProcess extends BaseAgentProcess {
         dlog.debug('codex-acp does not advertise unstable_setSessionModel; skipping model select');
       }
 
-      // 5. Send the prompt
-      const promptResponse = await connection.prompt({
-        sessionId: activeSessionId,
-        prompt: [{ type: 'text', text: this.options.prompt }],
+      // 5. Run initial prompt inline so a setup error surfaces as a failed turn.
+      await this.runOnePrompt(this.options.prompt, this.options.images);
+
+      // Stay alive across turns; sendPrompt() reuses this connection.
+      await this.awaitShutdown();
+    } catch (err: unknown) {
+      this.flushPendingThought();
+      if (!this.isAborted) {
+        const errorMessage = this.extractErrorMessage(err);
+        // If we failed before newSession returned, emitInit was never called —
+        // give the result a placeholder id so the message handler doesn't
+        // choke on a null session.
+        const resultSessionId = this.activeSessionId ?? randomUUID();
+        if (!this.activeSessionId) {
+          this.emitInit(
+            resultSessionId,
+            CODEX_BUILTIN_TOOLS,
+            this.options.model ?? 'gpt-5.4',
+            this.options.cwd,
+          );
+        }
+        this.emitResult({
+          sessionId: resultSessionId,
+          subtype: 'error_during_execution',
+          startTime: Date.now(),
+          numTurns: this.numTurns,
+          totalCost: this.totalCost,
+          result: errorMessage,
+          errors: [errorMessage],
+        });
+      }
+    } finally {
+      if (this.childProcess && !this.childProcess.killed) {
+        this.childProcess.kill('SIGTERM');
+      }
+      this.connection = null;
+      this.finalize();
+    }
+  }
+
+  // ── Per-turn execution ──────────────────────────────────────────
+
+  protected async runOnePrompt(prompt: string, images?: unknown[]): Promise<void> {
+    if (!this.connection || !this.activeSessionId) {
+      throw new Error('CodexACPProcess: connection not initialized');
+    }
+
+    // Reset per-turn state.
+    this.assistantMsgId = randomUUID();
+    this.accumulatedText = '';
+    this.toolCallsSeen.clear();
+    this.lastAssistantText = '';
+    this.pendingThought = null;
+
+    const startTime = Date.now();
+
+    // Forward images for this turn only if the agent advertised image support
+    // — otherwise codex would reject the prompt or silently drop the blocks.
+    const promptBlocks: Array<{ type: 'text'; text: string } | ACPImageBlock> = [
+      { type: 'text', text: prompt },
+    ];
+    const imageBlocks = toACPImageBlocks(images);
+    if (imageBlocks.length > 0) {
+      if (this.supportsImages) {
+        promptBlocks.push(...imageBlocks);
+      } else {
+        dlog.warn('agent does not advertise promptCapabilities.image — dropping images', {
+          count: imageBlocks.length,
+        });
+      }
+    }
+
+    try {
+      const promptResponse = await this.connection.prompt({
+        sessionId: this.activeSessionId,
+        prompt: promptBlocks,
       });
 
       // Usage / cost (rough GPT-5.4 class pricing)
@@ -318,10 +410,10 @@ export class CodexACPProcess extends BaseAgentProcess {
       if (usage) {
         const inputTokens = usage.inputTokens ?? 0;
         const outputTokens = usage.outputTokens ?? 0;
-        totalCost = (inputTokens * 0.0025 + outputTokens * 0.01) / 1000;
+        this.totalCost += (inputTokens * 0.0025 + outputTokens * 0.01) / 1000;
       }
 
-      numTurns = 1;
+      this.numTurns += 1;
 
       const subtype: ResultSubtype =
         promptResponse.stopReason === 'end_turn'
@@ -333,48 +425,30 @@ export class CodexACPProcess extends BaseAgentProcess {
               ? 'error_max_turns'
               : 'success';
 
-      // Flush any trailing thought before closing out the run
       this.flushPendingThought();
 
       this.emitResult({
-        sessionId: activeSessionId,
+        sessionId: this.activeSessionId,
         subtype,
         startTime,
-        numTurns,
-        totalCost,
-        result: lastAssistantText || undefined,
+        numTurns: this.numTurns,
+        totalCost: this.totalCost,
+        result: this.lastAssistantText || undefined,
       });
     } catch (err: unknown) {
       this.flushPendingThought();
       if (!this.isAborted) {
         const errorMessage = this.extractErrorMessage(err);
-        // If we failed before newSession returned, emitInit was never called —
-        // give the result a placeholder id so the message handler doesn't
-        // choke on a null session.
-        const resultSessionId = activeSessionId ?? randomUUID();
-        if (!activeSessionId) {
-          this.emitInit(
-            resultSessionId,
-            CODEX_BUILTIN_TOOLS,
-            this.options.model ?? 'gpt-5.4',
-            this.options.cwd,
-          );
-        }
         this.emitResult({
-          sessionId: resultSessionId,
+          sessionId: this.activeSessionId,
           subtype: 'error_during_execution',
           startTime,
-          numTurns,
-          totalCost,
+          numTurns: this.numTurns,
+          totalCost: this.totalCost,
           result: errorMessage,
           errors: [errorMessage],
         });
       }
-    } finally {
-      if (this.childProcess && !this.childProcess.killed) {
-        this.childProcess.kill('SIGTERM');
-      }
-      this.finalize();
     }
   }
 
@@ -485,18 +559,7 @@ export class CodexACPProcess extends BaseAgentProcess {
 
   // ── Update translation (mirrors gemini-acp.translateUpdate) ───
 
-  private translateUpdate(
-    update: ACPSessionUpdate,
-    assistantMsgId: string,
-    toolCallsSeen: Map<string, string>,
-    accumulatedText: string,
-  ): { text: string; msgId: string; lastAssistantText?: string } {
-    const ret = (text: string, msgId?: string, lastAssistantText?: string) => ({
-      text,
-      msgId: msgId ?? assistantMsgId,
-      lastAssistantText,
-    });
-
+  private translateUpdate(update: ACPSessionUpdate): void {
     switch (update.sessionUpdate) {
       case 'agent_thought_chunk': {
         // Buffer thought — flushed as a Think tool_call on the next non-thought event.
@@ -507,28 +570,29 @@ export class CodexACPProcess extends BaseAgentProcess {
           }
           this.pendingThought.text += content.text;
         }
-        return ret(accumulatedText);
+        return;
       }
 
       case 'agent_message_chunk': {
         this.flushPendingThought();
         const content = update.content;
         if (content.type === 'text' && content.text) {
-          accumulatedText += content.text;
+          this.accumulatedText += content.text;
           this.emit('message', {
             type: 'assistant',
             message: {
-              id: assistantMsgId,
-              content: [{ type: 'text', text: accumulatedText }],
+              id: this.assistantMsgId,
+              content: [{ type: 'text', text: this.accumulatedText }],
             },
           } as CLIMessage);
+          this.lastAssistantText = this.accumulatedText;
         }
-        return ret(accumulatedText, undefined, accumulatedText);
+        return;
       }
 
       case 'tool_call': {
         const toolCallId = update.toolCallId;
-        if (toolCallsSeen.has(toolCallId)) return ret(accumulatedText);
+        if (this.toolCallsSeen.has(toolCallId)) return;
 
         const acpKind = (update as any).kind as string | undefined;
         const title = update.title || '';
@@ -544,8 +608,8 @@ export class CodexACPProcess extends BaseAgentProcess {
             this.pendingThought = { id: randomUUID(), text: '' };
           }
           this.pendingThought.text += (this.pendingThought.text ? '\n' : '') + preamble;
-          toolCallsSeen.set(toolCallId, 'preamble');
-          return ret(accumulatedText);
+          this.toolCallsSeen.set(toolCallId, 'preamble');
+          return;
         }
 
         this.flushPendingThought();
@@ -554,7 +618,7 @@ export class CodexACPProcess extends BaseAgentProcess {
           | undefined;
         const toolName = inferACPToolName(acpKind, title);
 
-        toolCallsSeen.set(toolCallId, toolName);
+        this.toolCallsSeen.set(toolCallId, toolName);
 
         const input = buildACPToolInput(toolName, {
           kind: acpKind,
@@ -580,7 +644,7 @@ export class CodexACPProcess extends BaseAgentProcess {
 
         const tcStatus = (update as any).status as string | undefined;
         if (tcStatus === 'completed' || tcStatus === 'failed') {
-          toolCallsSeen.set(toolCallId, 'done');
+          this.toolCallsSeen.set(toolCallId, 'done');
           const tcOutput = extractACPToolOutput(update.rawOutput, (update as any).content, title);
           this.emit('message', {
             type: 'user',
@@ -596,17 +660,20 @@ export class CodexACPProcess extends BaseAgentProcess {
           } as CLIMessage);
         }
 
-        return ret('', randomUUID());
+        // Rotate assistant message id so post-tool text becomes a separate DB message.
+        this.accumulatedText = '';
+        this.assistantMsgId = randomUUID();
+        return;
       }
 
       case 'tool_call_update': {
         const toolCallId = update.toolCallId;
-        if (toolCallsSeen.get(toolCallId) === 'preamble') {
-          return ret(accumulatedText);
+        if (this.toolCallsSeen.get(toolCallId) === 'preamble') {
+          return;
         }
         this.flushPendingThought();
         if (update.status === 'completed' || update.status === 'failed') {
-          toolCallsSeen.set(toolCallId, 'done');
+          this.toolCallsSeen.set(toolCallId, 'done');
           const output = extractACPToolOutput(
             update.rawOutput,
             (update as any).content,
@@ -625,7 +692,7 @@ export class CodexACPProcess extends BaseAgentProcess {
             },
           } as CLIMessage);
         }
-        return ret(accumulatedText);
+        return;
       }
 
       case 'plan': {
@@ -640,9 +707,9 @@ export class CodexACPProcess extends BaseAgentProcess {
             })
             .join('\n');
 
-          for (const [tcId, tcState] of toolCallsSeen) {
+          for (const [tcId, tcState] of this.toolCallsSeen) {
             if (tcState === 'Task') {
-              toolCallsSeen.set(tcId, 'done');
+              this.toolCallsSeen.set(tcId, 'done');
               this.emit('message', {
                 type: 'user',
                 message: {
@@ -661,16 +728,16 @@ export class CodexACPProcess extends BaseAgentProcess {
           this.emit('message', {
             type: 'assistant',
             message: {
-              id: assistantMsgId,
+              id: this.assistantMsgId,
               content: [{ type: 'text', text: `**Plan:**\n${planText}` }],
             },
           } as CLIMessage);
         }
-        return ret(accumulatedText);
+        return;
       }
 
       default:
-        return ret(accumulatedText);
+        return;
     }
   }
 

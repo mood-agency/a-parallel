@@ -74,6 +74,14 @@ export interface StartAgentOptions {
     toolInput: unknown;
     cwd?: string;
   }) => Promise<{ output: string } | null>;
+  /**
+   * Steer mode: cancel the in-flight turn before sending the prompt.
+   * Requires a live, compatible process that implements `steerPrompt`.
+   * Falls back to plain follow-up (sendPrompt) when the live process
+   * doesn't support steering or options changed; never falls through
+   * to kill+respawn so the cancelled turn's partial output is preserved.
+   */
+  steer?: boolean;
 }
 
 export interface OrchestratorEvents {
@@ -86,15 +94,81 @@ export interface OrchestratorEvents {
   'agent:session-cleared': (threadId: string) => void;
 }
 
+/**
+ * Subset of process options compared to decide whether a follow-up prompt
+ * can be issued on a live process via `sendPrompt()` instead of respawning.
+ */
+interface ProcessOptionsSnapshot {
+  provider: string;
+  model: string;
+  cwd: string;
+  permissionMode: string;
+  effort?: string;
+  /** Stable JSON of mcpServers — '' when none. */
+  mcpServersKey: string;
+}
+
+function snapshotProcessOptions(opts: {
+  provider?: string;
+  model?: string;
+  cwd?: string;
+  permissionMode?: string;
+  effort?: string;
+  mcpServers?: Record<string, any>;
+}): ProcessOptionsSnapshot {
+  let mcpServersKey = '';
+  if (opts.mcpServers) {
+    try {
+      const sortedKeys = Object.keys(opts.mcpServers).sort();
+      const sorted: Record<string, any> = {};
+      for (const k of sortedKeys) sorted[k] = opts.mcpServers[k];
+      mcpServersKey = JSON.stringify(sorted);
+    } catch {
+      mcpServersKey = '__unstable__';
+    }
+  }
+  return {
+    provider: opts.provider ?? '',
+    model: opts.model ?? '',
+    cwd: opts.cwd ?? '',
+    permissionMode: opts.permissionMode ?? '',
+    effort: opts.effort,
+    mcpServersKey,
+  };
+}
+
 // ── Orchestrator ──────────────────────────────────────────────────
 
 export class AgentOrchestrator extends EventEmitter {
   private activeAgents = new Map<string, IAgentProcess>();
   private resultReceived = new Set<string>();
   private manuallyStopped = new Set<string>();
+  /**
+   * Last process options applied per thread, used to gate process reuse.
+   * Reusing via `sendPrompt()` is only safe when the new request matches
+   * the live process on provider, model, cwd, permissionMode, effort, and
+   * mcpServers — anything else implies the user changed something that
+   * the live agent can't reflect, so we kill + respawn instead.
+   */
+  private lastOptions = new Map<string, ProcessOptionsSnapshot>();
 
   constructor(private processFactory: IAgentProcessFactory) {
     super();
+  }
+
+  /** Compare the subset of options that gate process reuse. */
+  private isCompatibleOptions(
+    prev: ProcessOptionsSnapshot | undefined,
+    next: ProcessOptionsSnapshot,
+  ): boolean {
+    if (!prev) return false;
+    if (prev.provider !== next.provider) return false;
+    if (prev.model !== next.model) return false;
+    if (prev.cwd !== next.cwd) return false;
+    if (prev.permissionMode !== next.permissionMode) return false;
+    if (prev.effort !== next.effort) return false;
+    if (prev.mcpServersKey !== next.mcpServersKey) return false;
+    return true;
   }
 
   // ── Public API ────────────────────────────────────────────────
@@ -122,6 +196,7 @@ export class AgentOrchestrator extends EventEmitter {
       agentName,
       permissionRuleLookup,
       bypassExecutor,
+      steer,
     } = options;
 
     dlog.info('startAgent', {
@@ -131,10 +206,70 @@ export class AgentOrchestrator extends EventEmitter {
       cwd,
       hasSessionId: !!sessionId,
       permissionMode,
+      imageCount: Array.isArray(images) ? images.length : 0,
     });
 
-    // Kill existing process if still running
+    const isResume = !!sessionId;
+    const nextSnapshot = snapshotProcessOptions({
+      provider,
+      model,
+      cwd,
+      permissionMode,
+      effort,
+      mcpServers,
+    });
+
+    // Reuse gate: if a live process supports sendPrompt and the request is
+    // compatible, issue the follow-up on the live process instead of killing
+    // + respawning. Keeps the in-memory ACP session warm and avoids
+    // loadSession replay overhead. Skipped on resume (sessionId set) since
+    // resume implies the previous process is gone.
     const existing = this.activeAgents.get(threadId);
+    const liveAndCompatible =
+      !isResume &&
+      existing &&
+      !existing.exited &&
+      !this.manuallyStopped.has(threadId) &&
+      this.isCompatibleOptions(this.lastOptions.get(threadId), nextSnapshot);
+
+    // Steer path: cancel the in-flight turn, then queue the new prompt on
+    // the same session. Requires steerPrompt — if the adapter doesn't
+    // implement it (or steerPrompt throws), fall through to the regular
+    // sendPrompt reuse path. Never falls through to kill+respawn because
+    // that would discard the cancelled turn's partial output.
+    if (steer && liveAndCompatible && typeof existing!.steerPrompt === 'function') {
+      dlog.info('Steering live agent process', { threadId, provider });
+      try {
+        await existing!.steerPrompt!(prompt, images);
+        this.lastOptions.set(threadId, nextSnapshot);
+        this.emit('agent:started', threadId);
+        return;
+      } catch (e) {
+        dlog.warn('steerPrompt failed — falling back to sendPrompt', {
+          threadId,
+          error: String(e).slice(0, 200),
+        });
+        // Fall through to sendPrompt reuse below.
+      }
+    }
+
+    if (liveAndCompatible && typeof existing!.sendPrompt === 'function') {
+      dlog.info('Reusing live agent process via sendPrompt', { threadId, provider });
+      try {
+        await existing!.sendPrompt(prompt, images);
+        this.lastOptions.set(threadId, nextSnapshot);
+        this.emit('agent:started', threadId);
+        return;
+      } catch (e) {
+        dlog.warn('sendPrompt on live process failed — falling back to respawn', {
+          threadId,
+          error: String(e).slice(0, 200),
+        });
+        // Fall through to kill + respawn.
+      }
+    }
+
+    // Kill existing process if still running
     if (existing && !existing.exited) {
       dlog.info('Stopping existing agent before restart', { threadId });
       this.manuallyStopped.add(threadId);
@@ -148,9 +283,9 @@ export class AgentOrchestrator extends EventEmitter {
 
     // Clear stale state
     this.resultReceived.delete(threadId);
+    this.lastOptions.delete(threadId);
 
     // Build effective prompt for session resume
-    const isResume = !!sessionId;
     let effectivePrompt = prompt;
     if (isResume) {
       dlog.info('Resuming session with sessionId', { threadId, sessionId });
@@ -223,6 +358,11 @@ export class AgentOrchestrator extends EventEmitter {
       dlog.info('Starting agent fresh (no sessionId)', { threadId });
       this.startFresh(threadId, processOpts, sessionId);
     }
+
+    // Record the snapshot so the next follow-up can decide whether to reuse
+    // the live process via sendPrompt. Saved after start* returns — startFresh
+    // throws on spawn failure, in which case we leave lastOptions cleared.
+    this.lastOptions.set(threadId, nextSnapshot);
   }
 
   async stopAgent(threadId: string): Promise<void> {
@@ -236,6 +376,7 @@ export class AgentOrchestrator extends EventEmitter {
       }
       this.activeAgents.delete(threadId);
     }
+    this.lastOptions.delete(threadId);
     this.emit('agent:stopped', threadId);
   }
 
@@ -251,6 +392,7 @@ export class AgentOrchestrator extends EventEmitter {
     this.activeAgents.delete(threadId);
     this.resultReceived.delete(threadId);
     this.manuallyStopped.delete(threadId);
+    this.lastOptions.delete(threadId);
   }
 
   /**
@@ -268,6 +410,7 @@ export class AgentOrchestrator extends EventEmitter {
     this.activeAgents.clear();
     this.resultReceived.clear();
     this.manuallyStopped.clear();
+    this.lastOptions.clear();
     return agents;
   }
 
@@ -295,6 +438,7 @@ export class AgentOrchestrator extends EventEmitter {
           dlog.error('Error killing agent', { threadId, error: String(e).slice(0, 200) });
         }
         this.activeAgents.delete(threadId);
+        this.lastOptions.delete(threadId);
       }),
     );
     dlog.info('All agents stopped');
@@ -344,6 +488,7 @@ export class AgentOrchestrator extends EventEmitter {
       // may already have replaced it in the map (race during kill + restart).
       if (this.activeAgents.get(threadId) === proc) {
         this.activeAgents.delete(threadId);
+        this.lastOptions.delete(threadId);
       }
 
       if (this.manuallyStopped.has(threadId)) {
@@ -447,6 +592,7 @@ export class AgentOrchestrator extends EventEmitter {
       // may already have replaced it in the map (race during kill + restart).
       if (this.activeAgents.get(threadId) === proc) {
         this.activeAgents.delete(threadId);
+        this.lastOptions.delete(threadId);
       }
 
       if (this.manuallyStopped.has(threadId)) {
