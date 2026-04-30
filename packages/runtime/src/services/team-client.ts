@@ -988,12 +988,6 @@ export function invalidateProjectCache(projectId: string): void {
   projectCache.delete(projectId);
 }
 
-/** Get an arc from the server by ID */
-export async function remoteGetArc(arcId: string): Promise<any> {
-  const response = await sendDataMessage('data:get_arc', { arcId });
-  return response?.arc ?? null;
-}
-
 /** List projects for a user on the server */
 export async function remoteListProjects(userId: string): Promise<any[]> {
   const result = await sendDataMessage('data:list_projects', { userId });

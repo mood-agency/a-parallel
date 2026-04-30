@@ -1,4 +1,4 @@
-import type { ImageAttachment, QueuedMessage, Skill, ThreadPurpose } from '@funny/shared';
+import type { ImageAttachment, QueuedMessage, Skill } from '@funny/shared';
 import {
   DEFAULT_MODEL,
   DEFAULT_PROVIDER,
@@ -50,7 +50,6 @@ interface PromptInputProps {
         line: number;
         endLine?: number;
       }[];
-      purpose?: ThreadPurpose;
     },
     images?: ImageAttachment[],
   ) => Promise<boolean | void> | boolean | void;
@@ -69,8 +68,6 @@ interface PromptInputProps {
   initialImages?: ImageAttachment[];
   /** Imperative ref — PromptInput writes setPrompt into it so the parent can restore text */
   setPromptRef?: React.RefObject<((text: string) => void) | null>;
-  /** Callback to trigger phase transition from an existing thread to a new purpose */
-  onPhaseTransition?: (newPurpose: ThreadPurpose) => void;
   /** Called when the editor content changes — reports whether it has content and the current text */
   onContentChange?: (hasContent: boolean, text: string) => void;
   /** Called when the worktree mode toggle changes */
@@ -94,7 +91,6 @@ export const PromptInput = memo(function PromptInput({
   initialPrompt: initialPromptProp,
   initialImages: initialImagesProp,
   setPromptRef,
-  onPhaseTransition,
   onContentChange,
   onWorktreeModeChange,
 }: PromptInputProps) {
@@ -133,7 +129,6 @@ export const PromptInput = memo(function PromptInput({
   );
   const [runtime, setRuntime] = useState<'local' | 'remote'>('local');
   const hasLauncher = !!effectiveProject?.launcherUrl;
-  const [purpose, setPurpose] = useState<ThreadPurpose>('explore');
   const [effort, setEffort] = useState<string>('high');
 
   const unifiedModelGroups = useMemo(() => getUnifiedModelOptions(t), [t]);
@@ -177,8 +172,6 @@ export const PromptInput = memo(function PromptInput({
     s.activeThread ? resolveThreadBranch(s.activeThread) : undefined,
   );
   const activeThreadBaseBranch = useThreadStore((s) => s.activeThread?.baseBranch);
-  const activeThreadArcId = useThreadStore((s) => s.activeThread?.arcId);
-  const activeThreadPurpose = useThreadStore((s) => s.activeThread?.purpose);
 
   // ── Branch state (new-thread: from shared store, follow-up: local) ──
   const selectedBranch = useBranchPickerStore((s) => s.selectedBranch);
@@ -342,22 +335,6 @@ export const PromptInput = memo(function PromptInput({
       setUnifiedModel(`${defaultProvider}:${defaultModel}`);
     }
   }, [isNewThread, activeThreadProvider, activeThreadModel, defaultProvider, defaultModel]);
-
-  // ── Sync purpose with active thread ──
-  useEffect(() => {
-    if (!isNewThread && activeThreadPurpose) {
-      setPurpose(activeThreadPurpose);
-    } else if (isNewThread) {
-      setPurpose('implement');
-    }
-  }, [isNewThread, activeThreadPurpose]);
-
-  // Force local mode for explore/plan
-  useEffect(() => {
-    if (purpose !== 'implement') {
-      setCreateWorktree(false);
-    }
-  }, [purpose]);
 
   // ── Fetch branches ──
   const effectiveProjectId = propProjectId || useProjectStore.getState().selectedProjectId;
@@ -790,10 +767,6 @@ export const PromptInput = memo(function PromptInput({
         onEditorChange={handleEditorChange}
         onEditorPaste={handleEditorPaste}
         onCheckoutPreflight={handleCheckoutPreflight}
-        purpose={purpose}
-        onPurposeChange={setPurpose}
-        arcId={activeThreadArcId}
-        onPhaseTransition={onPhaseTransition}
         effort={effortOptions.length > 0 ? effort : undefined}
         onEffortChange={effortOptions.length > 0 ? setEffort : undefined}
         effortOptions={effortOptions.length > 0 ? effortOptions : undefined}

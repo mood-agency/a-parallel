@@ -42,7 +42,7 @@
     "noProjects": "No hay proyectos. Presiona + para agregar uno.",
     "analytics": "Analíticas",
     "githubIssues": "GitHub Issues",
-    "createDesign": "Crear diseño"
+    "viewDesigns": "Ver diseños"
   },
   "createDesign": {
     "title": "Crear diseño",
@@ -79,12 +79,30 @@
     "loading": "Cargando diseño…",
     "folder": "Carpeta",
     "placeholder": "El lienzo de diseño llegará pronto.",
+    "threadsTitle": "Hilos",
+    "newThread": "Nuevo hilo",
+    "noThreads": "Aún no hay hilos para este diseño.",
+    "selectThreadHint": "Selecciona un hilo o crea uno nuevo.",
+    "previewTitle": "Vista previa",
+    "previewPlaceholder": "La salida del diseño aparecerá aquí cuando el agente la genere.",
+    "createThreadFailed": "No se pudo crear el hilo",
     "types": {
       "prototype": "Prototipo",
       "slides": "Presentación",
       "template": "Plantilla",
       "other": "Otro"
     }
+  },
+  "designsList": {
+    "title": "Diseños",
+    "subtitle": "{{name}} · {{count}} diseños",
+    "subtitleZero": "{{name}} · Aún no hay diseños",
+    "newDesign": "Nuevo diseño",
+    "newDesignHint": "Comienza un prototipo o presentación",
+    "empty": "Aún no hay diseños. Crea el primero.",
+    "loadFailed": "No se pudieron cargar los diseños",
+    "back": "Volver",
+    "openDesign": "Abrir diseño"
   },
   "thread": {
     "status": {

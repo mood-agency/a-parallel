@@ -42,7 +42,7 @@
     "noProjects": "Nenhum projeto ainda. Clique em + para adicionar.",
     "analytics": "Analíticas",
     "githubIssues": "GitHub Issues",
-    "createDesign": "Criar design"
+    "viewDesigns": "Ver designs"
   },
   "createDesign": {
     "title": "Criar design",
@@ -79,12 +79,30 @@
     "loading": "Carregando design…",
     "folder": "Pasta",
     "placeholder": "Tela de design em breve.",
+    "threadsTitle": "Threads",
+    "newThread": "Nova thread",
+    "noThreads": "Ainda não há threads para este design.",
+    "selectThreadHint": "Selecione uma thread ou crie uma nova.",
+    "previewTitle": "Pré-visualização",
+    "previewPlaceholder": "A saída do design aparecerá aqui quando o agente gerá-la.",
+    "createThreadFailed": "Falha ao criar thread",
     "types": {
       "prototype": "Protótipo",
       "slides": "Apresentação",
       "template": "Modelo",
       "other": "Outro"
     }
+  },
+  "designsList": {
+    "title": "Designs",
+    "subtitle": "{{name}} · {{count}} designs",
+    "subtitleZero": "{{name}} · Ainda não há designs",
+    "newDesign": "Novo design",
+    "newDesignHint": "Comece um protótipo ou apresentação",
+    "empty": "Ainda não há designs. Crie o primeiro.",
+    "loadFailed": "Falha ao carregar designs",
+    "back": "Voltar",
+    "openDesign": "Abrir design"
   },
   "thread": {
     "status": {

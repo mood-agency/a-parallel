@@ -104,10 +104,11 @@ export function createThreadRepository(deps: ThreadRepositoryDeps) {
     userId: string;
     includeArchived?: boolean;
     organizationId?: string | null;
+    designId?: string;
     limit?: number;
     offset?: number;
   }): Promise<{ threads: any[]; total: number }> {
-    const { projectId, userId, includeArchived, organizationId } = opts;
+    const { projectId, userId, includeArchived, organizationId, designId } = opts;
     const limit = opts.limit ?? 50;
     const offset = opts.offset ?? 0;
     const filters: ReturnType<typeof eq>[] = [];
@@ -134,6 +135,9 @@ export function createThreadRepository(deps: ThreadRepositoryDeps) {
     }
     if (projectId) {
       filters.push(eq(schema.threads.projectId, projectId));
+    }
+    if (designId) {
+      filters.push(eq(schema.threads.designId, designId));
     }
     if (!includeArchived) {
       filters.push(eq(schema.threads.archived, 0));

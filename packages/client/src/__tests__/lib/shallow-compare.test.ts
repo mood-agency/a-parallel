@@ -65,7 +65,6 @@ function makeThread(overrides: Partial<Thread> = {}): Thread {
     model: 'sonnet',
     cost: 0,
     source: 'user',
-    purpose: 'code',
     runtime: 'local',
     createdAt: '2024-01-01T00:00:00Z',
     ...overrides,

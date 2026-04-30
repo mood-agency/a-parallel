@@ -130,6 +130,18 @@ export const SpanishPrompt: Story = {
   },
 };
 
+/** Slash command rendered as a pill, both at start and inline. */
+export const WithSlashCommand: Story = {
+  args: {
+    content:
+      'vamos a usar /skill-creator:skill-creator porq el resultado de la presentacon fue terrible',
+    model: 'opus',
+    permissionMode: 'autoEdit',
+    timestamp: new Date().toISOString(),
+    onClick: fn(),
+  },
+};
+
 /** Code snippet in the prompt. */
 export const WithCodeSnippet: Story = {
   args: {

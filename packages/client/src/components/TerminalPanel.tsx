@@ -292,6 +292,8 @@ function WebTerminalTabContent({
   );
   // Track whether the initial command (startup commands) was sent to avoid re-sending
   const initialCommandSentRef = useRef(false);
+  const prevActiveRef = useRef(active);
+  const prevPanelVisibleRef = useRef(panelVisible);
   const codeFontSizePx = EDITOR_FONT_SIZE_PX[useSettingsStore((s) => s.fontSize)];
   useThemeSync(termRef);
 
@@ -344,9 +346,13 @@ function WebTerminalTabContent({
       // (e.g. NewThreadDialog) has time to unmount and the panel expand
       // animation can finish.  Without this, the caret won't appear inside
       // the terminal when it is first created.
+      const isNewlyCreated = (() => {
+        const cAt = useTerminalStore.getState().tabs.find((t) => t.id === id)?.createdAt;
+        return cAt ? Date.now() - cAt < 1000 : false;
+      })();
       setTimeout(() => {
         if (cancelled) return;
-        if (!document.querySelector('[role="dialog"][data-state="open"]')) {
+        if (isNewlyCreated && !document.querySelector('[role="dialog"][data-state="open"]')) {
           terminal.focus();
         }
       }, 250);
@@ -567,6 +573,16 @@ function WebTerminalTabContent({
   useEffect(() => {
     if (active && panelVisible && termRef.current) {
       const { terminal, fitAddon } = termRef.current;
+
+      const wasActive = prevActiveRef.current;
+      const wasPanelVisible = prevPanelVisibleRef.current;
+      const isExplicitTransition = (active && !wasActive) || (panelVisible && !wasPanelVisible);
+      const isNewlyCreated = (() => {
+        const cAt = useTerminalStore.getState().tabs.find((t) => t.id === id)?.createdAt;
+        return cAt ? Date.now() - cAt < 1000 : false;
+      })();
+      const shouldFocus = isExplicitTransition || isNewlyCreated;
+
       // Wait for the panel expand animation (200ms) to finish, then fit.
       // This ensures we measure the final container size, not a mid-animation value.
       const timer = setTimeout(() => {
@@ -584,13 +600,18 @@ function WebTerminalTabContent({
         }
         terminal.refresh(0, terminal.rows - 1);
         // Only focus if no modal dialog is open (see aria-hidden note above)
-        if (!document.querySelector('[role="dialog"][data-state="open"]')) {
+        if (shouldFocus && !document.querySelector('[role="dialog"][data-state="open"]')) {
           terminal.focus();
         }
       }, 220);
       return () => clearTimeout(timer);
     }
   }, [active, panelVisible, id]);
+
+  useEffect(() => {
+    prevActiveRef.current = active;
+    prevPanelVisibleRef.current = panelVisible;
+  }, [active, panelVisible]);
 
   const { t } = useTranslation();
 
@@ -1029,6 +1050,7 @@ export function TerminalPanel() {
         projectId: selectedProjectId,
         type: isTauri ? undefined : 'pty',
         shell,
+        createdAt: Date.now(),
       });
       // Panel must be visible for the spawn effect to emit pty:spawn
       // (see !panelVisible guard in XtermTerminal). Auto-expand if collapsed.

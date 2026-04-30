@@ -107,7 +107,6 @@ export const reorderProjectsSchema = z.object({
   projectIds: z.array(z.string().min(1)).min(1, 'projectIds must not be empty'),
 });
 
-export const threadPurposeSchema = z.enum(['explore', 'plan', 'implement']);
 export const effortLevelSchema = z.enum(['low', 'medium', 'high', 'xhigh', 'max']);
 
 export const createThreadSchema = z.object({
@@ -129,8 +128,7 @@ export const createThreadSchema = z.object({
   symbolReferences: z.array(symbolReferenceSchema).max(20).optional(),
   worktreePath: z.string().optional(),
   parentThreadId: z.string().optional(),
-  arcId: z.string().optional(),
-  purpose: threadPurposeSchema.optional().default('implement'),
+  designId: z.string().optional(),
   agentTemplateId: z.string().optional(),
   templateVariables: z.record(z.string(), z.string()).optional(),
 });
@@ -144,8 +142,7 @@ export const createIdleThreadSchema = z.object({
   prompt: z.string().optional(),
   images: z.array(imageAttachmentSchema).optional(),
   stage: z.enum(['backlog', 'planning']).optional().default('backlog'),
-  arcId: z.string().optional(),
-  purpose: threadPurposeSchema.optional().default('implement'),
+  designId: z.string().optional(),
 });
 
 export const sendMessageSchema = z.object({

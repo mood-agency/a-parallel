@@ -187,18 +187,6 @@ export interface Project {
   needsSetup?: boolean;
 }
 
-// ─── Arcs ───────────────────────────────────────────────
-
-export interface Arc {
-  id: string;
-  projectId: string;
-  userId: string;
-  name: string;
-  createdAt: string;
-  /** Number of linked threads (populated in list queries) */
-  threadCount?: number;
-}
-
 // ─── Designs ─────────────────────────────────────────────
 
 export type DesignType = 'prototype' | 'slides' | 'template' | 'other';
@@ -219,7 +207,6 @@ export interface Design {
 
 // ─── Threads ─────────────────────────────────────────────
 
-export type ThreadPurpose = 'explore' | 'plan' | 'implement';
 export type ThreadMode = 'local' | 'worktree';
 export type ThreadRuntime = 'local' | 'remote';
 export type ThreadStatus =
@@ -255,7 +242,7 @@ export type EffortLevel = 'low' | 'medium' | 'high' | 'xhigh' | 'max';
 // ─── Agent Definitions ──────────────────────────────────
 
 export interface AgentDefinition {
-  /** Unique identifier for this agent role (e.g. 'reviewer', 'corrector', 'arc-explore'). */
+  /** Unique identifier for this agent role (e.g. 'reviewer', 'corrector'). */
   name: string;
   /** Human-readable display label. */
   label: string;
@@ -294,8 +281,7 @@ export interface Thread {
   source: ThreadSource;
   externalRequestId?: string;
   parentThreadId?: string;
-  arcId?: string;
-  purpose: ThreadPurpose;
+  designId?: string;
   runtime: ThreadRuntime;
   containerUrl?: string;
   containerName?: string;
@@ -686,27 +672,9 @@ export interface CreateThreadRequest {
   disallowedTools?: string[];
   worktreePath?: string;
   parentThreadId?: string;
-  arcId?: string;
-  purpose?: ThreadPurpose;
+  designId?: string;
   agentTemplateId?: string;
   templateVariables?: Record<string, string>;
-}
-
-// ─── Arcs API ───────────────────────────────────────────
-
-export interface CreateArcRequest {
-  name: string;
-}
-
-export interface ArcArtifacts {
-  proposal?: string;
-  design?: string;
-  tasks?: string;
-  specs?: Record<string, string>;
-}
-
-export interface ArcWithArtifacts extends Arc {
-  artifacts: ArcArtifacts;
 }
 
 export interface SendMessageRequest {

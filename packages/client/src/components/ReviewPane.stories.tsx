@@ -382,7 +382,6 @@ function seedStores(
     cost: 0.24,
     runtime: 'local' as const,
     source: 'web' as const,
-    purpose: 'implement' as const,
     worktreePath: isWorktree ? '/home/user/projects/funny/.worktrees/feat-review-pane' : undefined,
     createdAt: new Date(Date.now() - 30 * 60_000).toISOString(),
     updatedAt: new Date(Date.now() - 5 * 60_000).toISOString(),

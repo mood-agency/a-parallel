@@ -53,7 +53,6 @@ function makeInboxItem(overrides: Partial<{ run: Partial<AutomationRun> }> = {})
       model: 'sonnet',
       cost: 0,
       source: 'automation',
-      purpose: 'implement',
       runtime: 'local',
       createdAt: '2024-01-01',
     },

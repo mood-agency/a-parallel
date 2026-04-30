@@ -1,4 +1,3 @@
-import type { ThreadPurpose } from '@funny/shared';
 import { DEFAULT_FOLLOW_UP_MODE } from '@funny/shared/models';
 import { Loader2 } from 'lucide-react';
 import { useReducedMotion } from 'motion/react';
@@ -578,46 +577,6 @@ export function ThreadView() {
     }
   }, []);
 
-  const handlePhaseTransition = useCallback(
-    async (newPurpose: ThreadPurpose) => {
-      const thread = activeThreadRef.current;
-      if (!thread?.arcId || newPurpose === thread.purpose) return;
-
-      setSending(true);
-      const { allowedTools, disallowedTools } = deriveToolLists(
-        useSettingsStore.getState().toolPermissions,
-      );
-
-      const permissionMode = newPurpose === 'implement' ? 'autoEdit' : 'plan';
-      const result = await api.createThread({
-        projectId: thread.projectId,
-        title: `${thread.title} [${newPurpose}]`,
-        mode: newPurpose === 'implement' ? 'worktree' : 'local',
-        provider: thread.provider,
-        model: thread.model,
-        permissionMode,
-        baseBranch: thread.baseBranch || undefined,
-        prompt: `Continue from the ${thread.purpose} phase. Read the arc artifacts and proceed with the ${newPurpose} phase.`,
-        arcId: thread.arcId,
-        purpose: newPurpose,
-        allowedTools,
-        disallowedTools,
-      });
-
-      setSending(false);
-
-      if (result.isErr()) {
-        toast.error(`Failed to create ${newPurpose} thread`);
-        return;
-      }
-
-      useThreadStore.setState({ selectedThreadId: result.value.id });
-      await useThreadStore.getState().loadThreadsForProject(thread.projectId);
-      navigate(buildPath(`/projects/${thread.projectId}/threads/${result.value.id}`));
-    },
-    [navigate],
-  );
-
   const handlePermissionApproval = useCallback(
     async (toolName: string, approved: boolean, alwaysAllow?: boolean) => {
       const thread = activeThreadRef.current;
@@ -745,7 +704,6 @@ export function ThreadView() {
           <div className="w-full max-w-3xl">
             <PromptInput
               onSubmit={handleSend}
-              onPhaseTransition={handlePhaseTransition}
               loading={sending}
               isNewThread
               projectId={activeThread.projectId}
@@ -823,7 +781,6 @@ export function ThreadView() {
                 <PromptInput
                   onSubmit={handleSend}
                   onStop={handleStop}
-                  onPhaseTransition={handlePhaseTransition}
                   loading={sending}
                   running={isRunning && !isExternal}
                   threadId={activeThread.id}

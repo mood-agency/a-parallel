@@ -84,7 +84,7 @@ export interface ClaudeProcessOptions {
   provider?: string;
   /** MCP servers to pass to the SDK query() call (e.g., CDP browser tools) */
   mcpServers?: Record<string, any>;
-  /** Extra instructions appended to the system prompt (e.g., arc purpose prompts, project instructions) */
+  /** Extra instructions appended to the system prompt (e.g., project instructions). */
   systemPrefix?: string;
   /** Effort level for Claude SDK — controls thinking depth ('low' | 'medium' | 'high' | 'xhigh' | 'max') */
   effort?: string;

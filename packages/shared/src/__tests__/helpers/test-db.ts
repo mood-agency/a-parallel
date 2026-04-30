@@ -40,16 +40,6 @@ export function createTestDb() {
   `);
 
   testDb.run(sql`
-    CREATE TABLE IF NOT EXISTS arcs (
-      id TEXT PRIMARY KEY,
-      project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
-      user_id TEXT NOT NULL,
-      name TEXT NOT NULL,
-      created_at TEXT NOT NULL
-    )
-  `);
-
-  testDb.run(sql`
     CREATE TABLE IF NOT EXISTS threads (
       id TEXT PRIMARY KEY,
       project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
@@ -73,8 +63,6 @@ export function createTestDb() {
       source TEXT NOT NULL DEFAULT 'web',
       external_request_id TEXT,
       parent_thread_id TEXT,
-      arc_id TEXT REFERENCES arcs(id),
-      purpose TEXT NOT NULL DEFAULT 'implement',
       agent_template_id TEXT,
       template_variables TEXT,
       runtime TEXT NOT NULL DEFAULT 'local',

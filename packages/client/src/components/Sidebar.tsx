@@ -76,6 +76,7 @@ export function AppSidebar() {
   const projectsInitialized = useProjectStore((s) => s.initialized);
   const selectedProjectId = useProjectStore((s) => s.selectedProjectId);
   const revealNonce = useProjectStore((s) => s.revealNonce);
+  const revealIntent = useProjectStore((s) => s.revealIntent);
   const expandedProjects = useProjectStore((s) => s.expandedProjects);
   const toggleProject = useProjectStore((s) => s.toggleProject);
   const _loadProjects = useProjectStore((s) => s.loadProjects);
@@ -177,9 +178,12 @@ export function AppSidebar() {
 
       if (!el) return false;
 
-      // Use 'nearest' so we don't aggressively snap items to the center if they
-      // are already visible (e.g. when the user clicked them directly).
-      el.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+      // 'nearest' (default) avoids aggressive snapping when the row is already
+      // visible (e.g. sidebar/header clicks). Ctrl+K opts into 'start' so the
+      // selected project lands at the top of the projects pane, not just
+      // wherever scrollIntoView decided was "nearest" (often the bottom edge
+      // when scrolling down a long list).
+      el.scrollIntoView({ block: revealIntent, behavior: 'smooth' });
       scrolled = true;
       return true;
     };
@@ -195,7 +199,7 @@ export function AppSidebar() {
       cancelAnimationFrame(raf);
       window.clearTimeout(timeout);
     };
-  }, [selectedProjectId, selectedThreadId, revealNonce, settingsOpen]);
+  }, [selectedProjectId, selectedThreadId, revealNonce, revealIntent, settingsOpen]);
 
   // Drag & drop: auto-scroll the projects and threads lists while dragging near
   // their top/bottom edges, so the user can drop above/below the visible area.
@@ -264,19 +268,29 @@ export function AppSidebar() {
 
     const threadsIO =
       threadsRoot && threadsSentinel
-        ? new IntersectionObserver(([entry]) => setThreadsScrolled(!entry.isIntersecting), {
-            root: threadsRoot,
-            threshold: 0,
-          })
+        ? new IntersectionObserver(
+            () => {
+              setThreadsScrolled(threadsRoot.scrollTop > 0);
+            },
+            {
+              root: threadsRoot,
+              threshold: 0,
+            },
+          )
         : null;
     threadsIO?.observe(threadsSentinel!);
 
     const projectsIO =
       projectsRoot && projectsSentinel
-        ? new IntersectionObserver(([entry]) => setProjectsScrolled(!entry.isIntersecting), {
-            root: projectsRoot,
-            threshold: 0,
-          })
+        ? new IntersectionObserver(
+            () => {
+              setProjectsScrolled(projectsRoot.scrollTop > 0);
+            },
+            {
+              root: projectsRoot,
+              threshold: 0,
+            },
+          )
         : null;
     projectsIO?.observe(projectsSentinel!);
 
@@ -635,11 +649,15 @@ export function AppSidebar() {
             {t('sidebar.threadsTitle')}
           </h2>
         </div>
-        <div ref={threadsScrollRef} className="relative min-h-0 overflow-y-auto px-2 pb-2">
+        <div
+          ref={threadsScrollRef}
+          className="relative min-h-0 overflow-y-auto px-2 pb-2"
+          onScroll={(e) => setThreadsScrolled(e.currentTarget.scrollTop > 0)}
+        >
           <div ref={threadsTopSentinelRef} aria-hidden className="h-px shrink-0" />
           <div
             className={cn(
-              'sticky top-0 left-0 right-0 h-4 -mt-px -mb-4 bg-gradient-to-b from-sidebar to-transparent pointer-events-none z-10',
+              'sticky top-0 left-0 right-0 h-8 -mt-px -mb-8 bg-gradient-to-b from-sidebar to-transparent pointer-events-none z-10',
               threadsScrolled ? 'opacity-100' : 'opacity-0',
             )}
           />
@@ -673,11 +691,15 @@ export function AppSidebar() {
       </div>
 
       {/* Projects list (fills remaining space, own scroll) */}
-      <SidebarContent ref={projectsScrollRef} className="relative px-2 pb-2 contain-paint">
+      <SidebarContent
+        ref={projectsScrollRef}
+        className="relative px-2 pb-2 contain-paint"
+        onScroll={(e) => setProjectsScrolled(e.currentTarget.scrollTop > 0)}
+      >
         <div ref={projectsTopSentinelRef} aria-hidden className="h-px shrink-0" />
         <div
           className={cn(
-            'sticky top-0 left-0 right-0 h-4 -mt-px -mb-4 bg-gradient-to-b from-sidebar to-transparent pointer-events-none z-10 shrink-0',
+            'sticky top-0 left-0 right-0 h-8 -mt-px -mb-8 bg-gradient-to-b from-sidebar to-transparent pointer-events-none z-10 shrink-0',
             projectsScrolled ? 'opacity-100' : 'opacity-0',
           )}
         />

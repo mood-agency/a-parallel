@@ -346,13 +346,6 @@ export function createRunnerServiceProvider(): RuntimeServiceProvider {
       async recordStageChange() {},
     },
 
-    arcs: {
-      async getArc(id) {
-        const { remoteGetArc } = await import('./team-client.js');
-        return remoteGetArc(id);
-      },
-    },
-
     wsBroker,
   };
 }

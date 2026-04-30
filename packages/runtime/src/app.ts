@@ -35,7 +35,6 @@ import { authMiddleware } from './middleware/auth.js';
 import { handleError } from './middleware/error-handler.js';
 import { defaultRateLimit, mutationRateLimit } from './middleware/rate-limit.js';
 import { tracingMiddleware } from './middleware/tracing.js';
-import { arcRoutes, arcProjectRoutes } from './routes/arcs.js';
 import { automationRoutes } from './routes/automations.js';
 import browseRoutes from './routes/browse.js';
 import { designProjectRoutes } from './routes/designs.js';
@@ -308,8 +307,6 @@ export async function createRuntimeApp(options: RuntimeAppOptions): Promise<Runt
   app.route('/api/github', githubRoutes);
   app.route('/api/tests', testRoutes);
   app.route('/api/automations', automationRoutes);
-  app.route('/api/arcs', arcRoutes);
-  app.route('/api/projects', arcProjectRoutes);
   app.route('/api/projects', designProjectRoutes);
 
   // Serve static files from client build

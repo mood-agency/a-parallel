@@ -1,10 +1,4 @@
-import type {
-  AgentTemplate,
-  ImageAttachment,
-  QueuedMessage,
-  Skill,
-  ThreadPurpose,
-} from '@funny/shared';
+import type { AgentTemplate, ImageAttachment, QueuedMessage, Skill } from '@funny/shared';
 import {
   ArrowUp,
   ArrowLeft,
@@ -22,9 +16,6 @@ import {
   Pencil,
   Trash2,
   Check,
-  Compass,
-  Map,
-  Hammer,
   Bot,
 } from 'lucide-react';
 import { useState, useRef, useCallback, useMemo, memo, useEffect } from 'react';
@@ -123,46 +114,6 @@ export const ModelSelect = memo(function ModelSelect({
             ))}
           </SelectGroup>
         ))}
-      </SelectContent>
-    </Select>
-  );
-});
-
-const PURPOSE_OPTIONS = [
-  { value: 'explore' as const, label: 'Explore', icon: Compass },
-  { value: 'plan' as const, label: 'Plan', icon: Map },
-  { value: 'implement' as const, label: 'Implement', icon: Hammer },
-];
-
-export const PurposeSelect = memo(function PurposeSelect({
-  value,
-  onChange,
-}: {
-  value: string;
-  onChange: (v: string) => void;
-}) {
-  return (
-    <Select value={value} onValueChange={onChange}>
-      <SelectTrigger
-        data-testid="prompt-purpose-select"
-        tabIndex={-1}
-        size="xs"
-        className="w-auto border-none bg-transparent shadow-none"
-      >
-        <SelectValue />
-      </SelectTrigger>
-      <SelectContent side="top" align="start">
-        {PURPOSE_OPTIONS.map((opt) => {
-          const Icon = opt.icon;
-          return (
-            <SelectItem key={opt.value} value={opt.value} size="xs">
-              <span className="flex items-center gap-1.5">
-                <Icon className="icon-xs" />
-                {opt.label}
-              </span>
-            </SelectItem>
-          );
-        })}
       </SelectContent>
     </Select>
   );
@@ -318,7 +269,6 @@ export interface PromptInputUIProps {
         line: number;
         endLine?: number;
       }[];
-      purpose?: ThreadPurpose;
       agentTemplateId?: string;
       templateVariables?: Record<string, string>;
     },
@@ -395,13 +345,6 @@ export interface PromptInputUIProps {
   // ── Checkout preflight (new thread local mode) ──
   onCheckoutPreflight?: (branch: string) => Promise<boolean>;
 
-  // ── Arc / Purpose ──
-  purpose?: ThreadPurpose;
-  onPurposeChange?: (v: ThreadPurpose) => void;
-  arcId?: string;
-  /** Callback to trigger phase transition: creates new thread with same arcId but different purpose */
-  onPhaseTransition?: (newPurpose: ThreadPurpose) => void;
-
   // ── Effort (Claude-specific) ──
   effort?: string;
   onEffortChange?: (v: string) => void;
@@ -463,10 +406,6 @@ export const PromptInputUI = memo(function PromptInputUI({
   onEditorChange,
   onEditorPaste,
   onCheckoutPreflight,
-  purpose = 'implement',
-  onPurposeChange,
-  arcId,
-  onPhaseTransition,
   effort,
   onEffortChange,
   effortOptions,
@@ -556,7 +495,6 @@ export const PromptInputUI = memo(function PromptInputUI({
     setEditorEmpty(true);
     editorRef.current?.focus();
 
-    const isLocalOnlyPurpose = purpose !== 'implement';
     const result = await onSubmit(
       submittedPrompt,
       {
@@ -566,11 +504,10 @@ export const PromptInputUI = memo(function PromptInputUI({
         effort,
         ...(isNewThread
           ? {
-              threadMode: isLocalOnlyPurpose ? 'local' : createWorktree ? 'worktree' : 'local',
+              threadMode: createWorktree ? 'worktree' : 'local',
               runtime,
               baseBranch: selectedBranch || undefined,
               sendToBacklog,
-              purpose,
               agentTemplateId: isDeepAgent ? selectedTemplateId : undefined,
               templateVariables:
                 isDeepAgent && selectedTemplateId && templateVars.length > 0
@@ -611,7 +548,6 @@ export const PromptInputUI = memo(function PromptInputUI({
     sendToBacklog,
     followUpSelectedBranch,
     editorRef,
-    purpose,
     isDeepAgent,
     selectedTemplateId,
   ]);
@@ -1057,18 +993,6 @@ export const PromptInputUI = memo(function PromptInputUI({
               >
                 <Paperclip className="icon-base" />
               </Button>
-              {isNewThread && (
-                <PurposeSelect
-                  value={purpose}
-                  onChange={(v) => onPurposeChange?.(v as ThreadPurpose)}
-                />
-              )}
-              {!isNewThread && arcId && (
-                <PurposeSelect
-                  value={purpose}
-                  onChange={(v) => onPhaseTransition?.(v as ThreadPurpose)}
-                />
-              )}
               {isNewThread && isDeepAgent && templates.length > 0 && (
                 <TemplateSelect
                   value={selectedTemplateId}
@@ -1166,17 +1090,15 @@ export const PromptInputUI = memo(function PromptInputUI({
           <div className="border-t border-border px-2 py-1.5">
             {isNewThread ? (
               <div className="no-scrollbar flex items-center gap-1 overflow-x-auto">
-                {purpose === 'implement' && (
-                  <label className="flex shrink-0 cursor-pointer items-center gap-1.5 text-xs text-muted-foreground">
-                    <Switch
-                      data-testid="prompt-worktree-switch"
-                      checked={createWorktree}
-                      onCheckedChange={onCreateWorktreeChange ?? (() => {})}
-                      tabIndex={-1}
-                    />
-                    <span>{t('thread.mode.worktree')}</span>
-                  </label>
-                )}
+                <label className="flex shrink-0 cursor-pointer items-center gap-1.5 text-xs text-muted-foreground">
+                  <Switch
+                    data-testid="prompt-worktree-switch"
+                    checked={createWorktree}
+                    onCheckedChange={onCreateWorktreeChange ?? (() => {})}
+                    tabIndex={-1}
+                  />
+                  <span>{t('thread.mode.worktree')}</span>
+                </label>
                 {hasLauncher && (
                   <ModeSelect
                     value={runtime}

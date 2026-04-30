@@ -791,6 +791,36 @@ const migrations: Migration[] = [
       await addColumn('user_profiles', 'provider_keys', 'TEXT');
     },
   },
+  {
+    name: '048_threads_design_id',
+    async up() {
+      await addColumn('threads', 'design_id', 'TEXT');
+      await exec(sql`
+        CREATE INDEX IF NOT EXISTS idx_threads_design_id
+        ON threads (design_id)
+      `);
+    },
+  },
+  {
+    name: '049_drop_arcs',
+    async up() {
+      await exec(sql`DROP INDEX IF EXISTS idx_arcs_project_name`);
+      await exec(sql`DROP TABLE IF EXISTS arcs`);
+      // Drop arc_id and purpose from threads. SQLite 3.35+ supports DROP COLUMN;
+      // PostgreSQL supports IF EXISTS. Wrapped in try/catch in case the column
+      // was never created (older installs that started after migration removal).
+      try {
+        await exec(sql`ALTER TABLE threads DROP COLUMN arc_id`);
+      } catch {
+        // ignore — column may not exist
+      }
+      try {
+        await exec(sql`ALTER TABLE threads DROP COLUMN purpose`);
+      } catch {
+        // ignore — column may not exist
+      }
+    },
+  },
 ];
 
 // ── Public API ──────────────────────────────────────────────────

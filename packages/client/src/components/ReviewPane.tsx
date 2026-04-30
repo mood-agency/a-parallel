@@ -40,7 +40,6 @@ import {
   GitBranch,
 } from 'lucide-react';
 import { useState, useEffect, useRef, useMemo, useCallback } from 'react';
-import { createPortal } from 'react-dom';
 import { useTranslation } from 'react-i18next';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { toast } from 'sonner';
@@ -69,7 +68,6 @@ import {
 } from '@/components/ui/dropdown-menu';
 import { HighlightText } from '@/components/ui/highlight-text';
 import { Input } from '@/components/ui/input';
-import { ResizeHandle, useResizeHandle } from '@/components/ui/resize-handle';
 import {
   Select,
   SelectContent,
@@ -81,7 +79,6 @@ import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { TriCheckbox } from '@/components/ui/tri-checkbox';
 import { useAutoRefreshDiff } from '@/hooks/use-auto-refresh-diff';
-import { useElementLeft } from '@/hooks/use-element-width';
 import { api, type PullStrategy } from '@/lib/api';
 import { createClientLogger } from '@/lib/client-logger';
 import { parseDiffOld, parseDiffNew } from '@/lib/diff-parse';
@@ -135,29 +132,7 @@ export function ReviewPane() {
   const reviewPaneOpen = useUIStore((s) => s.reviewPaneOpen);
   const reviewSubTab = useUIStore((s) => s.reviewSubTab);
   const setReviewSubTabStore = useUIStore((s) => s.setReviewSubTab);
-  const setReviewPaneWidth = useUIStore((s) => s.setReviewPaneWidth);
-  const setReviewPaneResizing = useUIStore((s) => s.setReviewPaneResizing);
   const selectedProjectId = useProjectStore((s) => s.selectedProjectId);
-  const panelRef = useRef<HTMLDivElement>(null);
-  const panelLeftPx = useElementLeft(panelRef);
-
-  // Drag-to-resize for the diff overlay's right edge — adjusts the right
-  // pane width (which in turn drives panelLeftPx / overlay width).
-  const overlayDragStartWidthVw = useRef(0);
-  const overlayResize = useResizeHandle({
-    direction: 'horizontal',
-    onResizeStart: () => {
-      overlayDragStartWidthVw.current = useUIStore.getState().reviewPaneWidth;
-      setReviewPaneResizing(true);
-    },
-    onResize: (deltaPx) => {
-      const deltaVw = (deltaPx / window.innerWidth) * 100;
-      setReviewPaneWidth(overlayDragStartWidthVw.current - deltaVw);
-    },
-    onResizeEnd: () => {
-      setReviewPaneResizing(false);
-    },
-  });
 
   // Use selectedThreadId for git requests — it updates *immediately* when the
   // user clicks a thread in the sidebar (before the thread data loads from the
@@ -1841,50 +1816,100 @@ export function ReviewPane() {
     : FileCode;
 
   return (
-    <div ref={panelRef} className="flex h-full flex-col">
-      {/* Diff viewer overlay — portal to body so it escapes contain:strict ancestors */}
-      {expandedFile &&
-        panelLeftPx > 0 &&
-        createPortal(
-          <div
-            className="fixed bottom-0 left-0 top-0 z-40 overflow-hidden bg-background"
-            style={{ width: `${panelLeftPx}px` }}
-            data-testid="expanded-diff-overlay"
-          >
-            <ResizeHandle
-              direction="horizontal"
-              resizing={overlayResize.resizing}
-              onPointerDown={overlayResize.handlePointerDown}
-              onPointerMove={overlayResize.handlePointerMove}
-              onPointerUp={overlayResize.handlePointerUp}
-              className="absolute inset-y-0 right-0 z-50"
-              data-testid="expanded-diff-overlay-resize-handle"
-            />
-            <ExpandedDiffView
-              filePath={expandedSummary?.path || ''}
-              oldValue={expandedDiffContent ? parseDiffOld(expandedDiffContent) : ''}
-              newValue={expandedDiffContent ? parseDiffNew(expandedDiffContent) : ''}
-              icon={ExpandedIcon}
-              loading={loadingDiff === expandedFile}
-              rawDiff={expandedDiffContent}
-              files={summaries}
-              onFileSelect={handleExpandedFileSelect}
-              diffCache={diffCache}
-              onClose={handleExpandedClose}
-              prReviewThreads={prThreads}
-              onRequestFullDiff={requestFullDiff}
-              onResolveConflict={handleResolveConflict}
-              selectable
-              onStagePatch={handleStagePatch}
-              stagingInProgress={patchStagingInProgress}
-              onSelectionStateChange={handleSelectionStateChange}
-              selectAllSignal={selectAllSignal}
-              deselectAllSignal={deselectAllSignal}
-            />
-          </div>,
-          document.body,
-        )}
-      {/* Normal ReviewPane content — untouched by the overlay */}
+    <div className="flex h-full flex-col">
+      {/* Diff viewer modal — centered Dialog matching the commit detail dialog */}
+      <Dialog
+        open={!!expandedFile}
+        onOpenChange={(open) => {
+          if (!open) handleExpandedClose();
+        }}
+      >
+        <DialogContent
+          className="flex h-[85vh] max-w-[90vw] flex-col gap-0 p-0"
+          data-testid="expanded-diff-overlay"
+        >
+          <DialogTitle className="sr-only">
+            {expandedSummary?.path ?? t('review.diffViewer', 'Diff viewer')}
+          </DialogTitle>
+          <DialogDescription className="sr-only">
+            {t('review.diffViewerDescription', 'View and stage changes for the selected file')}
+          </DialogDescription>
+          {expandedFile && (
+            <div className="flex min-h-0 flex-1">
+              {/* File tree sidebar */}
+              <div
+                className="flex w-[280px] shrink-0 flex-col border-r border-border"
+                data-testid="expanded-diff-file-tree"
+              >
+                <div className="shrink-0 border-b border-sidebar-border px-2 py-2">
+                  <div className="relative">
+                    <Search className="icon-sm pointer-events-none absolute left-2 top-1/2 -translate-y-1/2 text-muted-foreground" />
+                    <Input
+                      type="text"
+                      placeholder={t('review.searchFiles', 'Filter files\u2026')}
+                      aria-label={t('review.searchFiles', 'Filter files')}
+                      data-testid="expanded-diff-file-filter"
+                      value={fileSearch}
+                      onChange={(e) => setFileSearch(e.target.value)}
+                      className="h-7 pl-7 pr-7 text-xs md:text-xs"
+                    />
+                    {fileSearch && (
+                      <Button
+                        variant="ghost"
+                        size="icon-xs"
+                        onClick={() => setFileSearch('')}
+                        aria-label={t('review.clearSearch', 'Clear search')}
+                        data-testid="expanded-diff-file-filter-clear"
+                        className="absolute right-1 top-1/2 -translate-y-1/2 text-muted-foreground"
+                      >
+                        <X className="icon-xs" />
+                      </Button>
+                    )}
+                  </div>
+                </div>
+                <div className="min-h-0 flex-1 overflow-auto">
+                  <FileTree
+                    files={filteredDiffs}
+                    selectedFile={expandedFile}
+                    onFileClick={handleExpandedFileSelect}
+                    checkedFiles={checkedFiles}
+                    onToggleFile={toggleFile}
+                    onRevertFile={handleRevertFile}
+                    onIgnore={handleIgnore}
+                    basePath={basePath}
+                    searchQuery={fileSearch || undefined}
+                    testIdPrefix="expanded-diff"
+                  />
+                </div>
+              </div>
+
+              {/* Diff viewer */}
+              <div className="flex min-w-0 flex-1 flex-col">
+                <ExpandedDiffView
+                  filePath={expandedSummary?.path || ''}
+                  oldValue={expandedDiffContent ? parseDiffOld(expandedDiffContent) : ''}
+                  newValue={expandedDiffContent ? parseDiffNew(expandedDiffContent) : ''}
+                  icon={ExpandedIcon}
+                  loading={loadingDiff === expandedFile}
+                  rawDiff={expandedDiffContent}
+                  diffCache={diffCache}
+                  onClose={handleExpandedClose}
+                  prReviewThreads={prThreads}
+                  onRequestFullDiff={requestFullDiff}
+                  onResolveConflict={handleResolveConflict}
+                  selectable
+                  onStagePatch={handleStagePatch}
+                  stagingInProgress={patchStagingInProgress}
+                  onSelectionStateChange={handleSelectionStateChange}
+                  selectAllSignal={selectAllSignal}
+                  deselectAllSignal={deselectAllSignal}
+                />
+              </div>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
+      {/* Normal ReviewPane content */}
       <Tabs
         value={reviewSubTab}
         onValueChange={(v) => setReviewSubTab(v as ReviewSubTab)}

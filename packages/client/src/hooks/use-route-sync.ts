@@ -78,6 +78,24 @@ function parseRoute(pathname: string) {
       projectId: designMatch.params.projectId!,
       threadId: null,
       designId: designMatch.params.designId!,
+      designsList: false,
+      globalSearch: false,
+      inbox: false,
+      analytics: false,
+      liveColumns: false,
+      addProject: false,
+    };
+  }
+
+  const designsListMatch = matchPath('/projects/:projectId/designs', p);
+  if (designsListMatch) {
+    return {
+      orgSlug,
+      settingsPage: null,
+      preferencesPage: null,
+      projectId: designsListMatch.params.projectId!,
+      threadId: null,
+      designsList: true,
       globalSearch: false,
       inbox: false,
       analytics: false,
@@ -272,6 +290,7 @@ export function useRouteSync() {
       addProject,
     } = parsed;
     const designId = (parsed as { designId?: string | null }).designId ?? null;
+    const designsList = (parsed as { designsList?: boolean }).designsList ?? false;
 
     // Restore last route on cold load at root path
     if (!restoredRef.current) {
@@ -476,6 +495,21 @@ export function useRouteSync() {
     // Close design view when navigating away
     if (uiStore.designViewDesignId) {
       uiStore.closeDesignView();
+    }
+
+    if (designsList && projectId) {
+      if (uiStore.designsListProjectId !== projectId) {
+        uiStore.setDesignsListOpen(projectId);
+      }
+      if (projectId !== projectStore.selectedProjectId) {
+        projectStore.selectProject(projectId);
+      }
+      return;
+    }
+
+    // Close designs list when navigating away
+    if (uiStore.designsListProjectId) {
+      uiStore.closeDesignsList();
     }
 
     if (threadId) {

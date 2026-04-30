@@ -18,7 +18,6 @@ function mockThread(overrides: Partial<Thread> = {}): Thread {
     model: 'sonnet',
     cost: 0,
     source: 'manual',
-    purpose: 'task',
     runtime: 'local',
     ...overrides,
   } as Thread;

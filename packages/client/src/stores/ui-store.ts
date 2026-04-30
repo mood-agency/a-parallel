@@ -12,7 +12,7 @@ const RIGHT_PANE_OPEN_KEY = 'right_pane_open';
 const RIGHT_PANE_TAB_KEY = 'right_pane_tab';
 const REVIEW_SUB_TAB_KEY = 'review_sub_tab';
 
-export type RightPaneTab = 'review' | 'tasks' | 'activity' | 'files';
+export type RightPaneTab = 'review' | 'activity' | 'files';
 export type ReviewSubTab = 'changes' | 'history' | 'stash' | 'prs';
 const VALID_REVIEW_SUB_TABS: ReviewSubTab[] = ['changes', 'history', 'stash', 'prs'];
 
@@ -40,6 +40,9 @@ interface UIState {
   testRunnerOpen: boolean;
   designViewProjectId: string | null;
   designViewDesignId: string | null;
+  /** Active design context for thread creation — when set, new threads are linked to this design. */
+  activeDesignId: string | null;
+  designsListProjectId: string | null;
   generalSettingsOpen: boolean;
   activePreferencesPage: string | null;
   timelineVisible: boolean;
@@ -55,7 +58,6 @@ interface UIState {
   setReviewSubTab: (tab: ReviewSubTab) => void;
   setReviewPaneOpen: (open: boolean) => void;
   setTestRunnerOpen: (open: boolean) => void;
-  setTasksPaneOpen: (open: boolean) => void;
   setActivityPaneOpen: (open: boolean) => void;
   setFilesPaneOpen: (open: boolean) => void;
   setReviewPaneWidth: (width: number) => void;
@@ -75,6 +77,9 @@ interface UIState {
   setLiveColumnsOpen: (open: boolean) => void;
   setDesignView: (projectId: string, designId: string) => void;
   closeDesignView: () => void;
+  setActiveDesignId: (designId: string | null) => void;
+  setDesignsListOpen: (projectId: string) => void;
+  closeDesignsList: () => void;
   setTimelineVisible: (visible: boolean) => void;
   setKanbanContext: (
     context: {
@@ -104,7 +109,7 @@ export const useUIStore = create<UIState>((set) => ({
   rightPaneTab: (() => {
     try {
       const stored = localStorage.getItem(RIGHT_PANE_TAB_KEY);
-      if (stored && ['review', 'tasks', 'activity', 'files'].includes(stored)) {
+      if (stored && ['review', 'activity', 'files'].includes(stored)) {
         return stored as RightPaneTab;
       }
       return 'activity' as RightPaneTab;
@@ -133,6 +138,8 @@ export const useUIStore = create<UIState>((set) => ({
   testRunnerOpen: false,
   designViewProjectId: null,
   designViewDesignId: null,
+  activeDesignId: null,
+  designsListProjectId: null,
   generalSettingsOpen: false,
   activePreferencesPage: null,
   timelineVisible: (() => {
@@ -189,14 +196,6 @@ export const useUIStore = create<UIState>((set) => ({
             generalSettingsOpen: false,
           }
         : { testRunnerOpen: false },
-    );
-  },
-  setTasksPaneOpen: (open) => {
-    persistRightPane(open, open ? 'tasks' : undefined);
-    set(
-      open
-        ? { reviewPaneOpen: true, rightPaneTab: 'tasks' as RightPaneTab }
-        : { reviewPaneOpen: false },
     );
   },
   setActivityPaneOpen: (open) => {
@@ -396,6 +395,7 @@ export const useUIStore = create<UIState>((set) => ({
     set({
       designViewProjectId: projectId,
       designViewDesignId: designId,
+      activeDesignId: designId,
       settingsOpen: false,
       activeSettingsPage: null,
       generalSettingsOpen: false,
@@ -410,7 +410,36 @@ export const useUIStore = create<UIState>((set) => ({
   },
 
   closeDesignView: () => {
-    set({ designViewProjectId: null, designViewDesignId: null });
+    set({ designViewProjectId: null, designViewDesignId: null, activeDesignId: null });
+  },
+
+  setActiveDesignId: (designId) => set({ activeDesignId: designId }),
+
+  setDesignsListOpen: (projectId) => {
+    invalidateSelectThread();
+    useThreadStore.setState({ selectedThreadId: null, activeThread: null });
+    persistRightPane(false);
+    set({
+      designsListProjectId: projectId,
+      designViewProjectId: null,
+      designViewDesignId: null,
+      activeDesignId: null,
+      reviewPaneOpen: false,
+      settingsOpen: false,
+      activeSettingsPage: null,
+      generalSettingsOpen: false,
+      activePreferencesPage: null,
+      allThreadsProjectId: null,
+      addProjectOpen: false,
+      automationInboxOpen: false,
+      analyticsOpen: false,
+      liveColumnsOpen: false,
+      testRunnerOpen: false,
+    });
+  },
+
+  closeDesignsList: () => {
+    set({ designsListProjectId: null });
   },
 
   setTimelineVisible: (visible) => {

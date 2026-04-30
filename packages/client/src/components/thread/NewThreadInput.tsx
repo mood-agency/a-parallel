@@ -1,4 +1,3 @@
-import type { ThreadPurpose } from '@funny/shared';
 import { DEFAULT_THREAD_MODE } from '@funny/shared/models';
 import { CircleDot, FolderOpen, GitBranch, GitFork, Globe, Github, Loader2 } from 'lucide-react';
 import { useState, useCallback, useRef, useEffect, useMemo } from 'react';
@@ -23,22 +22,6 @@ import { formatRemoteUrl } from '../PromptInputUI';
 import { BranchPicker } from '../SearchablePicker';
 import { SaveBacklogDialog } from './SaveBacklogDialog';
 
-/** Generate a kebab-case arc name from a prompt with a short unique suffix. */
-function generateArcName(prompt: string): string {
-  const slug =
-    prompt
-      .toLowerCase()
-      .replace(/[^a-z0-9\s-]/g, '')
-      .trim()
-      .replace(/\s+/g, '-')
-      .replace(/-+/g, '-')
-      .replace(/^-|-$/g, '')
-      .slice(0, 32)
-      .replace(/-$/, '') || 'unnamed-arc';
-  const suffix = Math.random().toString(36).slice(2, 6);
-  return `${slug}-${suffix}`;
-}
-
 /** Replicate server-side slugifyTitle for branch name preview. */
 function slugifyTitle(title: string, maxLength = 40): string {
   return (
@@ -60,6 +43,7 @@ export function NewThreadInput() {
   const selectedProjectId = useProjectStore((s) => s.selectedProjectId);
   const effectiveProjectId = selectedProjectId || newThreadProjectId;
   const newThreadIdleOnly = useUIStore((s) => s.newThreadIdleOnly);
+  const activeDesignId = useUIStore((s) => s.activeDesignId);
   const issueContext = useUIStore((s) => s.newThreadIssueContext);
   const clearIssueContext = useUIStore((s) => s.clearIssueContext);
   const cancelNewThread = useUIStore((s) => s.cancelNewThread);
@@ -197,7 +181,6 @@ export function NewThreadInput() {
         line: number;
         endLine?: number;
       }[];
-      purpose?: ThreadPurpose;
       agentTemplateId?: string;
       templateVariables?: Record<string, string>;
     },
@@ -206,26 +189,7 @@ export function NewThreadInput() {
     if (!effectiveProjectId || creating) return false;
     setCreating(true);
 
-    const purpose = opts.purpose ?? 'implement';
-    const isLocalOnlyPurpose = purpose !== 'implement';
-    const threadMode = isLocalOnlyPurpose
-      ? 'local'
-      : (opts.threadMode as 'local' | 'worktree') || defaultThreadMode;
-
-    // Auto-create arc for explore purpose
-    let arcId: string | undefined;
-    if (purpose === 'explore') {
-      const arcName = generateArcName(prompt);
-      const arcResult = await api.createArc(effectiveProjectId, arcName);
-      if (arcResult.isErr()) {
-        toastError(arcResult.error, 'createArc');
-        setCreating(false);
-        return false;
-      }
-      arcId = arcResult.value.id;
-      // Create arc directory on filesystem
-      await api.createArcDirectory(effectiveProjectId, arcName);
-    }
+    const threadMode = (opts.threadMode as 'local' | 'worktree') || defaultThreadMode;
 
     // If idle-only mode or sendToBacklog toggle, create idle thread without executing
     if (newThreadIdleOnly || opts.sendToBacklog) {
@@ -236,8 +200,7 @@ export function NewThreadInput() {
         baseBranch: opts.baseBranch,
         prompt,
         images,
-        arcId,
-        purpose,
+        designId: activeDesignId ?? undefined,
       });
 
       if (result.isErr()) {
@@ -263,7 +226,7 @@ export function NewThreadInput() {
       runtime: opts.runtime as 'local' | 'remote' | undefined,
       provider: opts.provider,
       model: opts.model,
-      permissionMode: isLocalOnlyPurpose ? 'plan' : opts.mode,
+      permissionMode: opts.mode,
       effort: opts.effort,
       baseBranch: opts.baseBranch,
       prompt,
@@ -272,8 +235,7 @@ export function NewThreadInput() {
       disallowedTools,
       fileReferences: opts.fileReferences,
       symbolReferences: opts.symbolReferences,
-      arcId,
-      purpose,
+      designId: activeDesignId ?? undefined,
       agentTemplateId: opts.agentTemplateId,
       templateVariables: opts.templateVariables,
     });
@@ -284,13 +246,17 @@ export function NewThreadInput() {
       return false;
     }
 
-    // Thread created — skip the blocker and navigate immediately
+    // Thread created — skip the blocker and select the new thread.
     justSubmittedRef.current = true;
     useThreadStore.setState({ selectedThreadId: result.value.id });
     setCreating(false);
     setReviewPaneOpen(false);
     cancelNewThread();
-    navigate(buildPath(`/projects/${effectiveProjectId}/threads/${result.value.id}`));
+    // When inside a design, stay in the design view; the design's thread list
+    // will pick up the new thread and the chat column will render it.
+    if (!activeDesignId) {
+      navigate(buildPath(`/projects/${effectiveProjectId}/threads/${result.value.id}`));
+    }
     loadThreadsForProject(effectiveProjectId);
     return true;
   };

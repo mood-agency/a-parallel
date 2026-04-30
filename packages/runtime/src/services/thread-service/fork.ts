@@ -204,8 +204,6 @@ export async function forkThread(params: ForkThreadParams) {
     worktreePath: source.worktreePath,
     sessionId: newSessionId,
     parentThreadId: source.id,
-    arcId: source.arcId,
-    purpose: source.purpose ?? 'implement',
     cost: 0,
     createdAt: now,
     updatedAt: now,

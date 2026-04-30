@@ -28,7 +28,6 @@ function makeThread(overrides: Partial<Thread> = {}): Thread {
     cost: 0.12,
     runtime: 'local',
     source: 'web',
-    purpose: 'implement',
     createdAt: new Date(Date.now() - 57 * 60_000).toISOString(),
     updatedAt: new Date().toISOString(),
     completedAt: new Date(Date.now() - 55 * 60_000).toISOString(),

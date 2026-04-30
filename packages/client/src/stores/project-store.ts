@@ -42,12 +42,20 @@ interface ProjectState {
   // re-selected. Subscribers (e.g. the sidebar) use this to re-trigger
   // reveal/scroll behavior on repeated selections (Ctrl+K → same project).
   revealNonce: number;
+  // Hint to the sidebar auto-scroll about how to align the project. 'start'
+  // pins the project header to the top of the projects pane (Ctrl+K, where
+  // the user can't see the project yet); 'nearest' only scrolls the minimum
+  // amount needed (sidebar/header clicks where the row is usually visible).
+  revealIntent: 'start' | 'nearest';
   initialized: boolean;
   branchByProject: Record<string, string>;
 
   loadProjects: () => Promise<void>;
   toggleProject: (projectId: string) => void;
-  selectProject: (projectId: string | null) => void;
+  selectProject: (
+    projectId: string | null,
+    options?: { revealIntent?: 'start' | 'nearest' },
+  ) => void;
   fetchBranch: (projectId: string) => Promise<void>;
   setBranch: (projectId: string, branch: string) => void;
   renameProject: (projectId: string, name: string) => Promise<void>;
@@ -80,6 +88,7 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
   expandedProjects: loadExpandedProjects(),
   selectedProjectId: null,
   revealNonce: 0,
+  revealIntent: 'nearest',
   initialized: false,
   branchByProject: {},
 
@@ -177,19 +186,20 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
     persistExpandedProjects(next);
   },
 
-  selectProject: (projectId) => {
+  selectProject: (projectId, options) => {
     if (!projectId) {
       if (get().selectedProjectId != null) set({ selectedProjectId: null });
       return;
     }
     const { selectedProjectId, revealNonce } = get();
+    const revealIntent = options?.revealIntent ?? 'nearest';
     // Always bump revealNonce so subscribers can re-trigger reveal behavior
     // (sidebar auto-scroll/expand) even when the same project is re-selected.
     if (selectedProjectId === projectId) {
-      set({ revealNonce: revealNonce + 1 });
+      set({ revealNonce: revealNonce + 1, revealIntent });
       return;
     }
-    set({ selectedProjectId: projectId, revealNonce: revealNonce + 1 });
+    set({ selectedProjectId: projectId, revealNonce: revealNonce + 1, revealIntent });
     ensureThreadsLoaded(projectId);
     // Fetch branch name for the selected project
     get().fetchBranch(projectId);

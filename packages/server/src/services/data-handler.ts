@@ -16,7 +16,6 @@ import {
   createThreadRepository,
   createCommentRepository,
   createStageHistoryRepository,
-  createArcRepository,
 } from '@funny/shared/repositories';
 import { and, eq } from 'drizzle-orm';
 
@@ -31,7 +30,6 @@ import * as projectRepo from './project-repository.js';
 let _messageRepo: ReturnType<typeof createMessageRepository> | null = null;
 let _toolCallRepo: ReturnType<typeof createToolCallRepository> | null = null;
 let _threadRepo: ReturnType<typeof createThreadRepository> | null = null;
-let _arcRepo: ReturnType<typeof createArcRepository> | null = null;
 
 function getMessageRepo() {
   if (!_messageRepo) {
@@ -85,22 +83,9 @@ function getThreadRepo() {
   return _threadRepo;
 }
 
-function getArcRepo() {
-  if (!_arcRepo) {
-    _arcRepo = createArcRepository({
-      db,
-      schema: schema as any,
-      dbAll,
-      dbGet,
-      dbRun,
-    });
-  }
-  return _arcRepo;
-}
-
 /**
  * Verify that the runner owning `runnerUserId` is allowed to touch the
- * user/thread/project/message/tool-call/arc referenced by `data`.
+ * user/thread/project/message/tool-call referenced by `data`.
  *
  * This is the tenant-isolation boundary for the data plane: without it, any
  * compromised or misconfigured runner can read another user's GitHub token,
@@ -283,20 +268,6 @@ async function assertDataOwnership(
     )) as { userId: string } | undefined;
     if (!t || t.userId !== runnerUserId) {
       return { ok: false, reason: `queued message ${data.messageId} cross-tenant` };
-    }
-  }
-
-  // ── Arc ownership ──────────────────────────────────────────────
-  if (data?.type === 'data:get_arc' && typeof data?.arcId === 'string') {
-    const a = (await dbGet(
-      db
-        .select({ userId: schema.arcs.userId })
-        .from(schema.arcs)
-        .where(eq(schema.arcs.id, data.arcId)),
-    )) as { userId: string } | undefined;
-    if (!a) return { ok: false, reason: `arc ${data.arcId} not found` };
-    if (a.userId !== runnerUserId) {
-      return { ok: false, reason: `arc ${data.arcId} cross-tenant` };
     }
   }
 
@@ -531,11 +502,6 @@ export async function handleDataMessageWithAck(
         const { upsertProfile } = await import('./profile-service.js');
         const updatedProfile = await upsertProfile(data.userId, data.payload);
         return { type: 'data:update_profile_response', profile: updatedProfile };
-      }
-      case 'data:get_arc': {
-        const arcRepository = getArcRepo();
-        const arc = await arcRepository.getArc(data.arcId);
-        return { type: 'data:get_arc_response', arc: arc ?? null };
       }
       case 'data:mark_and_list_stale_threads': {
         const threadRepo = getThreadRepo();

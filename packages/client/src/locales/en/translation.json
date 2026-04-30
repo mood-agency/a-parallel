@@ -43,7 +43,7 @@
     "noProjects": "No projects yet. Click + to add one.",
     "analytics": "Analytics",
     "githubIssues": "GitHub Issues",
-    "createDesign": "Create design"
+    "viewDesigns": "View designs"
   },
   "createDesign": {
     "title": "Create design",
@@ -80,12 +80,30 @@
     "loading": "Loading design…",
     "folder": "Folder",
     "placeholder": "Design canvas coming soon.",
+    "threadsTitle": "Threads",
+    "newThread": "New thread",
+    "noThreads": "No threads yet for this design.",
+    "selectThreadHint": "Select a thread or start a new one.",
+    "previewTitle": "Preview",
+    "previewPlaceholder": "The design output will appear here once the agent generates it.",
+    "createThreadFailed": "Failed to create thread",
     "types": {
       "prototype": "Prototype",
       "slides": "Slide deck",
       "template": "Template",
       "other": "Other"
     }
+  },
+  "designsList": {
+    "title": "Designs",
+    "subtitle": "{{name}} · {{count}} designs",
+    "subtitleZero": "{{name}} · No designs yet",
+    "newDesign": "New design",
+    "newDesignHint": "Start a prototype or slide deck",
+    "empty": "No designs yet. Create your first one.",
+    "loadFailed": "Failed to load designs",
+    "back": "Back",
+    "openDesign": "Open design"
   },
   "thread": {
     "status": {

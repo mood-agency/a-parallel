@@ -25,7 +25,6 @@ import {
   FolderOpen,
   FolderTree,
   FlaskConical,
-  ListChecks,
   Activity,
 } from 'lucide-react';
 import { memo, useState, useEffect, useCallback, useRef, startTransition } from 'react';
@@ -622,7 +621,6 @@ export const ProjectHeader = memo(function ProjectHeader() {
     activeThreadWorktreePath,
     activeThreadBranch,
     activeThreadParentId,
-    activeThreadArcId,
     activeThreadTemplateId,
   } = useThreadStore(
     useShallow((s) => ({
@@ -634,7 +632,6 @@ export const ProjectHeader = memo(function ProjectHeader() {
       activeThreadWorktreePath: s.activeThread?.worktreePath,
       activeThreadBranch: s.activeThread?.branch,
       activeThreadParentId: s.activeThread?.parentThreadId,
-      activeThreadArcId: s.activeThread?.arcId,
       activeThreadTemplateId: s.activeThread?.agentTemplateId,
     })),
   );
@@ -686,7 +683,6 @@ export const ProjectHeader = memo(function ProjectHeader() {
   const reviewPaneOpen = useUIStore((s) => s.reviewPaneOpen);
   const setTestRunnerOpen = useUIStore((s) => s.setTestRunnerOpen);
   const testRunnerOpen = useUIStore((s) => s.testRunnerOpen);
-  const setTasksPaneOpen = useUIStore((s) => s.setTasksPaneOpen);
   const setActivityPaneOpen = useUIStore((s) => s.setActivityPaneOpen);
   const setFilesPaneOpen = useUIStore((s) => s.setFilesPaneOpen);
   const rightPaneTab = useUIStore((s) => s.rightPaneTab);
@@ -1077,34 +1073,6 @@ export const ProjectHeader = memo(function ProjectHeader() {
               </TooltipTrigger>
               <TooltipContent>{t('projectFiles.title', 'Project Files')}</TooltipContent>
             </Tooltip>
-            {activeThreadArcId && (
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <Button
-                    variant="ghost"
-                    size="icon-sm"
-                    onClick={() =>
-                      startTransition(() => {
-                        if (reviewPaneOpen && rightPaneTab === 'tasks') {
-                          setTasksPaneOpen(false);
-                        } else {
-                          setTasksPaneOpen(true);
-                        }
-                      })
-                    }
-                    data-testid="header-toggle-tasks"
-                    className={
-                      reviewPaneOpen && rightPaneTab === 'tasks'
-                        ? 'text-foreground'
-                        : 'text-muted-foreground'
-                    }
-                  >
-                    <ListChecks className="icon-base" />
-                  </Button>
-                </TooltipTrigger>
-                <TooltipContent>Tasks</TooltipContent>
-              </Tooltip>
-            )}
             {showGitStats ? (
               <Tooltip>
                 <TooltipTrigger asChild>

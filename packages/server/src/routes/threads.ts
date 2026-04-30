@@ -145,12 +145,14 @@ threadRoutes.get('/', async (c) => {
   const userId = c.get('userId') as string;
   const orgId = c.get('organizationId');
   const projectId = c.req.query('projectId');
+  const designId = c.req.query('designId');
   const includeArchived = c.req.query('includeArchived') === 'true';
   const limit = Math.min(200, Math.max(1, parseInt(c.req.query('limit') || '50', 10)));
   const offset = Math.max(0, parseInt(c.req.query('offset') || '0', 10));
 
   const { threads, total } = await threadRepo.listThreads({
     projectId: projectId || undefined,
+    designId: designId || undefined,
     userId,
     includeArchived,
     organizationId: orgId,

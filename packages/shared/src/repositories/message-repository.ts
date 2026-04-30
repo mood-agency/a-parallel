@@ -81,7 +81,40 @@ export function createMessageRepository(deps: MessageRepositoryDeps) {
       );
 
       hasMore = rows.length > messageLimit;
-      messages = (hasMore ? rows.slice(0, messageLimit) : rows).reverse();
+      let collected = hasMore ? rows.slice(0, messageLimit) : rows;
+
+      // Extend backwards until the oldest loaded message is a user message,
+      // so the thread renders with its starting prompt visible without the
+      // client needing a follow-up "Loading older messages…" round trip.
+      // Capped to avoid runaway fetches on huge threads.
+      const MAX_TOTAL = messageLimit * 5;
+      while (
+        hasMore &&
+        collected.length < MAX_TOTAL &&
+        collected.length > 0 &&
+        collected[collected.length - 1].role !== 'user'
+      ) {
+        const oldest = collected[collected.length - 1];
+        const moreRows = await dbAll(
+          db
+            .select()
+            .from(schema.messages)
+            .where(
+              and(
+                eq(schema.messages.threadId, id),
+                lt(schema.messages.timestamp, oldest.timestamp),
+              ),
+            )
+            .orderBy(desc(schema.messages.timestamp))
+            .limit(messageLimit + 1),
+        );
+        const batchHasMore = moreRows.length > messageLimit;
+        const batchSliced = batchHasMore ? moreRows.slice(0, messageLimit) : moreRows;
+        collected = [...collected, ...batchSliced];
+        hasMore = batchHasMore;
+      }
+
+      messages = collected.reverse();
     } else {
       messages = await dbAll(
         db

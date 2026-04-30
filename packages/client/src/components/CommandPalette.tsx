@@ -43,6 +43,11 @@ export function CommandPalette({ open, onOpenChange }: CommandPaletteProps) {
       startNewThread(projectId);
       useGitStatusStore.getState().fetchForProject(projectId);
       navigate(buildPath(`/projects/${projectId}`));
+      // Re-select with revealIntent='start' AFTER startNewThread (which calls
+      // selectProject without intent and would otherwise reset it to 'nearest')
+      // and AFTER navigate (route-sync skips selectProject when the ID already
+      // matches, so it can't clobber the intent either).
+      useProjectStore.getState().selectProject(projectId, { revealIntent: 'start' });
     }, 150);
   };
 

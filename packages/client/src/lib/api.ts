@@ -1,7 +1,6 @@
 import { getBaseUrlForThread, validateContainerUrl, type PullStrategy } from './api/_core';
 import { agentTemplatesApi } from './api/agent-templates';
 import { analyticsApi } from './api/analytics';
-import { arcsApi } from './api/arcs';
 import { automationsApi } from './api/automations';
 import { browseApi } from './api/browse';
 import { designsApi } from './api/designs';
@@ -41,6 +40,5 @@ export const api = {
   ...profileApi, // Profile
   ...teamApi, // Team / Organization / Invites / Runners
   ...testsApi, // Test Runner
-  ...arcsApi, // Arcs
   ...designsApi, // Designs
 };

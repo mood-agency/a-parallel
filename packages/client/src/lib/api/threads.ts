@@ -19,6 +19,10 @@ export const threadsApi = {
     const qs = params.toString();
     return request<PaginatedThreadsResponse>(`/threads${qs ? `?${qs}` : ''}`);
   },
+  listThreadsByDesign: (designId: string, limit = 100) => {
+    const params = new URLSearchParams({ designId, limit: String(limit) });
+    return request<PaginatedThreadsResponse>(`/threads?${params.toString()}`);
+  },
   searchThreadContent: (query: string, projectId?: string) => {
     const params = new URLSearchParams({ q: query });
     if (projectId) params.set('projectId', projectId);
@@ -79,8 +83,7 @@ export const threadsApi = {
     }[];
     worktreePath?: string;
     parentThreadId?: string;
-    arcId?: string;
-    purpose?: 'explore' | 'plan' | 'implement';
+    designId?: string;
     agentTemplateId?: string;
     templateVariables?: Record<string, string>;
   }) => request<Thread>('/threads', { method: 'POST', body: JSON.stringify(data) }),
@@ -92,8 +95,7 @@ export const threadsApi = {
     prompt?: string;
     stage?: string;
     images?: ImageAttachment[];
-    arcId?: string;
-    purpose?: 'explore' | 'plan' | 'implement';
+    designId?: string;
   }) => request<Thread>('/threads/idle', { method: 'POST', body: JSON.stringify(data) }),
   sendMessage: (
     threadId: string,

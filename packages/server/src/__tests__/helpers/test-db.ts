@@ -64,8 +64,6 @@ export function createTestDb() {
       source TEXT NOT NULL DEFAULT 'web',
       external_request_id TEXT,
       parent_thread_id TEXT,
-      arc_id TEXT,
-      purpose TEXT NOT NULL DEFAULT 'implement',
       agent_template_id TEXT,
       template_variables TEXT,
       runtime TEXT NOT NULL DEFAULT 'local',

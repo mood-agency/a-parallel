@@ -199,6 +199,56 @@ function escapeHtml(str: string): string {
     .replace(/"/g, '&quot;');
 }
 
+const SHELL_LANGS = new Set(['bash', 'shell', 'sh', 'zsh']);
+
+/**
+ * hljs's bash grammar leaves CLI invocations (flags, numbers, paths) untokenized,
+ * so commands like `python -m foo --flag 30` render as a single flat color.
+ * After hljs, walk the HTML and wrap shell argument shapes outside existing spans.
+ */
+function augmentShellHighlight(html: string): string {
+  const augment = (text: string): string =>
+    text
+      .replace(
+        /(^|\s)(--?[A-Za-z][\w-]*)/g,
+        (_, lead, flag) => `${lead}<span class="hljs-attr">${flag}</span>`,
+      )
+      .replace(
+        /(^|[\s=])(\d+(?:\.\d+)?)(?=\b)/g,
+        (_, lead, num) => `${lead}<span class="hljs-number">${num}</span>`,
+      );
+
+  let result = '';
+  let depth = 0;
+  let buffer = '';
+  let i = 0;
+  while (i < html.length) {
+    if (html.startsWith('<span', i)) {
+      if (depth === 0) {
+        result += augment(buffer);
+        buffer = '';
+      }
+      const end = html.indexOf('>', i);
+      const tag = end === -1 ? html.slice(i) : html.slice(i, end + 1);
+      result += tag;
+      i += tag.length;
+      depth++;
+    } else if (html.startsWith('</span>', i)) {
+      result += '</span>';
+      i += 7;
+      depth = Math.max(0, depth - 1);
+    } else if (depth === 0) {
+      buffer += html[i];
+      i++;
+    } else {
+      result += html[i];
+      i++;
+    }
+  }
+  result += augment(buffer);
+  return result;
+}
+
 /**
  * Highlight a single line of code synchronously.
  * Returns HTML string with hljs token classes.
@@ -215,7 +265,8 @@ export function highlightLine(line: string, lang: string): string {
     return escapeHtml(line);
   }
   try {
-    return hljs.highlight(line, { language: resolved, ignoreIllegals: true }).value;
+    const value = hljs.highlight(line, { language: resolved, ignoreIllegals: true }).value;
+    return SHELL_LANGS.has(resolved) ? augmentShellHighlight(value) : value;
   } catch {
     return escapeHtml(line);
   }
@@ -236,7 +287,8 @@ export function highlightCode(code: string, lang: string): string {
     return escapeHtml(code);
   }
   try {
-    return hljs.highlight(code, { language: resolved, ignoreIllegals: true }).value;
+    const value = hljs.highlight(code, { language: resolved, ignoreIllegals: true }).value;
+    return SHELL_LANGS.has(resolved) ? augmentShellHighlight(value) : value;
   } catch {
     return escapeHtml(code);
   }

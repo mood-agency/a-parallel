@@ -14,6 +14,8 @@ export interface TerminalTab {
   commandId?: string;
   /** Port number for preview window feature */
   port?: number;
+  /** Timestamp when the tab was created */
+  createdAt?: number;
   /** Type of terminal: 'pty' for interactive shell, 'command' for non-interactive */
   type?: 'pty' | 'command';
   /** Shell override for this terminal (e.g. 'git-bash', 'powershell') */
@@ -91,7 +93,7 @@ export const useTerminalStore = create<TerminalState>()(
 
       addTab: (tab) =>
         set((state) => ({
-          tabs: [...state.tabs, tab],
+          tabs: [...state.tabs, { ...tab, createdAt: tab.createdAt ?? Date.now() }],
           activeTabId: tab.id,
           panelVisibleByProject: {
             ...state.panelVisibleByProject,

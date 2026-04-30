@@ -74,9 +74,6 @@ const ReviewPane = lazy(reviewPaneImport);
 const TestRunnerPane = lazy(() =>
   import('@/components/TestRunnerPane').then((m) => ({ default: m.TestRunnerPane })),
 );
-const TasksPane = lazy(() =>
-  import('@/components/sidebar/TasksPanel').then((m) => ({ default: m.TasksPanel })),
-);
 const ActivityPane = lazy(() =>
   import('@/components/ActivityPane').then((m) => ({ default: m.ActivityPane })),
 );
@@ -103,6 +100,12 @@ const AnalyticsView = lazy(() =>
 );
 const LiveColumnsView = lazy(() =>
   import('@/components/LiveColumnsView').then((m) => ({ default: m.LiveColumnsView })),
+);
+const DesignsListView = lazy(() =>
+  import('@/components/DesignsListView').then((m) => ({ default: m.DesignsListView })),
+);
+const DesignView = lazy(() =>
+  import('@/components/DesignView').then((m) => ({ default: m.DesignView })),
 );
 const commandPaletteImport = () =>
   import('@/components/CommandPalette').then((m) => ({ default: m.CommandPalette }));
@@ -157,6 +160,8 @@ export function App() {
   const liveColumnsOpen = useUIStore((s) => s.liveColumnsOpen);
   const designViewDesignId = useUIStore((s) => s.designViewDesignId);
   const designViewOpen = !!designViewDesignId;
+  const designsListProjectId = useUIStore((s) => s.designsListProjectId);
+  const designsListOpen = !!designsListProjectId;
   const testRunnerOpen = useUIStore((s) => s.testRunnerOpen);
   const internalEditorOpen = useInternalEditorStore((s) => s.isOpen);
   const internalEditorFilePath = useInternalEditorStore((s) => s.filePath);
@@ -174,6 +179,8 @@ export function App() {
     testRunnerOpen ||
     automationInboxOpen ||
     addProjectOpen ||
+    designsListOpen ||
+    designViewOpen ||
     !!allThreadsProjectId;
   const rightPaneVisible = reviewPaneOpen && !isFullScreenView;
 
@@ -280,6 +287,10 @@ export function App() {
                     <AutomationInboxView />
                   ) : addProjectOpen ? (
                     <AddProjectView />
+                  ) : designViewOpen ? (
+                    <DesignView />
+                  ) : designsListOpen ? (
+                    <DesignsListView />
                   ) : allThreadsProjectId ? (
                     <AllThreadsView />
                   ) : (
@@ -297,7 +308,9 @@ export function App() {
                 liveColumnsOpen ||
                 testRunnerOpen ||
                 automationInboxOpen ||
-                addProjectOpen
+                addProjectOpen ||
+                designsListOpen ||
+                designViewOpen
               ) && <TerminalPanel />}
             </Suspense>
           </SidebarInset>
@@ -333,8 +346,6 @@ export function App() {
                 <Suspense>
                   {rightPaneTab === 'review' ? (
                     <ReviewPane />
-                  ) : rightPaneTab === 'tasks' ? (
-                    <TasksPane />
                   ) : rightPaneTab === 'files' ? (
                     <ProjectFilesPane />
                   ) : (

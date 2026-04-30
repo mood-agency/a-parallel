@@ -1044,6 +1044,33 @@ const migrations: Migration[] = [
       `);
     },
   },
+  {
+    name: '044_threads_design_id',
+    async up() {
+      await ctx().addColumn('threads', 'design_id', 'TEXT');
+      await ctx().exec(sql`
+        CREATE INDEX IF NOT EXISTS idx_threads_design_id
+        ON threads (design_id)
+      `);
+    },
+  },
+  {
+    name: '045_drop_arcs',
+    async up() {
+      await ctx().exec(sql`DROP INDEX IF EXISTS idx_arcs_project_name`);
+      await ctx().exec(sql`DROP TABLE IF EXISTS arcs`);
+      try {
+        await ctx().exec(sql`ALTER TABLE threads DROP COLUMN arc_id`);
+      } catch {
+        // ignore — column may not exist
+      }
+      try {
+        await ctx().exec(sql`ALTER TABLE threads DROP COLUMN purpose`);
+      } catch {
+        // ignore — column may not exist
+      }
+    },
+  },
 ];
 
 export async function autoMigrate() {

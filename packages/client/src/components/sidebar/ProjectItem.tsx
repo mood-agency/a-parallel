@@ -21,7 +21,6 @@ import {
 import { useState, useRef, useEffect, memo, useCallback, useMemo, type FC } from 'react';
 import { useTranslation } from 'react-i18next';
 
-import { CreateDesignDialog } from '@/components/CreateDesignDialog';
 import { SetupProjectDialog } from '@/components/SetupProjectDialog';
 import { Button } from '@/components/ui/button';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
@@ -215,7 +214,6 @@ export const ProjectItem = memo(function ProjectItem({
   const { t } = useTranslation();
   const [openDropdown, setOpenDropdown] = useState(false);
   const [setupDialogOpen, setSetupDialogOpen] = useState(false);
-  const [createDesignOpen, setCreateDesignOpen] = useState(false);
   // Pre-compute branchKeys from thread data so we don't depend on threadToBranchKey
   // (which requires a prior fetch per thread to be populated).
   const threadBranchKeys = useMemo(
@@ -466,15 +464,15 @@ export const ProjectItem = memo(function ProjectItem({
                   {t('sidebar.githubIssues')}
                 </DropdownMenuItem>
                 <DropdownMenuItem
-                  data-testid="project-menu-create-design"
+                  data-testid="project-menu-view-designs"
                   onClick={(e) => {
                     e.stopPropagation();
                     setOpenDropdown(false);
-                    setCreateDesignOpen(true);
+                    navigate(buildPath(`/projects/${project.id}/designs`));
                   }}
                 >
                   <Sparkles className="icon-sm" />
-                  {t('sidebar.createDesign')}
+                  {t('sidebar.viewDesigns')}
                 </DropdownMenuItem>
                 <DropdownMenuSeparator />
                 <DropdownMenuItem
@@ -559,13 +557,6 @@ export const ProjectItem = memo(function ProjectItem({
           onOpenChange={setSetupDialogOpen}
         />
       )}
-
-      <CreateDesignDialog
-        open={createDesignOpen}
-        onOpenChange={setCreateDesignOpen}
-        projectId={project.id}
-        projectName={project.name}
-      />
     </Collapsible>
   );
 }, projectItemAreEqual);

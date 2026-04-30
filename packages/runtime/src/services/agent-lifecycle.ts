@@ -303,27 +303,6 @@ export class AgentLifecycleManager {
       }
     }
 
-    // Arc/purpose skill injection
-    const PURPOSE_SKILL_MAP: Record<string, string> = {
-      explore: 'openspec-explore',
-      plan: 'openspec-propose',
-      implement: 'openspec-apply-change',
-    };
-
-    if (thread?.arcId && !effectiveSessionId) {
-      const purpose = ((thread as any).purpose as string | undefined) ?? 'implement';
-      const skillName = PURPOSE_SKILL_MAP[purpose];
-      if (skillName) {
-        effectivePrompt = `/${skillName} ${effectivePrompt}`;
-        log.info('Arc skill injected into prompt', {
-          namespace: 'agent',
-          threadId,
-          purpose,
-          skillName,
-        });
-      }
-    }
-
     const systemPrefix =
       [
         // For Deep Agent templates with 'prepend' mode, add template prompt before project prompt

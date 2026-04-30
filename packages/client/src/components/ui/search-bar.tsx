@@ -108,9 +108,12 @@ export function SearchBar({
         className="h-7 flex-1 rounded-none border-none bg-transparent text-xs shadow-none focus-visible:ring-0"
         data-testid={`${testIdPrefix}-input`}
       />
-      {loading && (
-        <Loader2 className="h-3.5 w-3.5 flex-shrink-0 animate-spin text-muted-foreground" />
-      )}
+      <span
+        aria-hidden={!loading}
+        className="flex h-3.5 w-3.5 flex-shrink-0 items-center justify-center"
+      >
+        {loading && <Loader2 className="h-3.5 w-3.5 animate-spin text-muted-foreground" />}
+      </span>
       <span
         className="w-12 flex-shrink-0 text-center text-xs tabular-nums text-muted-foreground"
         data-testid={`${testIdPrefix}-count`}

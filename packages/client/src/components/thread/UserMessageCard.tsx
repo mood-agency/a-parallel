@@ -57,7 +57,7 @@ function SlashCommandChip({ name }: { name: string }) {
   return (
     <span
       data-testid="user-message-slash-command"
-      className="mr-1 inline-flex items-center gap-0.5 rounded bg-background/20 px-1.5 py-0.5 align-middle font-mono text-xs font-medium text-background/70"
+      className="mx-0.5 inline-flex items-center gap-1 rounded bg-background/20 px-1.5 py-0.5 align-middle font-mono text-xs text-background/70"
     >
       <Slash className="icon-xs shrink-0" />
       {name}
@@ -74,9 +74,9 @@ function renderInlineContent(text: string, fileMap: Map<string, ReferencedItem>)
   // Build combined regex: slash commands (at start) + @path mentions
   const regexParts: string[] = [];
 
-  // Slash command: /name at the very beginning of the text
+  // Slash command: /name at start of text or after whitespace
   // Match /word characters, colons, dots, hyphens (e.g. /skill-creator:skill-creator)
-  regexParts.push('^\\/([\\w:.-]+)');
+  regexParts.push('(?<=^|\\s)\\/([\\w:.-]+)');
 
   // @path mentions
   if (fileMap.size > 0) {
