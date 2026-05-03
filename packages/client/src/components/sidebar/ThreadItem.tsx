@@ -340,6 +340,7 @@ export const ThreadItem = memo(function ThreadItem({
           data-testid={`thread-item-${thread.id}`}
           href={href}
           onClick={handleAnchorClick}
+          draggable={false}
           className={cn(rowClassName, 'no-underline text-inherit')}
         >
           {rowContent}

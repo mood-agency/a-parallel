@@ -17,13 +17,8 @@ import { SearchBar } from '@/components/ui/search-bar';
 import { TooltipIconButton } from '@/components/ui/tooltip-icon-button';
 import { useMinuteTick } from '@/hooks/use-minute-tick';
 import { api } from '@/lib/api';
-import {
-  getGridCells,
-  setGridCell,
-  clearGridCell,
-  getAssignedThreadIds,
-  type GridCellAssignments,
-} from '@/lib/grid-storage';
+import { createClientLogger } from '@/lib/client-logger';
+import { getGridCells, type GridCellAssignments } from '@/lib/grid-storage';
 import { statusConfig } from '@/lib/thread-utils';
 import { toastError } from '@/lib/toast-error';
 import { cn } from '@/lib/utils';
@@ -32,10 +27,13 @@ import { useProjectStore } from '@/stores/project-store';
 import { useSettingsStore, deriveToolLists } from '@/stores/settings-store';
 import { useThreadStore, type ThreadWithMessages } from '@/stores/thread-store';
 
+import { ImageLightbox } from './ImageLightbox';
 import { PromptInput } from './PromptInput';
-import { SlideUpPrompt } from './SlideUpPrompt';
 import { MessageStream, type MessageStreamHandle } from './thread/MessageStream';
-import { ThreadPickerDialog } from './ThreadPickerDialog';
+
+type OpenLightboxFn = (images: { src: string; alt: string }[], index: number) => void;
+
+const log = createClientLogger('LiveColumnsView');
 
 const MAX_GRID_COLS = 5;
 const MAX_GRID_ROWS = 5;
@@ -178,9 +176,11 @@ function GridPicker({
 const ThreadColumn = memo(function ThreadColumn({
   threadId,
   onRemove,
+  onOpenLightbox,
 }: {
   threadId: string;
   onRemove?: () => void;
+  onOpenLightbox?: OpenLightboxFn;
 }) {
   const { t } = useTranslation();
   const [thread, setThread] = useState<ThreadWithMessages | null>(null);
@@ -197,6 +197,12 @@ const ThreadColumn = memo(function ThreadColumn({
     return null;
   });
 
+  // Keep a ref to onRemove so effects don't re-run when the parent re-creates the callback.
+  const onRemoveRef = useRef(onRemove);
+  useEffect(() => {
+    onRemoveRef.current = onRemove;
+  }, [onRemove]);
+
   // Load thread data
   useEffect(() => {
     let cancelled = false;
@@ -205,6 +211,8 @@ const ThreadColumn = memo(function ThreadColumn({
       if (cancelled) return;
       if (result.isOk()) {
         setThread(result.value as ThreadWithMessages);
+      } else if (result.error.type === 'NOT_FOUND') {
+        onRemoveRef.current?.();
       }
       setLoading(false);
     });
@@ -221,6 +229,8 @@ const ThreadColumn = memo(function ThreadColumn({
     api.getThread(threadId, 50).then((result) => {
       if (result.isOk()) {
         setThread(result.value as ThreadWithMessages);
+      } else if (result.error.type === 'NOT_FOUND') {
+        onRemoveRef.current?.();
       }
     });
   }, [threadId, liveStatus]);
@@ -308,7 +318,7 @@ const ThreadColumn = memo(function ThreadColumn({
 
   if (loading) {
     return (
-      <div className="flex min-h-0 items-center justify-center rounded-sm border border-border">
+      <div className="flex min-h-0 flex-1 items-center justify-center rounded-sm border border-border">
         <Loader2 className="icon-lg animate-spin text-muted-foreground" />
       </div>
     );
@@ -316,7 +326,7 @@ const ThreadColumn = memo(function ThreadColumn({
 
   if (!thread) {
     return (
-      <div className="flex min-h-0 items-center justify-center rounded-sm border border-border text-xs text-muted-foreground">
+      <div className="flex min-h-0 flex-1 items-center justify-center rounded-sm border border-border text-xs text-muted-foreground">
         {t('thread.notFound', 'Thread not found')}
       </div>
     );
@@ -373,6 +383,7 @@ const ThreadColumn = memo(function ThreadColumn({
         model={thread.model}
         permissionMode={thread.permissionMode}
         onSend={handleSend}
+        onOpenLightbox={onOpenLightbox}
         className="min-h-0 flex-1"
         footer={
           <PromptInput
@@ -416,10 +427,139 @@ const GridCellDropTarget = memo(function GridCellDropTarget({
   return (
     <div
       ref={ref}
-      className={cn('flex min-h-0 flex-col', isOver && 'rounded-sm ring-2 ring-primary')}
+      className={cn('flex min-h-0 flex-1 flex-col', isOver && 'rounded-sm ring-2 ring-primary')}
       data-testid={`grid-drop-target-${cellIndex}`}
     >
       {children}
+    </div>
+  );
+});
+
+/** Vertical drop strip rendered between/around grid columns. Dropping a thread here
+ *  inserts a new grid column at that position and shifts existing columns to the right. */
+const GridColumnInsertDropTarget = memo(function GridColumnInsertDropTarget({
+  insertIndex,
+  isDragging,
+  disabled,
+}: {
+  insertIndex: number;
+  isDragging: boolean;
+  disabled?: boolean;
+}) {
+  const ref = useRef<HTMLDivElement>(null);
+  const [isOver, setIsOver] = useState(false);
+
+  useEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    return dropTargetForElements({
+      element: el,
+      getData: () => ({ type: 'grid-col-insert', insertIndex }),
+      canDrop: ({ source }) => !disabled && source.data.type === 'grid-thread',
+      onDragEnter: () => setIsOver(true),
+      onDragLeave: () => setIsOver(false),
+      onDrop: () => setIsOver(false),
+    });
+  }, [insertIndex, disabled]);
+
+  const active = isDragging && !disabled;
+  return (
+    <div
+      ref={ref}
+      className={cn(
+        'shrink-0 self-stretch rounded-sm transition-all duration-150 overflow-hidden',
+        isOver
+          ? 'w-10 bg-primary/60 ring-2 ring-primary'
+          : active
+            ? 'w-6 bg-primary/10 hover:bg-primary/20'
+            : 'w-1',
+      )}
+      data-testid={`grid-col-insert-${insertIndex}`}
+    >
+      {active && (
+        <div className="flex h-full items-center justify-center">
+          <Plus className="h-4 w-4 text-primary/60" />
+        </div>
+      )}
+    </div>
+  );
+});
+
+/** Creates an idle (draft) thread for the given project. The thread starts
+ *  empty so the user can write the first prompt directly in its own column. */
+async function createDraftThread(
+  projectId: string,
+  defaultMode: 'local' | 'worktree' | undefined,
+): Promise<string | null> {
+  const result = await api.createIdleThread({
+    projectId,
+    title: 'New thread',
+    mode: defaultMode || DEFAULT_THREAD_MODE,
+  });
+  if (result.isErr()) {
+    toastError(result.error);
+    return null;
+  }
+  return result.value.id;
+}
+
+/** Empty grid cell — pick a project and a draft thread is created automatically
+ *  in this cell, ready for the user to write the first prompt. */
+const EmptyGridCell = memo(function EmptyGridCell({
+  cellIndex,
+  onCreated,
+}: {
+  cellIndex: number;
+  onCreated: (threadId: string) => void;
+}) {
+  const { t } = useTranslation();
+  const projects = useProjectStore((s) => s.projects);
+  const loadThreadsForProject = useThreadStore((s) => s.loadThreadsForProject);
+  const [creating, setCreating] = useState(false);
+
+  const handleSelectProject = useCallback(
+    async (pid: string) => {
+      if (creating) return;
+      setCreating(true);
+      const project = projects.find((p) => p.id === pid);
+      const threadId = await createDraftThread(pid, project?.defaultMode);
+      if (threadId) {
+        log.info({ cellIndex, projectId: pid, threadId }, 'inline grid draft thread created');
+        await loadThreadsForProject(pid);
+        onCreated(threadId);
+      }
+      setCreating(false);
+    },
+    [creating, projects, loadThreadsForProject, onCreated, cellIndex],
+  );
+
+  return (
+    <div
+      className="flex h-full w-full flex-col items-center justify-center gap-3 rounded-sm border-2 border-dashed border-border/60 bg-muted/10 p-4 transition-colors hover:border-primary/50 hover:bg-muted/30"
+      data-testid={`grid-empty-cell-${cellIndex}`}
+    >
+      {creating ? (
+        <Loader2 className="h-8 w-8 animate-spin text-muted-foreground/40" />
+      ) : (
+        <>
+          <Plus className="h-8 w-8 text-muted-foreground/40" />
+          <ProjectPickerPopover
+            placeholder={t('kanban.searchProject', 'Search project...')}
+            onSelect={handleSelectProject}
+            trigger={
+              <Button
+                variant="default"
+                size="sm"
+                className="h-7"
+                data-testid={`grid-empty-new-${cellIndex}`}
+              >
+                <Plus className="icon-sm" />
+                {t('live.selectProject', 'Select project')}
+              </Button>
+            }
+          />
+        </>
+      )}
     </div>
   );
 });
@@ -429,7 +569,6 @@ export function LiveColumnsView() {
   useMinuteTick();
   const projects = useProjectStore((s) => s.projects);
   const loadThreadsForProject = useThreadStore((s) => s.loadThreadsForProject);
-  const toolPermissions = useSettingsStore((s) => s.toolPermissions);
   const [gridCols, setGridCols] = useState(() => {
     const saved = localStorage.getItem('funny:grid-cols');
     return saved ? Math.min(Math.max(Number(saved), 1), MAX_GRID_COLS) : 2;
@@ -438,125 +577,6 @@ export function LiveColumnsView() {
     const saved = localStorage.getItem('funny:grid-rows');
     return saved ? Math.min(Math.max(Number(saved), 1), MAX_GRID_ROWS) : 2;
   });
-  const maxSlots = gridCols * gridRows;
-
-  // Add-thread state
-  const [slideUpOpen, setSlideUpOpen] = useState(false);
-  const [slideUpProjectId, setSlideUpProjectId] = useState<string | undefined>(undefined);
-  const [creating, setCreating] = useState(false);
-  // If set, the newly created thread is placed into this grid cell.
-  // If null, the thread is placed in the first empty cell (if any).
-  const [pendingCreateCell, setPendingCreateCell] = useState<number | null>(null);
-
-  const handleAddThread = useCallback((pid: string, cellIndex: number | null = null) => {
-    setSlideUpProjectId(pid);
-    setPendingCreateCell(cellIndex);
-    setSlideUpOpen(true);
-  }, []);
-
-  const handlePromptSubmit = useCallback(
-    async (
-      prompt: string,
-      opts: {
-        model: string;
-        mode: string;
-        threadMode?: string;
-        baseBranch?: string;
-        sendToBacklog?: boolean;
-      },
-      images?: any[],
-    ): Promise<boolean> => {
-      if (!slideUpProjectId || creating) return false;
-      setCreating(true);
-
-      const slideUpProject = projects.find((p) => p.id === slideUpProjectId);
-      const threadMode =
-        (opts.threadMode as 'local' | 'worktree') ||
-        slideUpProject?.defaultMode ||
-        DEFAULT_THREAD_MODE;
-
-      const createdId = await (async (): Promise<string | null> => {
-        if (opts.sendToBacklog) {
-          const result = await api.createIdleThread({
-            projectId: slideUpProjectId,
-            title: prompt.slice(0, 200),
-            mode: threadMode,
-            baseBranch: opts.baseBranch,
-            prompt,
-            images,
-          });
-          if (result.isErr()) {
-            toastError(result.error);
-            return null;
-          }
-          return result.value.id;
-        }
-
-        const { allowedTools, disallowedTools } = deriveToolLists(toolPermissions);
-        const result = await api.createThread({
-          projectId: slideUpProjectId,
-          title: prompt.slice(0, 200),
-          mode: threadMode,
-          model: opts.model,
-          prompt,
-          permissionMode: opts.mode,
-          allowedTools,
-          disallowedTools,
-          baseBranch: opts.baseBranch,
-          images,
-        });
-        if (result.isErr()) {
-          toastError(result.error);
-          return null;
-        }
-        return result.value.id;
-      })();
-
-      if (!createdId) {
-        setCreating(false);
-        return false;
-      }
-
-      await loadThreadsForProject(slideUpProjectId);
-
-      // Place the newly created thread into a grid cell: the explicitly
-      // requested cell if any, otherwise the first empty slot in the grid.
-      setGridCells((prev) => {
-        const updated: GridCellAssignments = { ...prev };
-        let targetIndex = pendingCreateCell;
-        if (targetIndex == null) {
-          for (let i = 0; i < maxSlots; i++) {
-            if (!updated[String(i)]) {
-              targetIndex = i;
-              break;
-            }
-          }
-        }
-        if (targetIndex == null) return prev;
-        // Avoid duplicates: if the thread already sits in another cell, move it.
-        for (const [key, val] of Object.entries(updated)) {
-          if (val === createdId) delete updated[key];
-        }
-        updated[String(targetIndex)] = createdId;
-        localStorage.setItem('funny:grid-cells', JSON.stringify(updated));
-        return updated;
-      });
-      setPendingCreateCell(null);
-      setCreating(false);
-      toast.success(t('toast.threadCreated', { title: prompt.slice(0, 200) }));
-      return true;
-    },
-    [
-      slideUpProjectId,
-      creating,
-      projects,
-      toolPermissions,
-      loadThreadsForProject,
-      t,
-      pendingCreateCell,
-      maxSlots,
-    ],
-  );
 
   // Load threads once for any project that hasn't been loaded yet (no polling —
   // WS events like thread:created, thread:updated, and agent:status keep the
@@ -572,57 +592,182 @@ export function LiveColumnsView() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [projectIdsKey]);
 
+  // --- Image lightbox (shared across all columns) ---
+  const [lightboxImages, setLightboxImages] = useState<{ src: string; alt: string }[]>([]);
+  const [lightboxIndex, setLightboxIndex] = useState(0);
+  const [lightboxOpen, setLightboxOpen] = useState(false);
+  const openLightbox = useCallback<OpenLightboxFn>((images, index) => {
+    setLightboxImages(images);
+    setLightboxIndex(index);
+    setLightboxOpen(true);
+  }, []);
+
   // --- Grid cell assignments (manual selection) ---
   const [gridCells, setGridCells] = useState<GridCellAssignments>(getGridCells);
-  const [pickerOpen, setPickerOpen] = useState(false);
-  const [pickerCellIndex, setPickerCellIndex] = useState(0);
 
-  const assignedThreadIds = useMemo(() => getAssignedThreadIds(gridCells), [gridCells]);
-
-  const handlePickThread = useCallback((cellIndex: number) => {
-    setPickerCellIndex(cellIndex);
-    setPickerOpen(true);
+  const assignThreadToCell = useCallback((cellIndex: number, threadId: string) => {
+    setGridCells((prev) => {
+      const updated = { ...prev };
+      // Avoid duplicates: if the thread already sits in another cell, move it.
+      for (const [key, val] of Object.entries(updated)) {
+        if (val === threadId) delete updated[key];
+      }
+      updated[String(cellIndex)] = threadId;
+      localStorage.setItem('funny:grid-cells', JSON.stringify(updated));
+      return updated;
+    });
   }, []);
 
-  const handleThreadPicked = useCallback(
-    (threadId: string) => {
-      setGridCells(setGridCell(pickerCellIndex, threadId));
+  const handleRemoveFromGrid = useCallback(
+    (cellIndex: number) => {
+      setGridCells((prev) => {
+        const updated = { ...prev };
+        delete updated[String(cellIndex)];
+
+        const col = cellIndex % gridCols;
+
+        if (gridCols <= 1) {
+          localStorage.setItem('funny:grid-cells', JSON.stringify(updated));
+          return updated;
+        }
+
+        const columnEmpty = Array.from({ length: gridRows }).every((_, r) => {
+          const idx = r * gridCols + col;
+          return !updated[String(idx)];
+        });
+
+        if (!columnEmpty) {
+          localStorage.setItem('funny:grid-cells', JSON.stringify(updated));
+          return updated;
+        }
+
+        const newCols = gridCols - 1;
+        const collapsed: GridCellAssignments = {};
+        for (const [key, val] of Object.entries(updated)) {
+          const oldIdx = Number(key);
+          const oldCol = oldIdx % gridCols;
+          const oldRow = Math.floor(oldIdx / gridCols);
+          if (oldCol === col) continue;
+          const newCol = oldCol > col ? oldCol - 1 : oldCol;
+          collapsed[String(oldRow * newCols + newCol)] = val;
+        }
+        setGridCols(newCols);
+        localStorage.setItem('funny:grid-cols', String(newCols));
+        localStorage.setItem('funny:grid-cells', JSON.stringify(collapsed));
+        return collapsed;
+      });
     },
-    [pickerCellIndex],
+    [gridCols, gridRows],
   );
 
-  const handleRemoveFromGrid = useCallback((cellIndex: number) => {
-    setGridCells(clearGridCell(cellIndex));
-  }, []);
+  // Header "+" flow: pick a project, then a draft thread is created automatically
+  // and placed in a brand-new column appended at the right of the grid.
+  const [headerCreating, setHeaderCreating] = useState(false);
+  const handleAddColumnWithProject = useCallback(
+    async (pid: string) => {
+      if (headerCreating) return;
+      if (gridCols >= MAX_GRID_COLS) {
+        toast.info(t('live.gridFull', 'Grid is full'));
+        return;
+      }
+      setHeaderCreating(true);
+      const project = projects.find((p) => p.id === pid);
+      const threadId = await createDraftThread(pid, project?.defaultMode);
+      if (!threadId) {
+        setHeaderCreating(false);
+        return;
+      }
+      log.info({ projectId: pid, threadId }, 'header new draft thread created');
+      await loadThreadsForProject(pid);
 
-  // Monitor drag-and-drop: assign sidebar threads dropped onto grid cells
+      const oldCols = gridCols;
+      const newCols = oldCols + 1;
+      const insertIndex = oldCols; // append at the right
+      setGridCells((prev) => {
+        const updated: GridCellAssignments = {};
+        for (const [key, val] of Object.entries(prev)) {
+          if (val === threadId) continue;
+          const oldIdx = Number(key);
+          const oldCol = oldIdx % oldCols;
+          const oldRow = Math.floor(oldIdx / oldCols);
+          updated[String(oldRow * newCols + oldCol)] = val;
+        }
+        // Place new thread at the top cell of the newly appended column
+        updated[String(insertIndex)] = threadId;
+        localStorage.setItem('funny:grid-cells', JSON.stringify(updated));
+        return updated;
+      });
+      setGridCols(newCols);
+      localStorage.setItem('funny:grid-cols', String(newCols));
+      setHeaderCreating(false);
+    },
+    [headerCreating, gridCols, projects, loadThreadsForProject, t],
+  );
+
+  // Track whether a sidebar thread is currently being dragged so column-insert
+  // strips can highlight themselves as available drop targets.
+  const [isDragging, setIsDragging] = useState(false);
+
+  // Monitor drag-and-drop: assign sidebar threads dropped onto grid cells, or
+  // insert a new column when dropped on a column-insert strip.
   useEffect(() => {
     return monitorForElements({
+      onDragStart: ({ source }) => {
+        if (source.data.type === 'grid-thread') setIsDragging(true);
+      },
       onDrop: ({ source, location }) => {
+        setIsDragging(false);
         if (source.data.type !== 'grid-thread') return;
         const targets = location.current.dropTargets;
         if (!targets.length) return;
 
         const targetData = targets[0].data;
-        if (targetData.type !== 'grid-cell') return;
-
         const threadId = source.data.threadId as string;
-        const cellIndex = targetData.cellIndex as number;
 
-        setGridCells((prev) => {
-          // If thread is already assigned to another cell, remove it first
-          const updated = { ...prev };
-          for (const [key, val] of Object.entries(updated)) {
-            if (val === threadId) delete updated[key];
+        if (targetData.type === 'grid-cell') {
+          const cellIndex = targetData.cellIndex as number;
+          setGridCells((prev) => {
+            // If thread is already assigned to another cell, remove it first
+            const updated = { ...prev };
+            for (const [key, val] of Object.entries(updated)) {
+              if (val === threadId) delete updated[key];
+            }
+            updated[String(cellIndex)] = threadId;
+            localStorage.setItem('funny:grid-cells', JSON.stringify(updated));
+            return updated;
+          });
+          return;
+        }
+
+        if (targetData.type === 'grid-col-insert') {
+          const insertIndex = targetData.insertIndex as number;
+          if (gridCols >= MAX_GRID_COLS) {
+            toast.info(t('live.gridFull', 'Grid is full'));
+            return;
           }
-          updated[String(cellIndex)] = threadId;
-          // Persist to localStorage
-          localStorage.setItem('funny:grid-cells', JSON.stringify(updated));
-          return updated;
-        });
+          const oldCols = gridCols;
+          const newCols = oldCols + 1;
+          setGridCells((prev) => {
+            const updated: GridCellAssignments = {};
+            for (const [key, val] of Object.entries(prev)) {
+              if (val === threadId) continue;
+              const oldIdx = Number(key);
+              const oldCol = oldIdx % oldCols;
+              const oldRow = Math.floor(oldIdx / oldCols);
+              const newCol = oldCol < insertIndex ? oldCol : oldCol + 1;
+              const newIdx = oldRow * newCols + newCol;
+              updated[String(newIdx)] = val;
+            }
+            updated[String(insertIndex)] = threadId;
+            localStorage.setItem('funny:grid-cells', JSON.stringify(updated));
+            return updated;
+          });
+          setGridCols(newCols);
+          localStorage.setItem('funny:grid-cols', String(newCols));
+        }
       },
     });
-  }, []);
+  }, [gridCols, t]);
 
   return (
     <div className="flex h-full min-w-0 flex-1 flex-col overflow-hidden" data-testid="grid-view">
@@ -631,13 +776,23 @@ export function LiveColumnsView() {
         <span className="flex items-center gap-2 text-sm font-medium">
           <LayoutGrid className="icon-sm text-muted-foreground" /> {t('live.title', 'Grid')}
         </span>
-        {/* Create new thread (auto-fills the first empty grid cell) */}
+        {/* Pick a project → a draft thread is auto-created in a brand-new column */}
         <ProjectPickerPopover
           placeholder={t('kanban.searchProject', 'Search project...')}
-          onSelect={(pid) => handleAddThread(pid)}
+          onSelect={handleAddColumnWithProject}
           trigger={
-            <Button variant="ghost" size="icon" className="h-7 w-7" data-testid="grid-new-thread">
-              <Plus className="icon-base" />
+            <Button
+              variant="ghost"
+              size="icon"
+              className="h-7 w-7"
+              data-testid="grid-new-thread"
+              disabled={gridCols >= MAX_GRID_COLS || headerCreating}
+            >
+              {headerCreating ? (
+                <Loader2 className="icon-base animate-spin" />
+              ) : (
+                <Plus className="icon-base" />
+              )}
             </Button>
           }
         />
@@ -660,71 +815,59 @@ export function LiveColumnsView() {
       {/* Grid */}
       <div
         data-testid="grid-container"
-        className="min-h-0 flex-1 gap-2 overflow-auto p-2"
-        style={{
-          display: 'grid',
-          gridTemplateColumns: `repeat(${gridCols}, minmax(400px, 1fr))`,
-          gridTemplateRows: `repeat(${gridRows}, 1fr)`,
-        }}
+        className="min-h-0 flex-1 overflow-x-auto overflow-y-hidden p-2"
       >
-        {Array.from({ length: maxSlots }, (_, i) => {
-          const threadId = gridCells[String(i)];
-          return (
-            <GridCellDropTarget key={threadId ? `col-${threadId}` : `empty-${i}`} cellIndex={i}>
-              {threadId ? (
-                <ThreadColumn threadId={threadId} onRemove={() => handleRemoveFromGrid(i)} />
-              ) : (
-                <div
-                  className="flex h-full w-full flex-col items-center justify-center gap-3 rounded-sm border-2 border-dashed border-border/60 bg-muted/10 p-4 transition-colors hover:border-primary/50 hover:bg-muted/30"
-                  data-testid={`grid-empty-cell-${i}`}
-                >
-                  <Plus className="h-8 w-8 text-muted-foreground/40" />
-                  <div className="flex flex-col items-center gap-1.5">
-                    <ProjectPickerPopover
-                      placeholder={t('kanban.searchProject', 'Search project...')}
-                      onSelect={(pid) => handleAddThread(pid, i)}
-                      trigger={
-                        <Button
-                          variant="default"
-                          size="sm"
-                          className="h-7"
-                          data-testid={`grid-empty-new-${i}`}
-                        >
-                          <Plus className="icon-sm" />
-                          {t('live.newThread', 'New thread')}
-                        </Button>
-                      }
-                    />
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      className="h-7 text-xs text-muted-foreground"
-                      onClick={() => handlePickThread(i)}
-                      data-testid={`grid-empty-pick-${i}`}
-                    >
-                      {t('live.pickExisting', 'Pick existing')}
-                    </Button>
-                  </div>
-                </div>
-              )}
-            </GridCellDropTarget>
-          );
-        })}
+        <div className="flex h-full">
+          <GridColumnInsertDropTarget
+            insertIndex={0}
+            isDragging={isDragging}
+            disabled={gridCols >= MAX_GRID_COLS}
+          />
+          {Array.from({ length: gridCols }).flatMap((_, c) => [
+            <div
+              key={`col-${c}`}
+              className="flex h-full min-w-[280px] flex-1 flex-col gap-2"
+              data-testid={`grid-col-${c}`}
+            >
+              {Array.from({ length: gridRows }, (_, r) => {
+                const cellIndex = r * gridCols + c;
+                const threadId = gridCells[String(cellIndex)];
+                return (
+                  <GridCellDropTarget
+                    key={threadId ? `col-${threadId}` : `empty-${cellIndex}`}
+                    cellIndex={cellIndex}
+                  >
+                    {threadId ? (
+                      <ThreadColumn
+                        threadId={threadId}
+                        onRemove={() => handleRemoveFromGrid(cellIndex)}
+                        onOpenLightbox={openLightbox}
+                      />
+                    ) : (
+                      <EmptyGridCell
+                        cellIndex={cellIndex}
+                        onCreated={(newThreadId) => assignThreadToCell(cellIndex, newThreadId)}
+                      />
+                    )}
+                  </GridCellDropTarget>
+                );
+              })}
+            </div>,
+            <GridColumnInsertDropTarget
+              key={`insert-${c + 1}`}
+              insertIndex={c + 1}
+              isDragging={isDragging}
+              disabled={gridCols >= MAX_GRID_COLS}
+            />,
+          ])}
+        </div>
       </div>
 
-      <ThreadPickerDialog
-        open={pickerOpen}
-        onOpenChange={setPickerOpen}
-        onSelect={handleThreadPicked}
-        excludeIds={assignedThreadIds}
-      />
-
-      <SlideUpPrompt
-        open={slideUpOpen}
-        onClose={() => setSlideUpOpen(false)}
-        onSubmit={handlePromptSubmit}
-        loading={creating}
-        projectId={slideUpProjectId}
+      <ImageLightbox
+        images={lightboxImages}
+        initialIndex={lightboxIndex}
+        open={lightboxOpen}
+        onClose={() => setLightboxOpen(false)}
       />
     </div>
   );

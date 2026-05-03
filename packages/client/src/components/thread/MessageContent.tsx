@@ -20,9 +20,9 @@ const markdownComponents = {
     const isWebUrl = href && /^https?:\/\//.test(href);
     const fileMatch = !isWebUrl && text.match(FILE_PATH_RE);
     if (fileMatch) {
-      const editor = useSettingsStore.getState().defaultEditor;
-      const uri = toEditorUriWithLine(fileMatch[0], editor);
-      const label = editorLabels[editor];
+      const { defaultEditor, useInternalEditor } = useSettingsStore.getState();
+      const uri = toEditorUriWithLine(fileMatch[0], defaultEditor);
+      const label = useInternalEditor ? 'internal editor' : editorLabels[defaultEditor];
       const tooltipText = `Open in ${label}: ${text}`;
       return (
         <Tooltip>

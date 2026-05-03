@@ -28,7 +28,11 @@ export const agentProviderSchema = z.enum(['claude', 'codex', 'gemini', 'pi', 'd
 export const claudeModelSchema = registryEnum('claude');
 export const codexModelSchema = registryEnum('codex');
 export const geminiModelSchema = registryEnum('gemini');
-export const piModelSchema = registryEnum('pi');
+// Pi's catalog is discovered at runtime from pi-acp (see pi-discover.ts), so
+// the static registry only carries a `default` sentinel. Accept any non-empty
+// string here — `resolveModelId` already passes pi values through unchanged
+// and pi-acp itself rejects unknown model IDs at session time.
+export const piModelSchema = z.string().min(1);
 export const deepagentModelSchema = registryEnum('deepagent');
 export const agentModelSchema = z.union([
   claudeModelSchema,
@@ -37,6 +41,30 @@ export const agentModelSchema = z.union([
   piModelSchema,
   deepagentModelSchema,
 ]);
+
+/**
+ * Cross-field validator: ensures `model` is valid for the given `provider`.
+ * Pi accepts any non-empty string (catalog is dynamic); other providers must
+ * use a key from their static registry.
+ */
+function validateProviderModel(
+  data: { provider?: string; model?: string },
+  ctx: z.RefinementCtx,
+): void {
+  const provider = data.provider;
+  const model = data.model;
+  if (!provider || !model) return;
+  if (provider === 'pi') return; // dynamic catalog
+  if (!(provider in MODEL_REGISTRY)) return;
+  const bucket = MODEL_REGISTRY[provider as keyof typeof MODEL_REGISTRY] as Record<string, unknown>;
+  if (!(model in bucket)) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['model'],
+      message: `Invalid model "${model}" for provider "${provider}"`,
+    });
+  }
+}
 export const permissionModeSchema = z.enum(['plan', 'auto', 'autoEdit', 'confirmEdit', 'ask']);
 export const threadStageSchema = z.enum(['backlog', 'planning', 'in_progress', 'review', 'done']);
 export const threadSourceSchema = z.enum([
@@ -85,23 +113,30 @@ export const renameProjectSchema = z.object({
 
 export const followUpModeSchema = z.enum(['interrupt', 'queue', 'ask']);
 
-export const updateProjectSchema = z.object({
-  name: z.string().min(1, 'name is required').optional(),
-  color: z
-    .string()
-    .regex(/^#[0-9A-Fa-f]{6}$/, 'color must be a valid hex color (#RRGGBB)')
-    .nullable()
-    .optional(),
-  followUpMode: followUpModeSchema.optional(),
-  defaultProvider: agentProviderSchema.nullable().optional(),
-  defaultModel: agentModelSchema.nullable().optional(),
-  defaultMode: threadModeSchema.nullable().optional(),
-  defaultPermissionMode: permissionModeSchema.nullable().optional(),
-  defaultBranch: z.string().nullable().optional(),
-  urls: z.array(z.string().url()).nullable().optional(),
-  systemPrompt: z.string().max(50000).nullable().optional(),
-  launcherUrl: z.string().url().nullable().optional(),
-});
+export const updateProjectSchema = z
+  .object({
+    name: z.string().min(1, 'name is required').optional(),
+    color: z
+      .string()
+      .regex(/^#[0-9A-Fa-f]{6}$/, 'color must be a valid hex color (#RRGGBB)')
+      .nullable()
+      .optional(),
+    followUpMode: followUpModeSchema.optional(),
+    defaultProvider: agentProviderSchema.nullable().optional(),
+    defaultModel: agentModelSchema.nullable().optional(),
+    defaultMode: threadModeSchema.nullable().optional(),
+    defaultPermissionMode: permissionModeSchema.nullable().optional(),
+    defaultBranch: z.string().nullable().optional(),
+    urls: z.array(z.string().url()).nullable().optional(),
+    systemPrompt: z.string().max(50000).nullable().optional(),
+    launcherUrl: z.string().url().nullable().optional(),
+  })
+  .superRefine((data, ctx) => {
+    validateProviderModel(
+      { provider: data.defaultProvider ?? undefined, model: data.defaultModel ?? undefined },
+      ctx,
+    );
+  });
 
 export const reorderProjectsSchema = z.object({
   projectIds: z.array(z.string().min(1)).min(1, 'projectIds must not be empty'),
@@ -109,29 +144,31 @@ export const reorderProjectsSchema = z.object({
 
 export const effortLevelSchema = z.enum(['low', 'medium', 'high', 'xhigh', 'max']);
 
-export const createThreadSchema = z.object({
-  projectId: z.string().min(1),
-  title: z.string().max(500).optional().default(''),
-  mode: threadModeSchema,
-  runtime: threadRuntimeSchema.optional().default('local'),
-  provider: agentProviderSchema.optional().default(DEFAULT_PROVIDER),
-  model: agentModelSchema.optional().default(DEFAULT_MODEL),
-  permissionMode: permissionModeSchema.optional().default(DEFAULT_PERMISSION_MODE),
-  effort: effortLevelSchema.optional(),
-  source: threadSourceSchema.optional().default('web'),
-  baseBranch: z.string().optional(),
-  prompt: z.string().min(1, 'prompt is required').max(500_000),
-  images: z.array(imageAttachmentSchema).max(10).optional(),
-  allowedTools: z.array(z.string()).optional(),
-  disallowedTools: z.array(z.string()).optional(),
-  fileReferences: z.array(fileReferenceSchema).max(20).optional(),
-  symbolReferences: z.array(symbolReferenceSchema).max(20).optional(),
-  worktreePath: z.string().optional(),
-  parentThreadId: z.string().optional(),
-  designId: z.string().optional(),
-  agentTemplateId: z.string().optional(),
-  templateVariables: z.record(z.string(), z.string()).optional(),
-});
+export const createThreadSchema = z
+  .object({
+    projectId: z.string().min(1),
+    title: z.string().max(500).optional().default(''),
+    mode: threadModeSchema,
+    runtime: threadRuntimeSchema.optional().default('local'),
+    provider: agentProviderSchema.optional().default(DEFAULT_PROVIDER),
+    model: agentModelSchema.optional().default(DEFAULT_MODEL),
+    permissionMode: permissionModeSchema.optional().default(DEFAULT_PERMISSION_MODE),
+    effort: effortLevelSchema.optional(),
+    source: threadSourceSchema.optional().default('web'),
+    baseBranch: z.string().optional(),
+    prompt: z.string().min(1, 'prompt is required').max(500_000),
+    images: z.array(imageAttachmentSchema).max(10).optional(),
+    allowedTools: z.array(z.string()).optional(),
+    disallowedTools: z.array(z.string()).optional(),
+    fileReferences: z.array(fileReferenceSchema).max(20).optional(),
+    symbolReferences: z.array(symbolReferenceSchema).max(20).optional(),
+    worktreePath: z.string().optional(),
+    parentThreadId: z.string().optional(),
+    designId: z.string().optional(),
+    agentTemplateId: z.string().optional(),
+    templateVariables: z.record(z.string(), z.string()).optional(),
+  })
+  .superRefine((data, ctx) => validateProviderModel(data, ctx));
 
 export const createIdleThreadSchema = z.object({
   projectId: z.string().min(1),
@@ -145,20 +182,22 @@ export const createIdleThreadSchema = z.object({
   designId: z.string().optional(),
 });
 
-export const sendMessageSchema = z.object({
-  content: z.string().min(1, 'content is required').max(500_000),
-  provider: agentProviderSchema.optional(),
-  model: agentModelSchema.optional(),
-  permissionMode: permissionModeSchema.optional(),
-  effort: effortLevelSchema.optional(),
-  images: z.array(imageAttachmentSchema).optional(),
-  allowedTools: z.array(z.string()).optional(),
-  disallowedTools: z.array(z.string()).optional(),
-  fileReferences: z.array(fileReferenceSchema).max(20).optional(),
-  symbolReferences: z.array(symbolReferenceSchema).max(20).optional(),
-  baseBranch: z.string().optional(),
-  forceQueue: z.boolean().optional(),
-});
+export const sendMessageSchema = z
+  .object({
+    content: z.string().min(1, 'content is required').max(500_000),
+    provider: agentProviderSchema.optional(),
+    model: agentModelSchema.optional(),
+    permissionMode: permissionModeSchema.optional(),
+    effort: effortLevelSchema.optional(),
+    images: z.array(imageAttachmentSchema).optional(),
+    allowedTools: z.array(z.string()).optional(),
+    disallowedTools: z.array(z.string()).optional(),
+    fileReferences: z.array(fileReferenceSchema).max(20).optional(),
+    symbolReferences: z.array(symbolReferenceSchema).max(20).optional(),
+    baseBranch: z.string().optional(),
+    forceQueue: z.boolean().optional(),
+  })
+  .superRefine((data, ctx) => validateProviderModel(data, ctx));
 
 export const updateQueuedMessageSchema = z.object({
   content: z.string().min(1, 'content is required'),

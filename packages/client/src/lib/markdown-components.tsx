@@ -184,7 +184,7 @@ export const baseMarkdownComponents = {
     }
     return (
       <code
-        className="rounded bg-muted-foreground/20 px-1 py-0.5 font-mono text-xs text-foreground"
+        className="rounded bg-muted-foreground/20 px-1 py-0.5 font-mono text-xs text-foreground [-webkit-box-decoration-break:clone] [box-decoration-break:clone]"
         {...props}
       >
         {children}

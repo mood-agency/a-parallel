@@ -680,6 +680,20 @@
     @apply bg-background text-foreground;
   }
 
+  /* Unified text selection color across plain text and inline backgrounds
+     (e.g. inline <code> chips) so selection looks continuous. The chip
+     variant uses higher opacity to compensate for the chip's own gray bg. */
+  ::selection {
+    background-color: hsl(217 91% 60% / 0.45);
+    color: inherit;
+  }
+  code::selection,
+  pre::selection,
+  pre *::selection {
+    background-color: hsl(217 91% 60% / 0.75);
+    color: inherit;
+  }
+
   /* Custom scrollbar */
   * {
     scrollbar-width: thin;

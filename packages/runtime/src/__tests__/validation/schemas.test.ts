@@ -236,6 +236,24 @@ describe('createThreadSchema', () => {
     expect(result.success).toBe(true);
   });
 
+  test('accepts dynamic Pi model id (provider=pi)', () => {
+    const result = createThreadSchema.safeParse({
+      ...validThread,
+      provider: 'pi',
+      model: 'zai/glm-5.1',
+    });
+    expect(result.success).toBe(true);
+  });
+
+  test('rejects Pi model id when provider is not pi', () => {
+    const result = createThreadSchema.safeParse({
+      ...validThread,
+      provider: 'claude',
+      model: 'zai/glm-5.1',
+    });
+    expect(result.success).toBe(false);
+  });
+
   test('accepts worktree mode', () => {
     const result = createThreadSchema.safeParse({ ...validThread, mode: 'worktree' });
     expect(result.success).toBe(true);

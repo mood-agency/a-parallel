@@ -53,6 +53,7 @@ import { api } from '@/lib/api';
 import { PROVIDERS, getModelOptions } from '@/lib/providers';
 import { cn } from '@/lib/utils';
 import { useAgentTemplateStore } from '@/stores/agent-template-store';
+import { usePiModelsStore } from '@/stores/pi-models-store';
 import { useProjectStore } from '@/stores/project-store';
 import { useSettingsStore, ALL_STANDARD_TOOLS, TOOL_LABELS } from '@/stores/settings-store';
 import { useUIStore } from '@/stores/ui-store';
@@ -764,6 +765,30 @@ function GeneralSettings() {
     // eslint-disable-next-line react-hooks/exhaustive-deps -- intentionally keyed on id only; using selectedProject object would loop
   }, [selectedProject?.id]);
 
+  // Pi model catalog is discovered at runtime (see pi-discover.ts) — fetch on
+  // mount so the Settings combobox lists what pi-acp actually advertises (e.g.
+  // zai/glm-5.1) instead of just the `default` sentinel from the static registry.
+  const piModels = usePiModelsStore((s) => s.models);
+  const piStatus = usePiModelsStore((s) => s.status);
+  const fetchPiModels = usePiModelsStore((s) => s.fetch);
+  useEffect(() => {
+    void fetchPiModels();
+  }, [fetchPiModels]);
+
+  const projectDefaultProvider = (selectedProject?.defaultProvider ||
+    DEFAULT_PROVIDER) as AgentProvider;
+  const projectModelOptions = (() => {
+    const base = getModelOptions(projectDefaultProvider, t);
+    if (projectDefaultProvider !== 'pi' || piStatus !== 'ready') return base;
+    const seen = new Set(base.map((o) => o.value));
+    for (const m of piModels) {
+      if (seen.has(m.modelId)) continue;
+      base.push({ value: m.modelId, label: m.name || m.modelId });
+      seen.add(m.modelId);
+    }
+    return base;
+  })();
+
   return (
     <>
       {/* Project section (only shown when a project is selected) */}
@@ -838,7 +863,7 @@ function GeneralSettings() {
                     )
                   }
                   onChange={(v) => saveProject(selectedProject.id, { defaultModel: v })}
-                  options={getModelOptions(selectedProject.defaultProvider || DEFAULT_PROVIDER, t)}
+                  options={projectModelOptions}
                   placeholder={t('settings.selectModel')}
                   searchPlaceholder={t('settings.searchModel')}
                 />
